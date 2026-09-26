@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<title>شركة جادو</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&family=IBM+Plex+Mono:wght@600;700&display=swap" rel="stylesheet">
+
+<!-- ============================================================
+     Firebase (قاعدة بيانات مجانية لمزامنة الرموز السرية بين الأجهزة)
+     ============================================================ -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+<style>
+  :root{
+    --bg:#F7F5F1;
+    --steel-200:#E7E2D9;
+    --steel-500:#8A8578;
+    --steel-900:#2B2A26;
+    --amber:#C98A2C;
+    --amber-dark:#8F5C20;
+    --line:#DDD7CB;
+    --ok:#3E7A52;
+    --warn:#B0432E;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#17160F;
+      --steel-200:#2E2C25;
+      --steel-500:#9A9484;
+      --steel-900:#EFEBE1;
+      --line:#38352C;
+    }
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0; padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--steel-900);
+    font-family:'Tajawal', sans-serif;
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:20px;
+  }
+  .app{ width:100%; max-width:420px; }
+  .view{ display:none; }
+  .view.active{ display:block; animation:rise .2s ease; }
+  @keyframes rise{ from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);} }
+
+  .brand{ display:flex; align-items:center; gap:12px; margin-bottom:30px; }
+  .brand-mark{
+    width:46px; height:46px; flex-shrink:0; border-radius:8px;
+    background:var(--steel-900); color:var(--bg);
+    display:flex; align-items:center; justify-content:center;
+    font-family:'IBM Plex Mono', monospace; font-weight:700; font-size:20px;
+  }
+  .brand-name{ display:flex; flex-direction:column; gap:1px; min-width:0; }
+  .brand-name strong{ font-size:16px; font-weight:900; line-height:1.25; }
+  .brand-name span{ font-size:11.5px; color:var(--steel-500); font-weight:500; line-height:1.3; }
+
+  .headline{ text-align:center; margin-bottom:32px; }
+  .headline h1{ margin:0 0 6px; font-size:22px; font-weight:900; }
+  .headline p{ margin:0; font-size:14px; color:var(--steel-500); }
+
+  .menu{ display:flex; flex-direction:column; gap:14px; }
+  .role-btn{
+    display:flex; align-items:center; gap:14px; width:100%;
+    padding:20px 18px; background:transparent; border:1.5px solid var(--line);
+    border-radius:12px; cursor:pointer; font-family:'Tajawal', sans-serif;
+    text-align:right; transition:border-color .15s ease, background .15s ease;
+  }
+  .role-btn:active{ background:var(--steel-200); }
+  .role-btn:hover{ border-color:var(--steel-900); }
+  .role-icon{
+    width:42px; height:42px; flex-shrink:0; border-radius:9px;
+    background:var(--steel-200); display:flex; align-items:center; justify-content:center;
+  }
+  .role-icon svg{ width:22px; height:22px; color:var(--steel-900); }
+  .role-text{ flex:1; min-width:0; }
+  .role-text strong{ display:block; font-size:16px; font-weight:700; }
+  .role-text span{ display:block; font-size:12px; color:var(--steel-500); margin-top:2px; }
+  .role-lock{ width:16px; height:16px; color:var(--steel-500); flex-shrink:0; }
+
+  .back-row{ display:flex; align-items:center; gap:10px; margin-bottom:24px; }
+  .back-btn{
+    width:36px; height:36px; border-radius:9px; border:1.5px solid var(--line);
+    background:transparent; display:flex; align-items:center; justify-content:center; cursor:pointer;
+  }
+  .back-btn svg{ width:18px; height:18px; color:var(--steel-900); }
+  .back-row h2{ margin:0; font-size:16px; font-weight:700; }
+
+  .list{ display:flex; flex-direction:column; gap:12px; }
+  .list-btn{
+    display:flex; align-items:center; gap:14px; width:100%;
+    padding:16px 16px; background:transparent; border:1.5px solid var(--line);
+    border-radius:10px; cursor:pointer; font-family:'Tajawal', sans-serif; text-align:right;
+  }
+  .list-btn:active{ background:var(--steel-200); }
+  .list-icon{
+    width:36px; height:36px; flex-shrink:0; border-radius:8px;
+    background:var(--steel-200); display:flex; align-items:center; justify-content:center;
+  }
+  .list-icon svg{ width:18px; height:18px; color:var(--steel-900); }
+  .list-text{ flex:1; }
+  .list-text strong{ display:block; font-size:14.5px; font-weight:700; }
+  .list-text span{ display:block; font-size:11.5px; color:var(--steel-500); margin-top:1px; }
+  .chev{ width:16px; height:16px; color:var(--steel-500); transform:scaleX(-1); }
+
+  .field{ margin-bottom:18px; }
+  .field label{ display:block; font-size:12.5px; color:var(--steel-500); margin-bottom:6px; font-weight:500; }
+  .field input{
+    width:100%; padding:13px 14px; font-size:16px;
+    font-family:'IBM Plex Mono', monospace; direction:ltr; text-align:center;
+    letter-spacing:4px; border:1.5px solid var(--line); border-radius:9px;
+    background:var(--bg); color:var(--steel-900); outline:none;
+  }
+  .field input:focus{ border-color:var(--amber); }
+
+  .primary-btn{
+    width:100%; padding:15px; border:none; border-radius:10px;
+    background:var(--steel-900); color:var(--bg); font-family:'Tajawal', sans-serif;
+    font-size:15px; font-weight:700; cursor:pointer; margin-top:6px;
+  }
+  .primary-btn:active{ opacity:.85; }
+  .primary-btn:disabled{ opacity:.5; cursor:default; }
+
+  .msg{ font-size:12.5px; margin-top:10px; text-align:center; min-height:16px; }
+  .msg.ok{ color:var(--ok); }
+  .msg.err{ color:var(--warn); }
+
+  footer{ margin-top:30px; text-align:center; font-size:11.5px; color:var(--steel-500); }
+
+  /* PIN overlay */
+  .pin-overlay{
+    position:fixed; inset:0; background:rgba(23,22,15,0.55);
+    display:none; align-items:center; justify-content:center; padding:20px; z-index:10;
+  }
+  .pin-overlay.open{ display:flex; }
+  .pin-card{
+    width:100%; max-width:320px; background:var(--bg); border-radius:14px;
+    border:1px solid var(--line); padding:26px 22px; text-align:center;
+  }
+  .pin-card h2{ margin:0 0 4px; font-size:16px; font-weight:700; }
+  .pin-card p{ margin:0 0 18px; font-size:12.5px; color:var(--steel-500); }
+  .pin-dots{ display:flex; justify-content:center; gap:12px; margin-bottom:18px; direction:ltr; }
+  .pin-dot{ width:14px; height:14px; border-radius:50%; border:1.5px solid var(--steel-500); background:transparent; }
+  .pin-dot.filled{ background:var(--steel-900); border-color:var(--steel-900); }
+  .pin-pad{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+  .pin-key{
+    padding:14px 0; border-radius:10px; border:1px solid var(--line); background:transparent;
+    font-family:'IBM Plex Mono', monospace; font-size:18px; font-weight:600; color:var(--steel-900); cursor:pointer;
+  }
+  .pin-key:active{ background:var(--steel-200); }
+  .pin-key.ghost{ border-color:transparent; }
+  .pin-error{ color:var(--warn); font-size:12px; height:16px; margin-top:10px; }
+  .pin-cancel{
+    margin-top:14px; background:none; border:none; color:var(--steel-500);
+    font-size:12.5px; font-family:'Tajawal', sans-serif; cursor:pointer; text-decoration:underline;
+  }
+
+  .sync-note{
+    display:flex; align-items:center; gap:8px; font-size:11.5px; color:var(--steel-500);
+    background:var(--steel-200); border-radius:8px; padding:8px 10px; margin-bottom:18px;
+  }
+  .sync-dot{ width:7px; height:7px; border-radius:50%; background:var(--steel-500); flex-shrink:0; }
+  .sync-dot.on{ background:var(--ok); }
+  .sync-dot.off{ background:var(--warn); }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ============ الشاشة الرئيسية ============ -->
+  <div class="view active" id="view-gate">
+    <div class="brand">
+      <div class="brand-mark">ج</div>
+      <div class="brand-name">
+        <strong>شركة جادو</strong>
+        <span>لإستيراد معدات المطاعم والمقاهي</span>
+      </div>
+    </div>
+    <div class="headline">
+      <h1>اختر الآن</h1>
+      <p>حدد نوع الدخول للمتابعة</p>
+    </div>
+    <div class="menu">
+      <button class="role-btn" data-role="employee" data-locked="true">
+        <div class="role-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+          </svg>
+        </div>
+        <div class="role-text"><strong>موظف</strong><span>بحث الأصناف ومشاركة البيانات</span></div>
+        <svg class="role-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>
+        </svg>
+      </button>
+      <button class="role-btn" data-role="customer" data-locked="false">
+        <div class="role-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 20a6 6 0 0 1 12 0"/><circle cx="15" cy="8" r="4"/><path d="M3 20a5 5 0 0 1 7-4.6"/><circle cx="7" cy="8" r="3"/>
+          </svg>
+        </div>
+        <div class="role-text"><strong>زبون</strong><span>تصفح الأصناف عبر مسح الكيو آر كود</span></div>
+      </button>
+      <button class="role-btn" data-role="admin" data-locked="true">
+        <div class="role-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2 3 6v6c0 5 4 9 9 10 5-1 9-5 9-10V6l-9-4Z"/>
+          </svg>
+        </div>
+        <div class="role-text"><strong>إدارة عامة</strong><span>الجرد والحسابات والإعدادات</span></div>
+        <svg class="role-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>
+        </svg>
+      </button>
+    </div>
+    <footer>© شركة جادو — لإستيراد معدات المطاعم والمقاهي</footer>
+  </div>
+
+  <!-- ============ واجهة الموظف (قيد الإنشاء) ============ -->
+  <div class="view" id="view-employee">
+    <div class="back-row">
+      <button class="back-btn" data-back="gate">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <h2>واجهة الموظف</h2>
+    </div>
+    <p style="color:var(--steel-500); font-size:14px;">قيد الإنشاء — قريبًا: بحث الأصناف ومشاركة بيانات المنتج.</p>
+  </div>
+
+  <!-- ============ الإدارة العامة — القائمة الرئيسية ============ -->
+  <div class="view" id="view-admin">
+    <div class="back-row">
+      <button class="back-btn" data-back="gate">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <h2>الإدارة العامة</h2>
+    </div>
+    <div class="list">
+      <button class="list-btn" data-go="admin-settings">
+        <div class="list-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+        </div>
+        <div class="list-text"><strong>الإعدادات</strong><span>تغيير الرمز السري للموظف والإدارة</span></div>
+        <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- ============ الإدارة العامة — الإعدادات ============ -->
+  <div class="view" id="view-admin-settings">
+    <div class="back-row">
+      <button class="back-btn" data-back="admin">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <h2>الإعدادات — الرموز السرية</h2>
+    </div>
+
+    <div class="sync-note">
+      <div class="sync-dot" id="syncDot"></div>
+      <span id="syncText">جارِ الاتصال بقاعدة البيانات…</span>
+    </div>
+
+    <div class="field">
+      <label>رمز دخول الموظف (4 أرقام)</label>
+      <input type="text" inputmode="numeric" maxlength="4" id="employeePinInput" placeholder="••••">
+    </div>
+    <div class="field">
+      <label>رمز دخول الإدارة العامة (4 أرقام)</label>
+      <input type="text" inputmode="numeric" maxlength="4" id="adminPinInput" placeholder="••••">
+    </div>
+
+    <button class="primary-btn" id="savePinsBtn">حفظ التغييرات</button>
+    <div class="msg" id="settingsMsg"></div>
+  </div>
+
+</div>
+
+<!-- ============ نافذة إدخال الرمز السري ============ -->
+<div class="pin-overlay" id="pinOverlay">
+  <div class="pin-card">
+    <h2 id="pinTitle">كلمة المرور</h2>
+    <p>أدخل الرمز السري للمتابعة</p>
+    <div class="pin-dots" id="pinDots">
+      <div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div>
+    </div>
+    <div class="pin-pad">
+      <button class="pin-key" data-k="1">1</button><button class="pin-key" data-k="2">2</button><button class="pin-key" data-k="3">3</button>
+      <button class="pin-key" data-k="4">4</button><button class="pin-key" data-k="5">5</button><button class="pin-key" data-k="6">6</button>
+      <button class="pin-key" data-k="7">7</button><button class="pin-key" data-k="8">8</button><button class="pin-key" data-k="9">9</button>
+      <button class="pin-key ghost"></button><button class="pin-key" data-k="0">0</button><button class="pin-key" data-k="back">⌫</button>
+    </div>
+    <div class="pin-error" id="pinError"></div>
+    <button class="pin-cancel" id="pinCancel">رجوع</button>
+  </div>
+</div>
+
+<script>
+// =====================================================================
+// إعداد Firebase — عوّض هذه القيم ببيانات مشروعك الخاص المجاني من
+// https://console.firebase.google.com  (أنشئ مشروع -> Firestore Database
+// -> ابدأ في وضع الاختبار "test mode" -> Project settings -> ضيف تطبيق ويب
+// وانسخ القيم بالأسفل)
+// =====================================================================
+const firebaseConfig = {
+  apiKey: "AIzaSyBQ1xn1HKghA63Q4Qb0Yo40weBBi84l8Gk",
+  authDomain: "jadu-app-90418.firebaseapp.com",
+  projectId: "jadu-app-90418",
+  storageBucket: "jadu-app-90418.firebasestorage.app",
+  messagingSenderId: "712974951059",
+  appId: "1:712974951059:web:92e7a9b484b25670f9a366"
+};
+
+let db = null;
+let firebaseReady = false;
+
+// الرموز الافتراضية (تُستخدم فقط إذا تعذّر الاتصال بقاعدة البيانات)
+let PINS = { employee: "1234", admin: "9999" };
+
+function initFirebase(){
+  try {
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+    firebaseReady = true;
+    loadPins();
+  } catch(e) {
+    console.warn("تعذّر تشغيل Firebase — تأكد من ضبط firebaseConfig", e);
+    setSyncStatus(false, "غير متصل — يعمل بالرموز الافتراضية محليًا");
+  }
+}
+
+function setSyncStatus(ok, text){
+  const dot = document.getElementById('syncDot');
+  const label = document.getElementById('syncText');
+  if(!dot) return;
+  dot.className = "sync-dot " + (ok ? "on" : "off");
+  label.textContent = text;
+}
+
+async function loadPins(){
+  if(!db) return;
+  try {
+    const doc = await db.collection("settings").doc("pins").get();
+    if (doc.exists) {
+      const data = doc.data();
+      PINS.employee = data.employee || PINS.employee;
+      PINS.admin = data.admin || PINS.admin;
+    } else {
+      // أول مرة: نزرع القيم الافتراضية بقاعدة البيانات
+      await db.collection("settings").doc("pins").set(PINS);
+    }
+    setSyncStatus(true, "متصل — الرموز متزامنة مع كل الأجهزة");
+  } catch(e) {
+    console.warn("تعذّرت قراءة الرموز من القاعدة", e);
+    setSyncStatus(false, "تعذّر الاتصال — يعمل بالرموز الافتراضية محليًا");
+  }
+}
+
+// ---------------------------------------------------------------
+// التنقل بين الشاشات
+// ---------------------------------------------------------------
+function showView(id){
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-' + id).classList.add('active');
+}
+
+document.querySelectorAll('[data-back]').forEach(btn=>{
+  btn.addEventListener('click', ()=> showView(btn.dataset.back));
+});
+document.querySelectorAll('[data-go]').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    showView(btn.dataset.go);
+    if (btn.dataset.go === "admin-settings") fillSettingsForm();
+  });
+});
+
+// ---------------------------------------------------------------
+// نافذة الرمز السري
+// ---------------------------------------------------------------
+const overlay = document.getElementById('pinOverlay');
+const dotsWrap = document.getElementById('pinDots');
+const pinTitle = document.getElementById('pinTitle');
+const pinError = document.getElementById('pinError');
+let currentRole = null;
+let entered = "";
+const roleLabels = { employee: "دخول الموظف", admin: "دخول الإدارة العامة" };
+
+document.querySelectorAll('.role-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const role = btn.dataset.role;
+    const locked = btn.dataset.locked === "true";
+    if (!locked) {
+      if (role === "customer") {
+        alert("قريبًا: واجهة الزبون (صفحة منفصلة عبر مسح الكيو آر كود)");
+      }
+      return;
+    }
+    currentRole = role;
+    entered = "";
+    pinTitle.textContent = roleLabels[role] || "كلمة المرور";
+    pinError.textContent = "";
+    updateDots();
+    overlay.classList.add('open');
+  });
+});
+
+document.querySelectorAll('.pin-key[data-k]').forEach(key => {
+  key.addEventListener('click', () => {
+    const k = key.dataset.k;
+    if (k === "back") entered = entered.slice(0, -1);
+    else if (entered.length < 4) entered += k;
+    updateDots();
+    if (entered.length === 4) setTimeout(checkPin, 120);
+  });
+});
+document.getElementById('pinCancel').addEventListener('click', closeOverlay);
+
+function updateDots(){
+  dotsWrap.querySelectorAll('.pin-dot').forEach((d,i)=> d.classList.toggle('filled', i < entered.length));
+}
+function checkPin(){
+  if (entered === PINS[currentRole]) {
+    closeOverlay();
+    showView(currentRole);
+  } else {
+    pinError.textContent = "الرمز غير صحيح، حاول مرة أخرى";
+    entered = "";
+    updateDots();
+  }
+}
+function closeOverlay(){
+  overlay.classList.remove('open');
+  entered = "";
+  updateDots();
+}
+
+// ---------------------------------------------------------------
+// شاشة الإعدادات — تغيير الرموز
+// ---------------------------------------------------------------
+function fillSettingsForm(){
+  document.getElementById('employeePinInput').value = PINS.employee;
+  document.getElementById('adminPinInput').value = PINS.admin;
+  document.getElementById('settingsMsg').textContent = "";
+  document.getElementById('settingsMsg').className = "msg";
+}
+
+document.getElementById('savePinsBtn').addEventListener('click', async () => {
+  const empVal = document.getElementById('employeePinInput').value.trim();
+  const adminVal = document.getElementById('adminPinInput').value.trim();
+  const msg = document.getElementById('settingsMsg');
+
+  if (!/^\d{4}$/.test(empVal) || !/^\d{4}$/.test(adminVal)) {
+    msg.textContent = "لازم يكون كل رمز 4 أرقام بالضبط";
+    msg.className = "msg err";
+    return;
+  }
+
+  const newPins = { employee: empVal, admin: adminVal };
+
+  if (!db) {
+    // لا يوجد اتصال بقاعدة البيانات: نحدّث محليًا فقط (لن ينعكس على باقي الأجهزة)
+    PINS = newPins;
+    msg.textContent = "تم الحفظ محليًا فقط (لا يوجد اتصال بقاعدة البيانات — لن ينعكس على باقي الأجهزة)";
+    msg.className = "msg err";
+    return;
+  }
+
+  try {
+    await db.collection("settings").doc("pins").set(newPins);
+    PINS = newPins;
+    msg.textContent = "تم الحفظ — الرمز الجديد فعّال الآن على كل الأجهزة";
+    msg.className = "msg ok";
+  } catch(e) {
+    msg.textContent = "تعذّر الحفظ، تحقق من الاتصال بالإنترنت وحاول مرة أخرى";
+    msg.className = "msg err";
+  }
+});
+
+// ---------------------------------------------------------------
+initFirebase();
+</script>
+
+</body>
+</html>
