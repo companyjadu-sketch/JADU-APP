@@ -747,10 +747,11 @@ renderCategoryGrid(); // ثابتة، ما تعتمد على تحميل بيان
 function matchRank(it, q){
   const num = it.number.toLowerCase();
   const name = it.name.toLowerCase();
-  if(num === q) return 0;
-  if(num.startsWith(q)) return 1;
+  const type = (it.typeCode || '').toLowerCase();
+  if(num === q || type === q) return 0;
+  if(num.startsWith(q) || type.startsWith(q)) return 1;
   if(name.startsWith(q)) return 2;
-  if(num.includes(q)) return 3;
+  if(num.includes(q) || type.includes(q)) return 3;
   if(name.includes(q)) return 4;
   return -1; // لا يوجد تطابق إطلاقًا
 }
@@ -840,15 +841,25 @@ function buildShareText(item){
   const lines = [
     `*${item.name || ''}*`,
     `رقم الصنف: ${item.number}`,
-    `السعر: ${formatNum(item.priceRetail)} ${CURRENCY}`,
   ];
   if(item.company) lines.push(`الشركة المصنعة: ${item.company}`);
-  lines.push(`— شركة جادو لإستيراد معدات المطاعم والمقاهي`);
+  if(item.country) lines.push(`بلد الصنع: ${item.country}`);
+  if(item.color) lines.push(`اللون: ${item.color}`);
+  lines.push(`سعر القطاعي: ${formatNum(item.priceRetail)} ${CURRENCY}`);
   return lines.join('\n');
+}
+
+// إذا كان الصنف غير متوفر في كل الفروع/المخازن (الكمية الإجمالية صفر)، نحذّر قبل المشاركة
+function confirmShareIfOutOfStock(item){
+  if(item && item.totalQty <= 0){
+    return window.confirm('هذا الصنف غير متوفر في جميع الفروع أو المخازن. هل تريد الاستمرار؟');
+  }
+  return true;
 }
 
 document.getElementById('shareWhatsappBtn').addEventListener('click', ()=>{
   if(!currentItem) return;
+  if(!confirmShareIfOutOfStock(currentItem)) return;
   const text = encodeURIComponent(buildShareText(currentItem));
   window.open(`https://wa.me/?text=${text}`, '_blank');
 });
@@ -858,6 +869,7 @@ if(navigator.share){
   moreBtn.style.display = "flex";
   moreBtn.addEventListener('click', ()=>{
     if(!currentItem) return;
+    if(!confirmShareIfOutOfStock(currentItem)) return;
     navigator.share({ text: buildShareText(currentItem) }).catch(()=>{});
   });
 }
