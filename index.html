@@ -13,6 +13,12 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 
+<!-- ============================================================
+     بحث الأصناف: قراءة الشيت + مسح الكيو آر كود
+     ============================================================ -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.js"></script>
+
 <style>
   :root{
     --bg:#F7F5F1;
@@ -169,6 +175,86 @@
   .sync-dot{ width:7px; height:7px; border-radius:50%; background:var(--steel-500); flex-shrink:0; }
   .sync-dot.on{ background:var(--ok); }
   .sync-dot.off{ background:var(--warn); }
+
+  /* ============ بحث الأصناف (واجهة الموظف) ============ */
+  .search-row{ display:flex; gap:8px; margin-bottom:14px; }
+  .search-row input{
+    flex:1; padding:12px 14px; font-size:14px; font-family:'Tajawal', sans-serif;
+    border:1.5px solid var(--line); border-radius:9px; background:var(--bg); color:var(--steel-900); outline:none;
+  }
+  .search-row input:focus{ border-color:var(--amber); }
+  .scan-btn{
+    width:44px; height:44px; flex-shrink:0; border-radius:9px; border:1.5px solid var(--line);
+    background:transparent; display:flex; align-items:center; justify-content:center; cursor:pointer;
+  }
+  .scan-btn svg{ width:20px; height:20px; color:var(--steel-900); }
+
+  .chips{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+  .chip{
+    padding:7px 14px; border-radius:20px; border:1.5px solid var(--line); background:transparent;
+    font-family:'Tajawal', sans-serif; font-size:12.5px; color:var(--steel-500); cursor:pointer;
+  }
+  .chip.active{ background:var(--steel-900); border-color:var(--steel-900); color:var(--bg); font-weight:700; }
+
+  .item-count{ font-size:11.5px; color:var(--steel-500); margin-bottom:10px; }
+
+  .results{ display:flex; flex-direction:column; gap:8px; max-height:50vh; overflow-y:auto; }
+  .item-row{
+    display:flex; align-items:center; gap:10px; width:100%; padding:12px 14px;
+    background:transparent; border:1.5px solid var(--line); border-radius:10px;
+    cursor:pointer; font-family:'Tajawal', sans-serif; text-align:right;
+  }
+  .item-row:active{ background:var(--steel-200); }
+  .item-row .num-badge{
+    font-family:'IBM Plex Mono', monospace; font-size:11.5px; font-weight:700; color:var(--amber-dark);
+    background:var(--steel-200); border-radius:6px; padding:4px 7px; flex-shrink:0;
+  }
+  .item-row .item-name{ flex:1; min-width:0; font-size:13.5px; font-weight:600; }
+  .item-row .item-price{ font-family:'IBM Plex Mono', monospace; font-size:13px; font-weight:700; flex-shrink:0; }
+  .empty-note{ text-align:center; font-size:13px; color:var(--steel-500); padding:30px 10px; }
+
+  /* بطاقة تفاصيل الصنف */
+  .item-card{ border:1.5px solid var(--line); border-radius:14px; padding:18px; }
+  .item-card .ic-num{
+    font-family:'IBM Plex Mono', monospace; font-size:12px; font-weight:700; color:var(--amber-dark);
+    background:var(--steel-200); display:inline-block; border-radius:6px; padding:4px 8px; margin-bottom:10px;
+  }
+  .item-card h3{ margin:0 0 2px; font-size:18px; font-weight:900; }
+  .item-card .ic-en{ margin:0 0 14px; font-size:12.5px; color:var(--steel-500); }
+  .item-card .ic-price{ font-family:'IBM Plex Mono', monospace; font-size:26px; font-weight:700; color:var(--amber-dark); margin-bottom:16px; }
+  .stat-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px; }
+  .stat{ background:var(--steel-200); border-radius:9px; padding:10px 12px; }
+  .stat .k{ display:block; font-size:11px; color:var(--steel-500); margin-bottom:3px; }
+  .stat .v{ display:block; font-size:13.5px; font-weight:700; }
+  .stat.wide{ grid-column:1 / -1; background:transparent; border:1.5px solid var(--steel-900); }
+  .stat.wide .v{ font-family:'IBM Plex Mono', monospace; }
+  .stat .v.big{ font-size:20px; }
+  .section-label{ font-size:12px; color:var(--steel-500); font-weight:600; margin-bottom:8px; }
+  .branch-grid{ margin-bottom:18px; }
+  .branch-grid .stat .v{ font-size:15px; font-family:'IBM Plex Mono', monospace; }
+
+  .share-row{ display:flex; gap:10px; }
+  .share-btn{
+    flex:1; display:flex; align-items:center; justify-content:center; gap:8px;
+    padding:13px; border-radius:10px; border:1.5px solid var(--line); background:transparent;
+    font-family:'Tajawal', sans-serif; font-size:13.5px; font-weight:700; cursor:pointer; color:var(--steel-900);
+  }
+  .share-btn.wa{ background:#25D366; border-color:#25D366; color:#fff; }
+  .share-btn svg{ width:18px; height:18px; }
+
+  /* كاميرا مسح الكيو آر كود */
+  .cam-overlay{
+    position:fixed; inset:0; background:#000; display:none; z-index:20;
+    flex-direction:column; align-items:center; justify-content:center;
+  }
+  .cam-overlay.open{ display:flex; }
+  .cam-overlay video{ width:100%; max-width:480px; }
+  .cam-overlay canvas{ display:none; }
+  .cam-hint{ color:#fff; font-size:13px; margin-top:16px; text-align:center; padding:0 20px; }
+  .cam-close{
+    position:absolute; top:20px; left:20px; width:40px; height:40px; border-radius:50%;
+    background:rgba(255,255,255,.15); border:none; color:#fff; font-size:18px; cursor:pointer;
+  }
 </style>
 </head>
 <body>
@@ -223,15 +309,48 @@
     <footer>© شركة جادو — لإستيراد معدات المطاعم والمقاهي</footer>
   </div>
 
-  <!-- ============ واجهة الموظف (قيد الإنشاء) ============ -->
+  <!-- ============ واجهة الموظف — بحث الأصناف ============ -->
   <div class="view" id="view-employee">
     <div class="back-row">
-      <button class="back-btn" data-back="gate">
+      <button class="back-btn" data-back="gate" id="employeeBackBtn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
       </button>
-      <h2>واجهة الموظف</h2>
+      <h2>بحث الأصناف</h2>
     </div>
-    <p style="color:var(--steel-500); font-size:14px;">قيد الإنشاء — قريبًا: بحث الأصناف ومشاركة بيانات المنتج.</p>
+
+    <!-- شاشة البحث -->
+    <div id="employeeSearchScreen">
+      <div class="search-row">
+        <input type="text" id="employeeSearchInput" placeholder="ابحث برقم الصنف أو الاسم…">
+        <button class="scan-btn" id="employeeScanBtn" title="مسح كيو آر كود">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/>
+            <rect x="7" y="7" width="10" height="10" rx="1"/>
+          </svg>
+        </button>
+      </div>
+      <div class="chips" id="employeeChips"><!-- تُبنى تلقائيًا من بيانات الشيت --></div>
+      <div class="item-count" id="employeeItemCount">جارِ تحميل بيانات الأصناف…</div>
+      <div class="results" id="employeeResults"></div>
+    </div>
+
+    <!-- شاشة تفاصيل الصنف -->
+    <div id="employeeDetailScreen" style="display:none;">
+      <button class="back-btn" id="employeeDetailBack" style="margin-bottom:14px;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <div class="item-card" id="employeeItemCard"><!-- تُبنى ديناميكيًا --></div>
+      <div class="share-row" style="margin-top:16px;">
+        <button class="share-btn wa" id="shareWhatsappBtn">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.5 3.5A11 11 0 0 0 3.6 17.3L2 22l4.8-1.6A11 11 0 1 0 20.5 3.5Zm-8.5 17a9 9 0 0 1-4.6-1.3l-.3-.2-3.3 1.1 1.1-3.2-.2-.3A9 9 0 1 1 12 20.5Zm5-6.7c-.3-.1-1.6-.8-1.8-.9-.2-.1-.4-.1-.6.1s-.7.9-.9 1-.3.2-.6.1a7.3 7.3 0 0 1-2.1-1.3 8 8 0 0 1-1.5-1.9c-.2-.3 0-.5.1-.6l.4-.5.2-.4v-.4C10 8.9 9.5 7.6 9.3 7.1c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-1 2.3c0 1.3.9 2.6 1.1 2.8.1.2 1.9 2.9 4.6 4a15 15 0 0 0 1.5.6c.6.2 1.2.2 1.6.1.5-.1 1.6-.6 1.8-1.3.2-.6.2-1.1.2-1.2s-.2-.2-.5-.3Z"/></svg>
+          مشاركة عبر واتساب
+        </button>
+        <button class="share-btn" id="shareMoreBtn" style="display:none;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5 15.4 17.5M15.4 6.5 8.6 10.5"/></svg>
+          مشاركة أخرى
+        </button>
+      </div>
+    </div>
   </div>
 
   <!-- ============ الإدارة العامة — القائمة الرئيسية ============ -->
@@ -301,6 +420,14 @@
     <div class="pin-error" id="pinError"></div>
     <button class="pin-cancel" id="pinCancel">رجوع</button>
   </div>
+</div>
+
+<!-- ============ كاميرا مسح الكيو آر كود ============ -->
+<div class="cam-overlay" id="camOverlay">
+  <button class="cam-close" id="camCloseBtn">✕</button>
+  <video id="camVideo" playsinline autoplay muted></video>
+  <canvas id="camCanvas"></canvas>
+  <div class="cam-hint" id="camHint">وجّه الكاميرا نحو الكيو آر كود الخاص بالمنتج</div>
 </div>
 
 <script>
@@ -430,6 +557,7 @@ function checkPin(){
   if (entered === PINS[currentRole]) {
     closeOverlay();
     showView(currentRole);
+    if (currentRole === "employee") loadItems();
   } else {
     pinError.textContent = "الرمز غير صحيح، حاول مرة أخرى";
     entered = "";
@@ -483,6 +611,258 @@ document.getElementById('savePinsBtn').addEventListener('click', async () => {
     msg.className = "msg err";
   }
 });
+
+// =====================================================================
+// بحث الأصناف — قراءة بيانات الشيت
+// =====================================================================
+// رابط الشيت المنشور بصيغة CSV (File > Share > Publish to web > CSV بجوجل شيت)
+const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSYJP_O-jmrABM6jSTcEGTq5WZAE1J5k-wO-deCQvnpM_5gHbZmuYR2PVR7cPSZoAQHXtk68dOzH65K/pub?output=csv";
+
+// تسميات عربية للمخازن/الفروع — أضف سطرًا هنا تلقائيًا يكفي عند إضافة عمود Qty_جديد بالشيت
+const CURRENCY = "د.ل";
+const BRANCH_LABELS = {
+  Almahal: "المحل",
+  Alqawarsha: "القوارشة",
+  Tarablus: "طرابلس",
+  Misrata: "مصراتة",
+  Zawawa: "زواوة"
+};
+function branchLabel(key){ return BRANCH_LABELS[key] || key; }
+
+let ITEMS = [];
+let activeCategory = "الكل";
+
+function mapRow(r){
+  const number = (r['item_no'] || '').toString().trim();
+  const nameAr = (r['item_name'] || '').toString().trim();
+  const nameEn = (r['e_name'] || '').toString().trim();
+  const price = parseFloat(r['Price']) || 0;
+  const costPrice = parseFloat(r['co_price']) || 0;
+  const company = (r['Company'] || '').toString().trim();
+  const country = (r['Country'] || '').toString().trim();
+  // عمود التصنيف لسا غير موجود بالشيت — لما يُضاف غدًا بأي من هذه الأسماء رح يشتغل تلقائيًا بدون أي تعديل بالكود
+  const category = (r['التصنيف'] || r['تصنيف'] || r['تصنيف الرئيسي'] || r['Category'] || '').toString().trim();
+
+  const branches = {};
+  Object.keys(r).forEach(k=>{
+    if(k.indexOf('Qty_') === 0){
+      branches[k.slice(4)] = parseFloat(r[k]) || 0;
+    }
+  });
+  const totalQty = Object.values(branches).reduce((a,b)=>a+b, 0);
+
+  return { number, nameAr, nameEn, price, costPrice, company, country, category, branches, totalQty };
+}
+
+function formatNum(n){
+  const rounded = Math.round((n || 0) * 1000) / 1000;
+  return rounded.toLocaleString('en-US', { maximumFractionDigits: 3 });
+}
+
+let itemsLoaded = false;
+function loadItems(){
+  if(itemsLoaded || !SHEET_CSV_URL) return;
+  Papa.parse(SHEET_CSV_URL, {
+    download: true,
+    header: true,
+    skipEmptyLines: true,
+    complete: function(res){
+      ITEMS = res.data.map(mapRow).filter(it => it.number);
+      itemsLoaded = true;
+      renderCategoryChips();
+      renderResults();
+    },
+    error: function(err){
+      document.getElementById('employeeItemCount').textContent = "تعذّر تحميل بيانات الأصناف — تحقق من الاتصال بالإنترنت";
+      console.warn("Sheet load error", err);
+    }
+  });
+}
+
+function renderCategoryChips(){
+  const wrap = document.getElementById('employeeChips');
+  const cats = Array.from(new Set(ITEMS.map(it => it.category).filter(Boolean)));
+  if(cats.length === 0){ wrap.innerHTML = ""; return; } // ما فيه تصنيفات بعد — الشريط يختفي تلقائيًا
+  const all = ["الكل", ...cats];
+  wrap.innerHTML = all.map(c =>
+    `<button class="chip ${c === activeCategory ? 'active' : ''}" data-cat="${c}">${c}</button>`
+  ).join('');
+  wrap.querySelectorAll('.chip').forEach(chip=>{
+    chip.addEventListener('click', ()=>{
+      activeCategory = chip.dataset.cat;
+      renderCategoryChips();
+      renderResults();
+    });
+  });
+}
+
+// كل ما كان الرقم أصغر كان الصنف أقرب لما تبحث عنه (0 = تطابق تام)
+function matchRank(it, q){
+  const num = it.number.toLowerCase();
+  const nAr = it.nameAr.toLowerCase();
+  const nEn = it.nameEn.toLowerCase();
+  if(num === q) return 0;
+  if(num.startsWith(q)) return 1;
+  if(nAr.startsWith(q) || nEn.startsWith(q)) return 2;
+  if(num.includes(q)) return 3;
+  if(nAr.includes(q) || nEn.includes(q)) return 4;
+  return -1; // لا يوجد تطابق إطلاقًا
+}
+
+function searchItems(){
+  const q = document.getElementById('employeeSearchInput').value.trim().toLowerCase();
+  let list = ITEMS;
+  if(activeCategory !== "الكل"){
+    list = list.filter(it => it.category === activeCategory);
+  }
+  if(q){
+    list = list
+      .map(it => ({ it, rank: matchRank(it, q) }))
+      .filter(x => x.rank !== -1)
+      .sort((a, b) => a.rank - b.rank)
+      .map(x => x.it);
+  }
+  return list;
+}
+
+function renderResults(){
+  const wrap = document.getElementById('employeeResults');
+  const countEl = document.getElementById('employeeItemCount');
+  const list = searchItems();
+  countEl.textContent = ITEMS.length ? `${list.length} من ${ITEMS.length} صنف` : "جارِ تحميل بيانات الأصناف…";
+
+  if(!ITEMS.length){ wrap.innerHTML = ""; return; }
+  if(!list.length){
+    wrap.innerHTML = `<div class="empty-note">ما فيه نتائج مطابقة</div>`;
+    return;
+  }
+  wrap.innerHTML = list.slice(0, 60).map(it => `
+    <button class="item-row" data-num="${it.number}">
+      <span class="num-badge">${it.number}</span>
+      <span class="item-name">${it.nameAr || it.nameEn || '—'}</span>
+      <span class="item-price">${formatNum(it.price)} ${CURRENCY}</span>
+    </button>
+  `).join('');
+  wrap.querySelectorAll('.item-row').forEach(row=>{
+    row.addEventListener('click', ()=> openItemDetail(row.dataset.num));
+  });
+}
+
+document.getElementById('employeeSearchInput').addEventListener('input', renderResults);
+
+let currentItem = null;
+function openItemDetail(number){
+  const item = ITEMS.find(it => it.number === number);
+  if(!item) return;
+  currentItem = item;
+
+  const branchKeys = Object.keys(item.branches);
+  const branchCells = branchKeys.map(k => `
+    <div class="stat"><span class="k">${branchLabel(k)}</span><span class="v">${formatNum(item.branches[k])}</span></div>
+  `).join('');
+
+  document.getElementById('employeeItemCard').innerHTML = `
+    <div class="ic-num">${item.number}</div>
+    <h3>${item.nameAr || '—'}</h3>
+    ${item.nameEn ? `<p class="ic-en">${item.nameEn}</p>` : ''}
+    <div class="ic-price">${formatNum(item.price)} ${CURRENCY}</div>
+    <div class="stat-grid">
+      <div class="stat"><span class="k">الشركة المصنعة</span><span class="v">${item.company || '—'}</span></div>
+      <div class="stat"><span class="k">بلد الصنع</span><span class="v">${item.country || '—'}</span></div>
+      <div class="stat wide"><span class="k">الكمية الإجمالية (كل الفروع)</span><span class="v big">${formatNum(item.totalQty)}</span></div>
+    </div>
+    <div class="section-label">الكمية حسب الفرع</div>
+    <div class="stat-grid branch-grid">
+      ${branchCells}
+    </div>
+  `;
+
+  document.getElementById('employeeSearchScreen').style.display = "none";
+  document.getElementById('employeeDetailScreen').style.display = "block";
+}
+
+document.getElementById('employeeDetailBack').addEventListener('click', ()=>{
+  document.getElementById('employeeDetailScreen').style.display = "none";
+  document.getElementById('employeeSearchScreen').style.display = "block";
+});
+
+function buildShareText(item){
+  const lines = [
+    `*${item.nameAr || item.nameEn || ''}*`,
+    `رقم الصنف: ${item.number}`,
+    `السعر: ${formatNum(item.price)} ${CURRENCY}`,
+  ];
+  if(item.company) lines.push(`الشركة المصنعة: ${item.company}`);
+  lines.push(`— شركة جادو لإستيراد معدات المطاعم والمقاهي`);
+  return lines.join('\n');
+}
+
+document.getElementById('shareWhatsappBtn').addEventListener('click', ()=>{
+  if(!currentItem) return;
+  const text = encodeURIComponent(buildShareText(currentItem));
+  window.open(`https://wa.me/?text=${text}`, '_blank');
+});
+
+if(navigator.share){
+  const moreBtn = document.getElementById('shareMoreBtn');
+  moreBtn.style.display = "flex";
+  moreBtn.addEventListener('click', ()=>{
+    if(!currentItem) return;
+    navigator.share({ text: buildShareText(currentItem) }).catch(()=>{});
+  });
+}
+
+// =====================================================================
+// مسح الكيو آر كود بالكاميرا
+// =====================================================================
+const camOverlay = document.getElementById('camOverlay');
+const camVideo = document.getElementById('camVideo');
+const camCanvas = document.getElementById('camCanvas');
+const camHint = document.getElementById('camHint');
+let camStream = null;
+let camScanning = false;
+
+async function openCamera(){
+  camHint.textContent = "وجّه الكاميرا نحو الكيو آر كود الخاص بالمنتج";
+  camOverlay.classList.add('open');
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+    camVideo.srcObject = camStream;
+    camScanning = true;
+    requestAnimationFrame(tickCamera);
+  } catch(e){
+    camHint.textContent = "تعذّر فتح الكاميرا — تحقق من صلاحيات المتصفح";
+  }
+}
+function closeCamera(){
+  camScanning = false;
+  camOverlay.classList.remove('open');
+  if(camStream){ camStream.getTracks().forEach(t => t.stop()); camStream = null; }
+}
+function tickCamera(){
+  if(!camScanning) return;
+  if(camVideo.readyState === camVideo.HAVE_ENOUGH_DATA){
+    camCanvas.width = camVideo.videoWidth;
+    camCanvas.height = camVideo.videoHeight;
+    const ctx = camCanvas.getContext('2d');
+    ctx.drawImage(camVideo, 0, 0, camCanvas.width, camCanvas.height);
+    const imageData = ctx.getImageData(0, 0, camCanvas.width, camCanvas.height);
+    const code = jsQR(imageData.data, imageData.width, imageData.height);
+    if(code && code.data){
+      const found = ITEMS.find(it => it.number === code.data.trim());
+      closeCamera();
+      if(found){
+        openItemDetail(found.number);
+      } else {
+        alert("ما فيه صنف مطابق لهذا الكيو آر كود: " + code.data);
+      }
+      return;
+    }
+  }
+  requestAnimationFrame(tickCamera);
+}
+document.getElementById('employeeScanBtn').addEventListener('click', openCamera);
+document.getElementById('camCloseBtn').addEventListener('click', closeCamera);
 
 // ---------------------------------------------------------------
 initFirebase();
