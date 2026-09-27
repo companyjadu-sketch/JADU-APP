@@ -309,7 +309,7 @@
             <path d="M9 20a6 6 0 0 1 12 0"/><circle cx="15" cy="8" r="4"/><path d="M3 20a5 5 0 0 1 7-4.6"/><circle cx="7" cy="8" r="3"/>
           </svg>
         </div>
-        <div class="role-text"><strong>زبون</strong><span>تصفح الأصناف عبر مسح الكيو آر كود</span></div>
+        <div class="role-text"><strong>زبون</strong><span>تصفح الأصناف والأسعار بدون رمز دخول</span></div>
       </button>
       <button class="role-btn" data-role="admin" data-locked="true">
         <div class="role-icon">
@@ -382,7 +382,7 @@
         <div class="msg" id="pcfMsg"></div>
       </div>
 
-      <div class="share-row" style="margin-top:16px;">
+      <div class="share-row" id="employeeShareRow" style="margin-top:16px;">
         <button class="share-btn wa" id="shareWhatsappBtn">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.5 3.5A11 11 0 0 0 3.6 17.3L2 22l4.8-1.6A11 11 0 1 0 20.5 3.5Zm-8.5 17a9 9 0 0 1-4.6-1.3l-.3-.2-3.3 1.1 1.1-3.2-.2-.3A9 9 0 1 1 12 20.5Zm5-6.7c-.3-.1-1.6-.8-1.8-.9-.2-.1-.4-.1-.6.1s-.7.9-.9 1-.3.2-.6.1a7.3 7.3 0 0 1-2.1-1.3 8 8 0 0 1-1.5-1.9c-.2-.3 0-.5.1-.6l.4-.5.2-.4v-.4C10 8.9 9.5 7.6 9.3 7.1c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-1 2.3c0 1.3.9 2.6 1.1 2.8.1.2 1.9 2.9 4.6 4a15 15 0 0 0 1.5.6c.6.2 1.2.2 1.6.1.5-.1 1.6-.6 1.8-1.3.2-.6.2-1.1.2-1.2s-.2-.2-.5-.3Z"/></svg>
           مشاركة عبر واتساب
@@ -651,8 +651,10 @@ document.querySelectorAll('[data-back]').forEach(btn=>{
 
 // تنقّل واجهة الموظف بين 3 شاشات داخلية: التصنيف -> البحث -> تفاصيل الصنف
 let employeeStep = "category";
-// من وين دخلنا شاشة الأصناف؟ "gate" لو من الموظف، "admin" لو من الإدارة العامة
+// من وين دخلنا شاشة الأصناف؟ "gate" لو من الموظف أو الزبون، "admin" لو من الإدارة العامة
 let employeeEntryPoint = "gate";
+// من يشوف شاشة الأصناف الآن؟ "employee" | "admin" | "customer" — يتحكم بشنو يظهر (الكمية، زر المشاركة، بيانات الشراء)
+let currentViewerRole = "employee";
 function goEmployeeStep(step){
   employeeStep = step;
   document.getElementById('employeeCategoryScreen').style.display = step === "category" ? "block" : "none";
@@ -675,6 +677,7 @@ document.querySelectorAll('[data-go]').forEach(btn=>{
 
 // الإدارة العامة -> الأصناف: نفس شاشة بحث الموظف، لكن الرجوع يرجعنا لقائمة الإدارة
 document.getElementById('adminItemsBtn').addEventListener('click', ()=>{
+  currentViewerRole = "admin";
   employeeEntryPoint = "admin";
   activeCategoryValues = null;
   showView("employee");
@@ -742,7 +745,12 @@ document.querySelectorAll('.role-btn').forEach(btn => {
     const locked = btn.dataset.locked === "true";
     if (!locked) {
       if (role === "customer") {
-        alert("قريبًا: واجهة الزبون (صفحة منفصلة عبر مسح الكيو آر كود)");
+        currentViewerRole = "customer";
+        employeeEntryPoint = "gate";
+        activeCategoryValues = null;
+        showView("employee");
+        loadItems();
+        goEmployeeStep("category");
       }
       return;
     }
@@ -774,6 +782,7 @@ function checkPin(){
     closeOverlay();
     showView(currentRole);
     if (currentRole === "employee") {
+      currentViewerRole = "employee";
       employeeEntryPoint = "gate";
       activeCategoryValues = null;
       loadItems();
@@ -986,6 +995,7 @@ function renderResults(){
     wrap.innerHTML = `<div class="empty-note">ما فيه نتائج مطابقة</div>`;
     return;
   }
+  const showQty = currentViewerRole !== "customer";
   wrap.innerHTML = list.slice(0, 60).map(it => {
     const subParts = [it.company, it.country, it.color].filter(Boolean);
     const inStock = it.totalQty > 0;
@@ -998,7 +1008,7 @@ function renderResults(){
       </div>
       <div class="ir-bottom">
         <span class="ir-sub">${subParts.length ? subParts.join(' · ') : ''}</span>
-        <span class="qty-pill ${inStock ? 'in' : 'out'}">الكمية: ${formatNum(it.totalQty)}</span>
+        ${showQty ? `<span class="qty-pill ${inStock ? 'in' : 'out'}">الكمية: ${formatNum(it.totalQty)}</span>` : ''}
       </div>
     </button>
   `;
@@ -1021,6 +1031,8 @@ function openItemDetail(number){
     <div class="stat"><span class="k">${k}</span><span class="v">${formatNum(item.branches[k])}</span></div>
   `).join('');
 
+  const showQty = currentViewerRole !== "customer"; // الزبون ما يشوف أي بيانات كمية إطلاقًا
+
   document.getElementById('employeeItemCard').innerHTML = `
     <div class="ic-num">${item.number}</div>
     <h3>${item.name || '—'}</h3>
@@ -1029,13 +1041,18 @@ function openItemDetail(number){
       <div class="stat"><span class="k">الشركة المصنعة</span><span class="v">${item.company || '—'}</span></div>
       <div class="stat"><span class="k">بلد الصنع</span><span class="v">${item.country || '—'}</span></div>
       ${item.color ? `<div class="stat"><span class="k">اللون</span><span class="v">${item.color}</span></div>` : ''}
-      <div class="stat wide"><span class="k">الكمية الإجمالية (كل الفروع)</span><span class="v big">${formatNum(item.totalQty)}</span></div>
+      ${showQty ? `<div class="stat wide"><span class="k">الكمية الإجمالية (كل الفروع)</span><span class="v big">${formatNum(item.totalQty)}</span></div>` : ''}
     </div>
+    ${showQty ? `
     <div class="section-label">الكمية حسب الفرع</div>
     <div class="stat-grid branch-grid">
       ${branchCells}
     </div>
+    ` : ''}
   `;
+
+  // زر المشاركة يظهر للموظف فقط (يُلغى للإدارة العامة وللزبون)
+  document.getElementById('employeeShareRow').style.display = currentViewerRole === "employee" ? "flex" : "none";
 
   const isAdminContext = employeeEntryPoint === "admin";
   const purchaseInfo = document.getElementById('adminPurchaseInfo');
