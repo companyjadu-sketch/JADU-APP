@@ -112,9 +112,13 @@
   }
   .list-icon svg{ width:18px; height:18px; color:var(--steel-900); }
   .list-text{ flex:1; }
-  .list-text strong{ display:block; font-size:14.5px; font-weight:700; }
+  .list-text strong{ display:flex; align-items:center; gap:8px; font-size:14.5px; font-weight:700; }
   .list-text span{ display:block; font-size:11.5px; color:var(--steel-500); margin-top:1px; }
   .chev{ width:16px; height:16px; color:var(--steel-500); transform:scaleX(-1); }
+  .list-badge{
+    background:var(--amber); color:#fff; font-family:'IBM Plex Mono', monospace;
+    font-size:11px; font-weight:700; border-radius:20px; padding:2px 8px; line-height:1.4;
+  }
 
   .field{ margin-bottom:18px; }
   .field label{ display:block; font-size:12.5px; color:var(--steel-500); margin-bottom:6px; font-weight:500; }
@@ -354,6 +358,30 @@
     <!-- شاشة تفاصيل الصنف -->
     <div id="employeeDetailScreen" style="display:none;">
       <div class="item-card" id="employeeItemCard"><!-- تُبنى ديناميكيًا --></div>
+
+      <!-- بيانات الشراء — تظهر فقط للإدارة العامة -->
+      <div id="adminPurchaseInfo" style="display:none; margin-top:14px;"></div>
+
+      <!-- زر تغيير السعر — يظهر فقط للإدارة العامة -->
+      <div class="share-row" id="adminPriceChangeRow" style="display:none; margin-top:14px;">
+        <button class="primary-btn" id="openPriceChangeBtn" style="margin-top:0;">تغيير السعر</button>
+      </div>
+
+      <!-- نموذج تغيير السعر -->
+      <div id="priceChangeForm" style="display:none; margin-top:14px; border:1.5px solid var(--line); border-radius:12px; padding:14px;">
+        <div class="section-label">تغيير السعر — <span id="pcfItemNum"></span></div>
+        <div class="field">
+          <label>السعر القطاعي الجديد (الحالي: <span id="pcfOldRetail"></span>)</label>
+          <input type="text" inputmode="decimal" id="pcfNewRetail" placeholder="اتركه فارغًا إذا بدون تغيير" style="direction:ltr; letter-spacing:normal;">
+        </div>
+        <div class="field">
+          <label>سعر الجملة الجديد (الحالي: <span id="pcfOldWholesale"></span>)</label>
+          <input type="text" inputmode="decimal" id="pcfNewWholesale" placeholder="اتركه فارغًا إذا بدون تغيير" style="direction:ltr; letter-spacing:normal;">
+        </div>
+        <button class="primary-btn" id="pcfAddBtn">إضافة إلى قائمة تغيير الأسعار</button>
+        <div class="msg" id="pcfMsg"></div>
+      </div>
+
       <div class="share-row" style="margin-top:16px;">
         <button class="share-btn wa" id="shareWhatsappBtn">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.5 3.5A11 11 0 0 0 3.6 17.3L2 22l4.8-1.6A11 11 0 1 0 20.5 3.5Zm-8.5 17a9 9 0 0 1-4.6-1.3l-.3-.2-3.3 1.1 1.1-3.2-.2-.3A9 9 0 1 1 12 20.5Zm5-6.7c-.3-.1-1.6-.8-1.8-.9-.2-.1-.4-.1-.6.1s-.7.9-.9 1-.3.2-.6.1a7.3 7.3 0 0 1-2.1-1.3 8 8 0 0 1-1.5-1.9c-.2-.3 0-.5.1-.6l.4-.5.2-.4v-.4C10 8.9 9.5 7.6 9.3 7.1c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-1 2.3c0 1.3.9 2.6 1.1 2.8.1.2 1.9 2.9 4.6 4a15 15 0 0 0 1.5.6c.6.2 1.2.2 1.6.1.5-.1 1.6-.6 1.8-1.3.2-.6.2-1.1.2-1.2s-.2-.2-.5-.3Z"/></svg>
@@ -376,6 +404,42 @@
       <h2>الإدارة العامة</h2>
     </div>
     <div class="list">
+      <button class="list-btn" id="adminItemsBtn">
+        <div class="list-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>
+          </svg>
+        </div>
+        <div class="list-text"><strong>الأصناف</strong><span>بحث وكشف كامل بيانات الأصناف والكميات</span></div>
+        <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
+      <button class="list-btn" id="adminOverviewBtn">
+        <div class="list-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/>
+          </svg>
+        </div>
+        <div class="list-text"><strong>نظرة عامة</strong><span>إحصائيات سريعة عن المخزون وآخر تحديث للبيانات</span></div>
+        <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
+      <button class="list-btn" id="adminCapitalBtn">
+        <div class="list-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="9"/><path d="M12 7v10M15 9.5c0-1.4-1.3-2.5-3-2.5s-3 1.1-3 2.5S10.3 12 12 12s3 1.1 3 2.5-1.3 2.5-3 2.5-3-1.1-3-2.5"/>
+          </svg>
+        </div>
+        <div class="list-text"><strong>كشف رأس المال</strong><span>قيمة المخزون الحالية بالدينار والدولار</span></div>
+        <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
+      <button class="list-btn" id="adminPriceListBtn">
+        <div class="list-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+          </svg>
+        </div>
+        <div class="list-text"><strong>قائمة تغيير الأسعار <span class="list-badge" id="priceCartBadge" style="display:none;">0</span></strong><span>مراجعة التغييرات المضافة ومشاركتها</span></div>
+        <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
       <button class="list-btn" data-go="admin-settings">
         <div class="list-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -386,6 +450,57 @@
         <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
       </button>
     </div>
+  </div>
+
+  <!-- ============ الإدارة العامة — قائمة تغيير الأسعار ============ -->
+  <div class="view" id="view-admin-pricelist">
+    <div class="back-row">
+      <button class="back-btn" data-back="admin">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <h2>قائمة تغيير الأسعار</h2>
+    </div>
+    <div id="priceCartBody"><div class="empty-note">لا توجد تغييرات مضافة بعد</div></div>
+    <div class="share-row" style="margin-top:16px;">
+      <button class="share-btn wa" id="shareCartWhatsappBtn">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.5 3.5A11 11 0 0 0 3.6 17.3L2 22l4.8-1.6A11 11 0 1 0 20.5 3.5Zm-8.5 17a9 9 0 0 1-4.6-1.3l-.3-.2-3.3 1.1 1.1-3.2-.2-.3A9 9 0 1 1 12 20.5Zm5-6.7c-.3-.1-1.6-.8-1.8-.9-.2-.1-.4-.1-.6.1s-.7.9-.9 1-.3.2-.6.1a7.3 7.3 0 0 1-2.1-1.3 8 8 0 0 1-1.5-1.9c-.2-.3 0-.5.1-.6l.4-.5.2-.4v-.4C10 8.9 9.5 7.6 9.3 7.1c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-1 2.3c0 1.3.9 2.6 1.1 2.8.1.2 1.9 2.9 4.6 4a15 15 0 0 0 1.5.6c.6.2 1.2.2 1.6.1.5-.1 1.6-.6 1.8-1.3.2-.6.2-1.1.2-1.2s-.2-.2-.5-.3Z"/></svg>
+        مشاركة عبر واتساب
+      </button>
+      <button class="share-btn" id="shareCartMoreBtn" style="display:none;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5 15.4 17.5M15.4 6.5 8.6 10.5"/></svg>
+        مشاركة أخرى
+      </button>
+    </div>
+  </div>
+
+  <!-- ============ الإدارة العامة — نظرة عامة ============ -->
+  <div class="view" id="view-admin-overview">
+    <div class="back-row">
+      <button class="back-btn" data-back="admin">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <h2>نظرة عامة</h2>
+    </div>
+    <div id="adminOverviewBody"><div class="empty-note">جارِ تحميل البيانات…</div></div>
+  </div>
+
+  <!-- ============ الإدارة العامة — كشف رأس المال ============ -->
+  <div class="view" id="view-admin-capital">
+    <div class="back-row">
+      <button class="back-btn" data-back="admin">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <h2>كشف رأس المال</h2>
+    </div>
+
+    <div class="field">
+      <label>سعر صرف الدولار الحالي مقابل الدينار (لعرض رأس المال بالدولار)</label>
+      <input type="text" inputmode="decimal" id="usdRateInput" placeholder="مثال: 5.2">
+    </div>
+    <button class="primary-btn" id="saveUsdRateBtn">حفظ سعر الصرف</button>
+    <div class="msg" id="usdRateMsg"></div>
+
+    <div id="adminCapitalBody" style="margin-top:16px;"><div class="empty-note">جارِ تحميل البيانات…</div></div>
   </div>
 
   <!-- ============ الإدارة العامة — الإعدادات ============ -->
@@ -465,6 +580,8 @@ let firebaseReady = false;
 
 // الرموز الافتراضية (تُستخدم فقط إذا تعذّر الاتصال بقاعدة البيانات)
 let PINS = { employee: "1234", admin: "9999" };
+// إعدادات إضافية للإدارة (حاليًا: سعر صرف الدولار الحالي لعرض رأس المال بالدولار)
+let SETTINGS = { usdRate: 0 };
 
 function initFirebase(){
   try {
@@ -472,6 +589,7 @@ function initFirebase(){
     db = firebase.firestore();
     firebaseReady = true;
     loadPins();
+    loadSettings();
   } catch(e) {
     console.warn("تعذّر تشغيل Firebase — تأكد من ضبط firebaseConfig", e);
     setSyncStatus(false, "غير متصل — يعمل بالرموز الافتراضية محليًا");
@@ -505,6 +623,20 @@ async function loadPins(){
   }
 }
 
+async function loadSettings(){
+  if(!db) return;
+  try {
+    const doc = await db.collection("settings").doc("currency").get();
+    if (doc.exists) {
+      const data = doc.data();
+      SETTINGS.usdRate = parseFloat(data.usdRate) || 0;
+    }
+    renderCapitalReport();
+  } catch(e) {
+    console.warn("تعذّرت قراءة سعر الصرف من القاعدة", e);
+  }
+}
+
 // ---------------------------------------------------------------
 // التنقل بين الشاشات
 // ---------------------------------------------------------------
@@ -519,6 +651,8 @@ document.querySelectorAll('[data-back]').forEach(btn=>{
 
 // تنقّل واجهة الموظف بين 3 شاشات داخلية: التصنيف -> البحث -> تفاصيل الصنف
 let employeeStep = "category";
+// من وين دخلنا شاشة الأصناف؟ "gate" لو من الموظف، "admin" لو من الإدارة العامة
+let employeeEntryPoint = "gate";
 function goEmployeeStep(step){
   employeeStep = step;
   document.getElementById('employeeCategoryScreen').style.display = step === "category" ? "block" : "none";
@@ -530,13 +664,65 @@ function goEmployeeStep(step){
 document.getElementById('employeeBackBtn').addEventListener('click', ()=>{
   if(employeeStep === "detail") goEmployeeStep("search");
   else if(employeeStep === "search") goEmployeeStep("category");
-  else showView("gate");
+  else showView(employeeEntryPoint);
 });
 document.querySelectorAll('[data-go]').forEach(btn=>{
   btn.addEventListener('click', ()=>{
     showView(btn.dataset.go);
     if (btn.dataset.go === "admin-settings") fillSettingsForm();
   });
+});
+
+// الإدارة العامة -> الأصناف: نفس شاشة بحث الموظف، لكن الرجوع يرجعنا لقائمة الإدارة
+document.getElementById('adminItemsBtn').addEventListener('click', ()=>{
+  employeeEntryPoint = "admin";
+  activeCategoryValues = null;
+  showView("employee");
+  loadItems();
+  goEmployeeStep("category");
+});
+
+// الإدارة العامة -> نظرة عامة
+document.getElementById('adminOverviewBtn').addEventListener('click', ()=>{
+  showView("admin-overview");
+  loadItems();
+  renderAdminOverview();
+});
+
+// الإدارة العامة -> كشف رأس المال
+document.getElementById('adminCapitalBtn').addEventListener('click', ()=>{
+  showView("admin-capital");
+  document.getElementById('usdRateInput').value = SETTINGS.usdRate || "";
+  document.getElementById('usdRateMsg').textContent = "";
+  document.getElementById('usdRateMsg').className = "msg";
+  loadItems();
+  renderCapitalReport();
+});
+
+document.getElementById('saveUsdRateBtn').addEventListener('click', async () => {
+  const val = parseFloat(document.getElementById('usdRateInput').value.trim());
+  const msg = document.getElementById('usdRateMsg');
+  if (!val || val <= 0) {
+    msg.textContent = "أدخل رقمًا صحيحًا أكبر من صفر";
+    msg.className = "msg err";
+    return;
+  }
+  SETTINGS.usdRate = val;
+  if (!db) {
+    msg.textContent = "تم الحفظ محليًا فقط (لا يوجد اتصال بقاعدة البيانات — لن ينعكس على باقي الأجهزة)";
+    msg.className = "msg err";
+    renderCapitalReport();
+    return;
+  }
+  try {
+    await db.collection("settings").doc("currency").set({ usdRate: val });
+    msg.textContent = "تم الحفظ وتمت مزامنته مع كل الأجهزة";
+    msg.className = "msg ok";
+  } catch(e) {
+    msg.textContent = "تعذّر الحفظ في قاعدة البيانات";
+    msg.className = "msg err";
+  }
+  renderCapitalReport();
 });
 
 // ---------------------------------------------------------------
@@ -588,6 +774,8 @@ function checkPin(){
     closeOverlay();
     showView(currentRole);
     if (currentRole === "employee") {
+      employeeEntryPoint = "gate";
+      activeCategoryValues = null;
       loadItems();
       goEmployeeStep("category");
     }
@@ -718,6 +906,8 @@ function loadItems(){
       ITEMS = res.data.map(mapRow).filter(it => it.number);
       itemsLoaded = true;
       renderResults();
+      renderAdminOverview();
+      renderCapitalReport();
     },
     error: function(err){
       document.getElementById('employeeItemCount').textContent = "تعذّر تحميل بيانات الأصناف — تحقق من الاتصال بالإنترنت";
@@ -743,28 +933,41 @@ function renderCategoryGrid(){
 }
 renderCategoryGrid(); // ثابتة، ما تعتمد على تحميل بيانات الشيت
 
-// كل ما كان الرقم أصغر كان الصنف أقرب لما تبحث عنه (0 = تطابق تام)
-function matchRank(it, q){
+// يقسّم نص البحث إلى قطع بحسب الفراغات (بحث بالأجزاء: "كرب فر كهرب" -> ["كرب","فر","كهرب"])
+function tokenizeQuery(q){
+  return q.split(/\s+/).map(t => t.trim()).filter(Boolean);
+}
+
+// كل ما كان الرقم أصغر كان الصنف أقرب لما تبحث عنه (0 = تطابق تام، -1 = لا يوجد تطابق)
+function matchRank(it, tokens){
   const num = it.number.toLowerCase();
   const name = it.name.toLowerCase();
   const type = (it.typeCode || '').toLowerCase();
+  const combined = `${num} ${name} ${type}`;
+
+  // شرط أساسي: كل قطعة من قطع البحث لازم تكون موجودة بمكان ما (بالاسم أو الرقم أو شفرة النوع)
+  const allTokensFound = tokens.every(t => combined.includes(t));
+  if(!allTokensFound) return -1;
+
+  const q = tokens.join(' ');
   if(num === q || type === q) return 0;
   if(num.startsWith(q) || type.startsWith(q)) return 1;
   if(name.startsWith(q)) return 2;
   if(num.includes(q) || type.includes(q)) return 3;
   if(name.includes(q)) return 4;
-  return -1; // لا يوجد تطابق إطلاقًا
+  return 5; // تطابق جزئي بكل القطع لكن مو متسلسلة بنفس الترتيب
 }
 
 function searchItems(){
-  const q = document.getElementById('employeeSearchInput').value.trim().toLowerCase();
+  const raw = document.getElementById('employeeSearchInput').value.trim().toLowerCase();
   let list = ITEMS;
   if(activeCategoryValues !== null){
     list = list.filter(it => activeCategoryValues.includes(it.category));
   }
-  if(q){
+  if(raw){
+    const tokens = tokenizeQuery(raw);
     list = list
-      .map(it => ({ it, rank: matchRank(it, q) }))
+      .map(it => ({ it, rank: matchRank(it, tokens) }))
       .filter(x => x.rank !== -1)
       .sort((a, b) => a.rank - b.rank)
       .map(x => x.it);
@@ -834,7 +1037,120 @@ function openItemDetail(number){
     </div>
   `;
 
+  const isAdminContext = employeeEntryPoint === "admin";
+  const purchaseInfo = document.getElementById('adminPurchaseInfo');
+  const priceChangeRow = document.getElementById('adminPriceChangeRow');
+  const priceChangeForm = document.getElementById('priceChangeForm');
+  if(isAdminContext){
+    purchaseInfo.style.display = "block";
+    purchaseInfo.innerHTML = `
+      <div class="section-label">بيانات الشراء (إدارية)</div>
+      <div class="stat-grid">
+        <div class="stat"><span class="k">آخر سعر شراء</span><span class="v">${item.lastPurchasePrice ? formatNum(item.lastPurchasePrice) : '—'}</span></div>
+        <div class="stat"><span class="k">العملة</span><span class="v">${item.purchaseCurrency || '—'}</span></div>
+        <div class="stat"><span class="k">سعر الصرف</span><span class="v">${item.exchangeRate ? formatNum(item.exchangeRate) : '—'}</span></div>
+        <div class="stat"><span class="k">تاريخ آخر شراء</span><span class="v">${item.lastPurchaseDate || '—'}</span></div>
+      </div>
+    `;
+    priceChangeRow.style.display = "flex";
+  } else {
+    purchaseInfo.style.display = "none";
+    purchaseInfo.innerHTML = "";
+    priceChangeRow.style.display = "none";
+  }
+  priceChangeForm.style.display = "none"; // نصفّر النموذج كل ما نفتح صنف جديد
+
   goEmployeeStep("detail");
+}
+
+// ---------------------------------------------------------------
+// الإدارة العامة — نظرة عامة (إحصائيات للقراءة فقط، بدون أي تعديل على البيانات)
+// ---------------------------------------------------------------
+function renderAdminOverview(){
+  const body = document.getElementById('adminOverviewBody');
+  if(!body) return;
+  if(!itemsLoaded || !ITEMS.length){
+    body.innerHTML = `<div class="empty-note">جارِ تحميل بيانات الأصناف…</div>`;
+    return;
+  }
+
+  const total = ITEMS.length;
+  const outOfStock = ITEMS.filter(it => it.totalQty <= 0).length;
+  const inStock = total - outOfStock;
+
+  // عدد الفروع/المخازن وعدد الأصناف الناقصة (كمية صفر) بكل فرع
+  const branchNames = Object.keys(ITEMS[0] ? ITEMS[0].branches : {});
+  const branchRows = branchNames.map(name => {
+    const zeroCount = ITEMS.filter(it => (it.branches[name] || 0) <= 0).length;
+    return `<div class="stat"><span class="k">${name}</span><span class="v">${zeroCount} صنف ناقص</span></div>`;
+  }).join('');
+
+  body.innerHTML = `
+    <div class="stat-grid">
+      <div class="stat"><span class="k">إجمالي عدد الأصناف</span><span class="v big">${total}</span></div>
+      <div class="stat"><span class="k">أصناف متوفرة</span><span class="v big">${inStock}</span></div>
+      <div class="stat wide"><span class="k">أصناف غير متوفرة في كل الفروع</span><span class="v big">${outOfStock}</span></div>
+    </div>
+    <div class="section-label">الأصناف الناقصة حسب الفرع</div>
+    <div class="stat-grid branch-grid">
+      ${branchRows || '<div class="empty-note">لا توجد بيانات فروع</div>'}
+    </div>
+  `;
+}
+
+// ---------------------------------------------------------------
+// الإدارة العامة — كشف رأس المال
+// القيمة تُحسب من: آخر سعر شراء × سعر الصرف المسجّل وقت الشراء × الكمية الإجمالية
+// (لا يوجد أي تعديل على بيانات الشيت — عرض وحساب فقط)
+// ---------------------------------------------------------------
+function renderCapitalReport(){
+  const body = document.getElementById('adminCapitalBody');
+  if(!body) return;
+  if(!itemsLoaded || !ITEMS.length){
+    body.innerHTML = `<div class="empty-note">جارِ تحميل بيانات الأصناف…</div>`;
+    return;
+  }
+
+  let totalLYD = 0;
+  let missingPriceCount = 0;
+  const byCurrency = {}; // { "دولار": { count, valueLYD } }
+
+  ITEMS.forEach(it => {
+    if(!it.lastPurchasePrice || it.lastPurchasePrice <= 0){
+      missingPriceCount++;
+      return;
+    }
+    const currency = it.purchaseCurrency || "غير محدد";
+    // لو الصنف مسجّل أصلاً بالدينار أو سعر الصرف فاضي/صفر، نعتبر معامل التحويل = 1
+    const isLYD = /دينار|LYD|ل\.د|د\.ل/i.test(currency);
+    const rate = it.exchangeRate > 0 ? it.exchangeRate : 1;
+    const effectiveRate = isLYD ? 1 : rate;
+    const valueLYD = it.lastPurchasePrice * effectiveRate * it.totalQty;
+
+    totalLYD += valueLYD;
+    if(!byCurrency[currency]) byCurrency[currency] = { count: 0, valueLYD: 0 };
+    byCurrency[currency].count += 1;
+    byCurrency[currency].valueLYD += valueLYD;
+  });
+
+  const totalUSD = SETTINGS.usdRate > 0 ? totalLYD / SETTINGS.usdRate : null;
+
+  const currencyRows = Object.keys(byCurrency).map(cur => {
+    const c = byCurrency[cur];
+    return `<div class="stat"><span class="k">${cur} (${c.count} صنف)</span><span class="v">${formatNum(c.valueLYD)} ${CURRENCY}</span></div>`;
+  }).join('');
+
+  body.innerHTML = `
+    <div class="stat-grid">
+      <div class="stat wide"><span class="k">إجمالي رأس المال بالدينار</span><span class="v big">${formatNum(totalLYD)} ${CURRENCY}</span></div>
+      <div class="stat wide"><span class="k">إجمالي رأس المال بالدولار</span><span class="v big">${totalUSD !== null ? formatNum(totalUSD) + ' $' : '— أدخل سعر الصرف أعلاه —'}</span></div>
+    </div>
+    <div class="section-label">التفصيل حسب عملة الشراء الأصلية</div>
+    <div class="stat-grid branch-grid">
+      ${currencyRows || '<div class="empty-note">لا توجد بيانات شراء كافية</div>'}
+    </div>
+    ${missingPriceCount ? `<div class="empty-note" style="margin-top:10px;">تنبيه: ${missingPriceCount} صنف بدون سعر شراء مسجّل — غير محسوبين ضمن رأس المال أعلاه</div>` : ''}
+  `;
 }
 
 function buildShareText(item){
@@ -873,6 +1189,191 @@ if(navigator.share){
     navigator.share({ text: buildShareText(currentItem) }).catch(()=>{});
   });
 }
+
+// =====================================================================
+// قائمة تغيير الأسعار (الإدارة العامة) — تُخزّن محليًا بالمتصفح (localStorage)
+// وتبقى محفوظة حتى بعد تحديث الصفحة، إلى أن يتم مسحها يدويًا
+// =====================================================================
+const PRICE_CART_KEY = "jadu_price_change_cart_v1";
+
+function loadPriceCart(){
+  try {
+    const raw = localStorage.getItem(PRICE_CART_KEY);
+    if(!raw) return { items: [], shared: false };
+    const parsed = JSON.parse(raw);
+    return { items: Array.isArray(parsed.items) ? parsed.items : [], shared: !!parsed.shared };
+  } catch(e){
+    return { items: [], shared: false };
+  }
+}
+function savePriceCart(){
+  try { localStorage.setItem(PRICE_CART_KEY, JSON.stringify(priceCart)); } catch(e){}
+}
+
+let priceCart = loadPriceCart();
+
+function updatePriceCartBadge(){
+  const badge = document.getElementById('priceCartBadge');
+  if(!badge) return;
+  const count = priceCart.items.length;
+  badge.textContent = String(count);
+  badge.style.display = count > 0 ? "inline-block" : "none";
+}
+
+// إضافة تغيير سعر لصنف إلى القائمة — يتعامل مع حالة "قائمة سابقة تم إرسالها"
+function addPriceChangeToCart(item, newRetail, newWholesale){
+  if(priceCart.items.length && priceCart.shared){
+    const addToOld = window.confirm(
+      "عندك قائمة سابقة تم إرسالها من قبل ولسا موجودة.\n" +
+      "اضغط \"موافق\" لإضافة هذا التغيير لها، أو \"إلغاء\" لبدء قائمة جديدة (سيتم حذف القديمة)."
+    );
+    if(!addToOld){
+      priceCart = { items: [], shared: false };
+    } else {
+      priceCart.shared = false;
+    }
+  }
+
+  const entry = {
+    number: item.number,
+    name: item.name,
+    oldRetail: item.priceRetail,
+    oldWholesale: item.priceWholesale,
+    newRetail: newRetail,
+    newWholesale: newWholesale,
+  };
+  const idx = priceCart.items.findIndex(x => x.number === item.number);
+  if(idx >= 0) priceCart.items[idx] = entry;
+  else priceCart.items.push(entry);
+
+  savePriceCart();
+  updatePriceCartBadge();
+}
+
+function removeFromPriceCart(number){
+  priceCart.items = priceCart.items.filter(x => x.number !== number);
+  savePriceCart();
+  updatePriceCartBadge();
+  renderPriceCart();
+}
+
+function buildPriceCartShareText(){
+  const lines = ["*قائمة تغيير أسعار*", "———————————"];
+  priceCart.items.forEach((e, i) => {
+    lines.push(`${i + 1}) رقم: ${e.number} — ${e.name || ''}`);
+    if(e.newRetail !== null && e.newRetail !== undefined){
+      lines.push(`   قطاعي: ${formatNum(e.oldRetail)} ← ${formatNum(e.newRetail)}`);
+    }
+    if(e.newWholesale !== null && e.newWholesale !== undefined){
+      lines.push(`   جملة: ${formatNum(e.oldWholesale)} ← ${formatNum(e.newWholesale)}`);
+    }
+  });
+  lines.push("———————————");
+  lines.push(`عدد الأصناف: ${priceCart.items.length}`);
+  return lines.join('\n');
+}
+
+function renderPriceCart(){
+  const body = document.getElementById('priceCartBody');
+  if(!body) return;
+  if(!priceCart.items.length){
+    body.innerHTML = `<div class="empty-note">لا توجد تغييرات مضافة بعد</div>`;
+    return;
+  }
+  body.innerHTML = priceCart.items.map(e => `
+    <div class="item-row" style="cursor:default;">
+      <div class="ir-top">
+        <span class="num-badge">${e.number}</span>
+        <span class="item-name">${e.name || '—'}</span>
+        <button class="scan-btn" data-remove="${e.number}" title="حذف من القائمة" style="width:32px; height:32px;">✕</button>
+      </div>
+      <div class="ir-bottom" style="flex-direction:column; align-items:flex-start; gap:4px;">
+        ${e.newRetail !== null && e.newRetail !== undefined ? `<span class="ir-sub">قطاعي: ${formatNum(e.oldRetail)} ← ${formatNum(e.newRetail)} ${CURRENCY}</span>` : ''}
+        ${e.newWholesale !== null && e.newWholesale !== undefined ? `<span class="ir-sub">جملة: ${formatNum(e.oldWholesale)} ← ${formatNum(e.newWholesale)} ${CURRENCY}</span>` : ''}
+      </div>
+    </div>
+  `).join('');
+  body.querySelectorAll('[data-remove]').forEach(btn=>{
+    btn.addEventListener('click', ()=> removeFromPriceCart(btn.dataset.remove));
+  });
+}
+
+function afterPriceCartShared(){
+  const clear = window.confirm("هل تريد مسح القائمة الآن؟");
+  if(clear){
+    priceCart = { items: [], shared: false };
+  } else {
+    priceCart.shared = true;
+  }
+  savePriceCart();
+  updatePriceCartBadge();
+  renderPriceCart();
+}
+
+document.getElementById('adminPriceListBtn').addEventListener('click', ()=>{
+  showView("admin-pricelist");
+  renderPriceCart();
+});
+
+document.getElementById('shareCartWhatsappBtn').addEventListener('click', ()=>{
+  if(!priceCart.items.length){ alert("القائمة فارغة — أضف تغييرات أولًا"); return; }
+  const text = encodeURIComponent(buildPriceCartShareText());
+  window.open(`https://wa.me/?text=${text}`, '_blank');
+  afterPriceCartShared();
+});
+
+if(navigator.share){
+  const cartMoreBtn = document.getElementById('shareCartMoreBtn');
+  cartMoreBtn.style.display = "flex";
+  cartMoreBtn.addEventListener('click', ()=>{
+    if(!priceCart.items.length){ alert("القائمة فارغة — أضف تغييرات أولًا"); return; }
+    navigator.share({ text: buildPriceCartShareText() }).then(afterPriceCartShared).catch(()=>{});
+  });
+}
+
+// فتح/إغلاق نموذج تغيير السعر بشاشة تفاصيل الصنف
+document.getElementById('openPriceChangeBtn').addEventListener('click', ()=>{
+  const form = document.getElementById('priceChangeForm');
+  const isOpen = form.style.display !== "none";
+  form.style.display = isOpen ? "none" : "block";
+  if(!isOpen && currentItem){
+    document.getElementById('pcfItemNum').textContent = currentItem.number;
+    document.getElementById('pcfOldRetail').textContent = `${formatNum(currentItem.priceRetail)} ${CURRENCY}`;
+    document.getElementById('pcfOldWholesale').textContent = `${formatNum(currentItem.priceWholesale)} ${CURRENCY}`;
+    document.getElementById('pcfNewRetail').value = "";
+    document.getElementById('pcfNewWholesale').value = "";
+    document.getElementById('pcfMsg').textContent = "";
+    document.getElementById('pcfMsg').className = "msg";
+  }
+});
+
+document.getElementById('pcfAddBtn').addEventListener('click', ()=>{
+  const msg = document.getElementById('pcfMsg');
+  const rRaw = document.getElementById('pcfNewRetail').value.trim();
+  const wRaw = document.getElementById('pcfNewWholesale').value.trim();
+  const newRetail = rRaw ? parseFloat(rRaw) : null;
+  const newWholesale = wRaw ? parseFloat(wRaw) : null;
+
+  if((rRaw && (isNaN(newRetail) || newRetail < 0)) || (wRaw && (isNaN(newWholesale) || newWholesale < 0))){
+    msg.textContent = "أدخل أرقامًا صحيحة";
+    msg.className = "msg err";
+    return;
+  }
+  if(newRetail === null && newWholesale === null){
+    msg.textContent = "أدخل سعرًا واحدًا على الأقل";
+    msg.className = "msg err";
+    return;
+  }
+  if(!currentItem) return;
+
+  addPriceChangeToCart(currentItem, newRetail, newWholesale);
+  msg.textContent = "تمت الإضافة إلى قائمة تغيير الأسعار";
+  msg.className = "msg ok";
+  document.getElementById('pcfNewRetail').value = "";
+  document.getElementById('pcfNewWholesale').value = "";
+});
+
+updatePriceCartBadge();
 
 // =====================================================================
 // مسح الكيو آر كود بالكاميرا
