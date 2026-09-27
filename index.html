@@ -189,12 +189,16 @@
   }
   .scan-btn svg{ width:20px; height:20px; color:var(--steel-900); }
 
-  .chips{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
-  .chip{
-    padding:7px 14px; border-radius:20px; border:1.5px solid var(--line); background:transparent;
-    font-family:'Tajawal', sans-serif; font-size:12.5px; color:var(--steel-500); cursor:pointer;
+  /* شبكة اختيار التصنيف */
+  .cat-grid{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .cat-box{
+    display:flex; align-items:center; justify-content:center; text-align:center;
+    padding:26px 12px; border:1.5px solid var(--line); border-radius:12px; background:transparent;
+    font-family:'Tajawal', sans-serif; font-size:14.5px; font-weight:700; color:var(--steel-900); cursor:pointer;
+    min-height:76px;
   }
-  .chip.active{ background:var(--steel-900); border-color:var(--steel-900); color:var(--bg); font-weight:700; }
+  .cat-box:active{ background:var(--steel-200); }
+  .cat-box.all{ grid-column:1 / -1; background:var(--steel-900); color:var(--bg); border-color:var(--steel-900); }
 
   .item-count{ font-size:11.5px; color:var(--steel-500); margin-bottom:10px; }
 
@@ -321,14 +325,19 @@
   <!-- ============ واجهة الموظف — بحث الأصناف ============ -->
   <div class="view" id="view-employee">
     <div class="back-row">
-      <button class="back-btn" data-back="gate" id="employeeBackBtn">
+      <button class="back-btn" id="employeeBackBtn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
       </button>
-      <h2>بحث الأصناف</h2>
+      <h2 id="employeeHeaderTitle">اختر التصنيف</h2>
+    </div>
+
+    <!-- شاشة اختيار التصنيف -->
+    <div id="employeeCategoryScreen">
+      <div class="cat-grid" id="employeeCategoryGrid"><!-- تُبنى ديناميكيًا --></div>
     </div>
 
     <!-- شاشة البحث -->
-    <div id="employeeSearchScreen">
+    <div id="employeeSearchScreen" style="display:none;">
       <div class="search-row">
         <input type="text" id="employeeSearchInput" placeholder="ابحث برقم الصنف أو الاسم…">
         <button class="scan-btn" id="employeeScanBtn" title="مسح كيو آر كود">
@@ -338,16 +347,12 @@
           </svg>
         </button>
       </div>
-      <div class="chips" id="employeeChips"><!-- تُبنى تلقائيًا من بيانات الشيت --></div>
       <div class="item-count" id="employeeItemCount">جارِ تحميل بيانات الأصناف…</div>
       <div class="results" id="employeeResults"></div>
     </div>
 
     <!-- شاشة تفاصيل الصنف -->
     <div id="employeeDetailScreen" style="display:none;">
-      <button class="back-btn" id="employeeDetailBack" style="margin-bottom:14px;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-      </button>
       <div class="item-card" id="employeeItemCard"><!-- تُبنى ديناميكيًا --></div>
       <div class="share-row" style="margin-top:16px;">
         <button class="share-btn wa" id="shareWhatsappBtn">
@@ -511,6 +516,22 @@ function showView(id){
 document.querySelectorAll('[data-back]').forEach(btn=>{
   btn.addEventListener('click', ()=> showView(btn.dataset.back));
 });
+
+// تنقّل واجهة الموظف بين 3 شاشات داخلية: التصنيف -> البحث -> تفاصيل الصنف
+let employeeStep = "category";
+function goEmployeeStep(step){
+  employeeStep = step;
+  document.getElementById('employeeCategoryScreen').style.display = step === "category" ? "block" : "none";
+  document.getElementById('employeeSearchScreen').style.display = step === "search" ? "block" : "none";
+  document.getElementById('employeeDetailScreen').style.display = step === "detail" ? "block" : "none";
+  const titles = { category: "اختر التصنيف", search: "بحث الأصناف", detail: "تفاصيل الصنف" };
+  document.getElementById('employeeHeaderTitle').textContent = titles[step];
+}
+document.getElementById('employeeBackBtn').addEventListener('click', ()=>{
+  if(employeeStep === "detail") goEmployeeStep("search");
+  else if(employeeStep === "search") goEmployeeStep("category");
+  else showView("gate");
+});
 document.querySelectorAll('[data-go]').forEach(btn=>{
   btn.addEventListener('click', ()=>{
     showView(btn.dataset.go);
@@ -566,7 +587,10 @@ function checkPin(){
   if (entered === PINS[currentRole]) {
     closeOverlay();
     showView(currentRole);
-    if (currentRole === "employee") loadItems();
+    if (currentRole === "employee") {
+      loadItems();
+      goEmployeeStep("category");
+    }
   } else {
     pinError.textContent = "الرمز غير صحيح، حاول مرة أخرى";
     entered = "";
@@ -627,42 +651,55 @@ document.getElementById('savePinsBtn').addEventListener('click', async () => {
 // رابط الشيت المنشور بصيغة CSV (File > Share > Publish to web > CSV بجوجل شيت)
 const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSYJP_O-jmrABM6jSTcEGTq5WZAE1J5k-wO-deCQvnpM_5gHbZmuYR2PVR7cPSZoAQHXtk68dOzH65K/pub?output=csv";
 
-// تسميات عربية للمخازن/الفروع — أضف سطرًا هنا تلقائيًا يكفي عند إضافة عمود Qty_جديد بالشيت
 const CURRENCY = "د.ل";
-const BRANCH_LABELS = {
-  Almahal: "المحل",
-  Alqawarsha: "القوارشة",
-  Tarablus: "طرابلس",
-  Misrata: "مصراتة",
-  Zawawa: "زواوة"
-};
-function branchLabel(key){ return BRANCH_LABELS[key] || key; }
+
+// كل عمود بالشيت يبدأ بـ "كمية " يُعتبر مخزن/فرع تلقائيًا — واسم الفرع
+// يُؤخذ مباشرة من اسم العمود بالعربي، فإضافة مخزن جديد لاحقًا (عمود "كمية <اسم>")
+// ما يحتاج أي تعديل بالكود إطلاقًا.
+const QTY_PREFIX = "كمية ";
 
 let ITEMS = [];
-let activeCategory = "الكل";
+
+// تجميع تصنيفات الشيت الفعلية بأزرار مختصرة بشاشة اختيار التصنيف.
+// "values: null" = زر "الكل" (يشمل كل شي، بما فيه أي تصنيف جديد أو غير مدرج هنا مثل "عام").
+const CATEGORY_GROUPS = [
+  { label: "الكل", values: null },
+  { label: "المعدات", values: ["معدات", "تبريد"] },
+  { label: "الإكسسوارات", values: ["اكسسوارات", "احواض وحافظات"] },
+  { label: "قطع غيار", values: ["قطع غيار", "قطع غيار مكينة قهوة"] },
+  { label: "معدات نظافة", values: ["معدات نظافة"] }
+];
+let activeCategoryValues = null; // null = بدون فلترة (الكل)
 
 function mapRow(r){
-  const number = (r['item_no'] || '').toString().trim();
-  const nameAr = (r['item_name'] || '').toString().trim();
-  const nameEn = (r['e_name'] || '').toString().trim();
-  const price = parseFloat(r['Price']) || 0;
-  const costPrice = parseFloat(r['co_price']) || 0;
-  const company = (r['Company'] || '').toString().trim();
-  const country = (r['Country'] || '').toString().trim();
-  // عمود التصنيف لسا غير موجود بالشيت — لما يُضاف غدًا بأي من هذه الأسماء رح يشتغل تلقائيًا بدون أي تعديل بالكود
-  const category = (r['التصنيف'] || r['تصنيف'] || r['تصنيف الرئيسي'] || r['Category'] || '').toString().trim();
-  // عمود اللون غير موجود حاليًا بالشيت — جاهز لو أُضيف لاحقًا بأي من هذه الأسماء
-  const color = (r['اللون'] || r['Color'] || '').toString().trim();
+  const number = (r['رقم الصنف'] || '').toString().trim();
+  const name = (r['اسم الصنف'] || '').toString().trim();
+  const priceRetail = parseFloat(r['سعر القطاعي']) || 0;
+  const priceWholesale = parseFloat(r['سعر الجملة']) || 0;
+  const company = (r['الشركة المصنعة'] || '').toString().trim();
+  const country = (r['بلد الصنع'] || '').toString().trim();
+  const color = (r['اللون'] || '').toString().trim();
+  const typeCode = (r['شفرة النوع'] || '').toString().trim();
+  const category = (r['التصنيف الرئيسي'] || '').toString().trim();
+  // بيانات الشراء — إدارية/حساسة، ما تظهر للموظف
+  const lastPurchasePrice = parseFloat(r['آخر سعر شراء']) || 0;
+  const purchaseCurrency = (r['العملة'] || '').toString().trim();
+  const exchangeRate = parseFloat(r['سعر الصرف']) || 0;
+  const lastPurchaseDate = (r['تاريخ آخر شراء'] || '').toString().trim();
 
   const branches = {};
   Object.keys(r).forEach(k=>{
-    if(k.indexOf('Qty_') === 0){
-      branches[k.slice(4)] = parseFloat(r[k]) || 0;
+    if(k.indexOf(QTY_PREFIX) === 0){
+      branches[k.slice(QTY_PREFIX.length).trim()] = parseFloat(r[k]) || 0;
     }
   });
   const totalQty = Object.values(branches).reduce((a,b)=>a+b, 0);
 
-  return { number, nameAr, nameEn, price, costPrice, company, country, category, color, branches, totalQty };
+  return {
+    number, name, priceRetail, priceWholesale, company, country, color, typeCode, category,
+    lastPurchasePrice, purchaseCurrency, exchangeRate, lastPurchaseDate,
+    branches, totalQty
+  };
 }
 
 function formatNum(n){
@@ -680,7 +717,6 @@ function loadItems(){
     complete: function(res){
       ITEMS = res.data.map(mapRow).filter(it => it.number);
       itemsLoaded = true;
-      renderCategoryChips();
       renderResults();
     },
     error: function(err){
@@ -690,41 +726,40 @@ function loadItems(){
   });
 }
 
-function renderCategoryChips(){
-  const wrap = document.getElementById('employeeChips');
-  const cats = Array.from(new Set(ITEMS.map(it => it.category).filter(Boolean)));
-  if(cats.length === 0){ wrap.innerHTML = ""; return; } // ما فيه تصنيفات بعد — الشريط يختفي تلقائيًا
-  const all = ["الكل", ...cats];
-  wrap.innerHTML = all.map(c =>
-    `<button class="chip ${c === activeCategory ? 'active' : ''}" data-cat="${c}">${c}</button>`
+function renderCategoryGrid(){
+  const wrap = document.getElementById('employeeCategoryGrid');
+  wrap.innerHTML = CATEGORY_GROUPS.map((g, i) =>
+    `<button class="cat-box ${g.values === null ? 'all' : ''}" data-idx="${i}">${g.label}</button>`
   ).join('');
-  wrap.querySelectorAll('.chip').forEach(chip=>{
-    chip.addEventListener('click', ()=>{
-      activeCategory = chip.dataset.cat;
-      renderCategoryChips();
+  wrap.querySelectorAll('.cat-box').forEach(box=>{
+    box.addEventListener('click', ()=>{
+      const group = CATEGORY_GROUPS[Number(box.dataset.idx)];
+      activeCategoryValues = group.values;
+      document.getElementById('employeeSearchInput').value = "";
+      goEmployeeStep("search");
       renderResults();
     });
   });
 }
+renderCategoryGrid(); // ثابتة، ما تعتمد على تحميل بيانات الشيت
 
 // كل ما كان الرقم أصغر كان الصنف أقرب لما تبحث عنه (0 = تطابق تام)
 function matchRank(it, q){
   const num = it.number.toLowerCase();
-  const nAr = it.nameAr.toLowerCase();
-  const nEn = it.nameEn.toLowerCase();
+  const name = it.name.toLowerCase();
   if(num === q) return 0;
   if(num.startsWith(q)) return 1;
-  if(nAr.startsWith(q) || nEn.startsWith(q)) return 2;
+  if(name.startsWith(q)) return 2;
   if(num.includes(q)) return 3;
-  if(nAr.includes(q) || nEn.includes(q)) return 4;
+  if(name.includes(q)) return 4;
   return -1; // لا يوجد تطابق إطلاقًا
 }
 
 function searchItems(){
   const q = document.getElementById('employeeSearchInput').value.trim().toLowerCase();
   let list = ITEMS;
-  if(activeCategory !== "الكل"){
-    list = list.filter(it => it.category === activeCategory);
+  if(activeCategoryValues !== null){
+    list = list.filter(it => activeCategoryValues.includes(it.category));
   }
   if(q){
     list = list
@@ -754,8 +789,8 @@ function renderResults(){
     <button class="item-row" data-num="${it.number}">
       <div class="ir-top">
         <span class="num-badge">${it.number}</span>
-        <span class="item-name">${it.nameAr || it.nameEn || '—'}</span>
-        <span class="item-price">${formatNum(it.price)} ${CURRENCY}</span>
+        <span class="item-name">${it.name || '—'}</span>
+        <span class="item-price">${formatNum(it.priceRetail)} ${CURRENCY}</span>
       </div>
       <div class="ir-bottom">
         <span class="ir-sub">${subParts.length ? subParts.join(' · ') : ''}</span>
@@ -779,17 +814,17 @@ function openItemDetail(number){
 
   const branchKeys = Object.keys(item.branches);
   const branchCells = branchKeys.map(k => `
-    <div class="stat"><span class="k">${branchLabel(k)}</span><span class="v">${formatNum(item.branches[k])}</span></div>
+    <div class="stat"><span class="k">${k}</span><span class="v">${formatNum(item.branches[k])}</span></div>
   `).join('');
 
   document.getElementById('employeeItemCard').innerHTML = `
     <div class="ic-num">${item.number}</div>
-    <h3>${item.nameAr || '—'}</h3>
-    ${item.nameEn ? `<p class="ic-en">${item.nameEn}</p>` : ''}
-    <div class="ic-price">${formatNum(item.price)} ${CURRENCY}</div>
+    <h3>${item.name || '—'}</h3>
+    <div class="ic-price">${formatNum(item.priceRetail)} ${CURRENCY}</div>
     <div class="stat-grid">
       <div class="stat"><span class="k">الشركة المصنعة</span><span class="v">${item.company || '—'}</span></div>
       <div class="stat"><span class="k">بلد الصنع</span><span class="v">${item.country || '—'}</span></div>
+      ${item.color ? `<div class="stat"><span class="k">اللون</span><span class="v">${item.color}</span></div>` : ''}
       <div class="stat wide"><span class="k">الكمية الإجمالية (كل الفروع)</span><span class="v big">${formatNum(item.totalQty)}</span></div>
     </div>
     <div class="section-label">الكمية حسب الفرع</div>
@@ -798,20 +833,14 @@ function openItemDetail(number){
     </div>
   `;
 
-  document.getElementById('employeeSearchScreen').style.display = "none";
-  document.getElementById('employeeDetailScreen').style.display = "block";
+  goEmployeeStep("detail");
 }
-
-document.getElementById('employeeDetailBack').addEventListener('click', ()=>{
-  document.getElementById('employeeDetailScreen').style.display = "none";
-  document.getElementById('employeeSearchScreen').style.display = "block";
-});
 
 function buildShareText(item){
   const lines = [
-    `*${item.nameAr || item.nameEn || ''}*`,
+    `*${item.name || ''}*`,
     `رقم الصنف: ${item.number}`,
-    `السعر: ${formatNum(item.price)} ${CURRENCY}`,
+    `السعر: ${formatNum(item.priceRetail)} ${CURRENCY}`,
   ];
   if(item.company) lines.push(`الشركة المصنعة: ${item.company}`);
   lines.push(`— شركة جادو لإستيراد معدات المطاعم والمقاهي`);
