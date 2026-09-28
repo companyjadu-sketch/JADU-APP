@@ -209,14 +209,16 @@
   .results{ display:flex; flex-direction:column; gap:8px; max-height:60vh; overflow-y:auto; }
   .item-row{
     display:flex; flex-direction:column; gap:8px; width:100%; padding:12px 14px;
-    background:transparent; border:1.5px solid var(--line); border-radius:10px;
+    /* مؤقت: خلفية بيضاء ثابتة وخط أسود عشان وضوح القراءة — لين نعدّل الألوان بشكل نهائي لاحقًا */
+    background:#FFFFFF !important; border:1.5px solid var(--line); border-radius:10px;
     cursor:pointer; font-family:'Tajawal', sans-serif; text-align:right;
   }
-  .item-row:active{ background:var(--steel-200); }
+  .item-row, .item-row .item-name, .item-row .item-price, .item-row .ir-sub, .item-row .num-badge{ color:#111111 !important; }
+  .item-row:active{ background:#F0F0F0 !important; }
   .ir-top{ display:flex; align-items:center; gap:10px; width:100%; }
   .item-row .num-badge{
-    font-family:'IBM Plex Mono', monospace; font-size:11.5px; font-weight:700; color:var(--amber-dark);
-    background:var(--steel-200); border-radius:6px; padding:4px 7px; flex-shrink:0;
+    font-family:'IBM Plex Mono', monospace; font-size:11.5px; font-weight:700;
+    background:#EFEFEF !important; border-radius:6px; padding:4px 7px; flex-shrink:0;
   }
   .item-row .item-name{ flex:1; min-width:0; font-size:13.5px; font-weight:600; }
   .item-row .item-price{ font-family:'IBM Plex Mono', monospace; font-size:13px; font-weight:700; flex-shrink:0; }
