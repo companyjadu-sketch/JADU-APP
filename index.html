@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
 <title>شركة جادو</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0F0E0D">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="جادو">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&family=IBM+Plex+Mono:wght@600;700&display=swap" rel="stylesheet">
 
@@ -233,6 +240,11 @@
   .cat-box.all .cat-icon svg{ width:22px; height:22px; }
 
   .item-count{ font-size:11.5px; color:var(--steel-500); margin-bottom:10px; }
+  .item-count .stale{ color:#FFC15E; }
+  .offline-bar{ position:fixed; top:0; left:0; right:0; z-index:50; display:none; text-align:center;
+    background:#3A2A10; color:#FFC15E; font-size:12px; padding:6px 12px; border-bottom:1px solid #5A4318; }
+  body.is-offline .offline-bar{ display:block; }
+  body.is-offline{ padding-top:30px; }
 
   .results{ display:flex; flex-direction:column; gap:8px; max-height:60vh; overflow-y:auto; }
   .item-row{
@@ -311,6 +323,7 @@
 </style>
 </head>
 <body>
+<div class="offline-bar" id="offlineBar">بدون إنترنت — التطبيق يعرض آخر بيانات محفوظة على الجهاز</div>
 
 <div class="app">
 
@@ -657,6 +670,8 @@ function initFirebase(){
   try {
     firebase.initializeApp(firebaseConfig);
     db = firebase.firestore();
+    // حفظ نسخة من الإعدادات (ورمز الموظف وبيانات الإدارة) على الجهاز عشان تشتغل بدون إنترنت
+    db.enablePersistence({ synchronizeTabs: true }).catch(e => console.warn("Firestore offline cache غير متاح", e && e.code));
     auth = firebase.auth();
     auth.languageCode = "ar";
     auth.onAuthStateChanged(user => {
@@ -1143,26 +1158,76 @@ function formatNum(n){
 }
 
 let itemsLoaded = false;
-function loadItems(){
-  if(itemsLoaded || !SHEET_CSV_URL) return;
-  Papa.parse(SHEET_CSV_URL, {
-    download: true,
-    header: true,
-    skipEmptyLines: true,
-    complete: function(res){
-      ITEMS = res.data.map(mapRow).filter(it => it.number);
-      itemsLoaded = true;
-      applyPrivateData();
-      renderResults();
-      renderAdminOverview();
-      renderCapitalReport();
-    },
-    error: function(err){
-      document.getElementById('employeeItemCount').textContent = "تعذّر تحميل بيانات الأصناف — تحقق من الاتصال بالإنترنت";
-      console.warn("Sheet load error", err);
-    }
-  });
+// آخر نسخة من بيانات الأصناف تنحفظ على الجهاز، عشان التطبيق يشتغل لو النت قطع
+// (هذي البيانات العامة بس — بيانات الشراء ما تنحفظ هنا)
+const ITEMS_CACHE_KEY = "jadu_items_cache_v1";
+let itemsFromCache = false;   // true = المعروض الحين هو النسخة المحفوظة مو أحدث نسخة
+let itemsCacheTime = 0;
+let itemsFetching = false;
+
+function useCsvText(text){
+  const res = Papa.parse(text, { header: true, skipEmptyLines: true });
+  ITEMS = res.data.map(mapRow).filter(it => it.number);
+  itemsLoaded = true;
+  applyPrivateData();
+  renderResults();
+  renderAdminOverview();
+  renderCapitalReport();
 }
+
+function loadItems(){
+  if(!SHEET_CSV_URL) return;
+  // 1) نعرض المحفوظ فورًا (لو موجود) بدون ما ننتظر النت
+  if(!itemsLoaded){
+    try {
+      const c = JSON.parse(localStorage.getItem(ITEMS_CACHE_KEY) || "null");
+      if(c && c.url === SHEET_CSV_URL && c.csv){
+        itemsFromCache = true;
+        itemsCacheTime = c.t || 0;
+        useCsvText(c.csv);
+      }
+    } catch(e) {}
+  }
+  // 2) نجيب أحدث نسخة من النت (مرة وحدة بكل فتحة للتطبيق)
+  if(itemsFetching || (itemsLoaded && !itemsFromCache)) return;
+  itemsFetching = true;
+  fetch(SHEET_CSV_URL, { cache: "no-store" })
+    .then(r => { if(!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
+    .then(text => {
+      itemsFromCache = false;
+      itemsCacheTime = Date.now();
+      try { localStorage.setItem(ITEMS_CACHE_KEY, JSON.stringify({ url: SHEET_CSV_URL, csv: text, t: itemsCacheTime })); } catch(e) {}
+      useCsvText(text);
+    })
+    .catch(err => {
+      console.warn("Sheet load error", err);
+      if(!itemsLoaded){
+        document.getElementById('employeeItemCount').textContent = "تعذّر تحميل بيانات الأصناف — تحقق من الاتصال بالإنترنت";
+      } else {
+        renderResults();
+      }
+    })
+    .finally(() => { itemsFetching = false; });
+}
+
+function timeAgoAr(t){
+  if(!t) return "";
+  const m = Math.round((Date.now() - t) / 60000);
+  if(m < 1) return "قبل أقل من دقيقة";
+  if(m < 60) return `قبل ${m} دقيقة`;
+  const h = Math.round(m / 60);
+  if(h < 24) return `قبل ${h} ساعة`;
+  return `قبل ${Math.round(h / 24)} يوم`;
+}
+
+// حالة الإنترنت: شريط تنبيه فوق، ولما يرجع النت نحدّث البيانات تلقائيًا
+function updateOnlineState(){
+  document.body.classList.toggle('is-offline', !navigator.onLine);
+  if(navigator.onLine && itemsFromCache) loadItems();
+  if(itemsLoaded) renderResults();
+}
+window.addEventListener('online', updateOnlineState);
+window.addEventListener('offline', updateOnlineState);
 
 function renderCategoryGrid(){
   const wrap = document.getElementById('employeeCategoryGrid');
@@ -1231,6 +1296,12 @@ function renderResults(){
   const countEl = document.getElementById('employeeItemCount');
   const list = searchItems();
   countEl.textContent = ITEMS.length ? `${list.length} من ${ITEMS.length} صنف` : "جارِ تحميل بيانات الأصناف…";
+  if(ITEMS.length && itemsFromCache){
+    const note = document.createElement('span');
+    note.className = "stale";
+    note.textContent = ` · بيانات محفوظة (آخر تحديث ${timeAgoAr(itemsCacheTime)})`;
+    countEl.appendChild(note);
+  }
 
   if(!ITEMS.length){ wrap.innerHTML = ""; return; }
   if(!list.length){
@@ -1658,7 +1729,8 @@ let camDetector = null;
 let camDetectTimer = null;
 let camScanning = false;
 
-const CAM_FORMATS_ZXING = [
+// لو مكتبة ZXing ما تحمّلت (مثلًا بدون إنترنت) ما نوقف باقي التطبيق
+const CAM_FORMATS_ZXING = (typeof ZXing === 'undefined') ? [] : [
   ZXing.BarcodeFormat.QR_CODE,
   ZXing.BarcodeFormat.CODE_128,
   ZXing.BarcodeFormat.CODE_39,
@@ -1777,6 +1849,14 @@ document.getElementById('camCloseBtn').addEventListener('click', closeCamera);
 
 // ---------------------------------------------------------------
 initFirebase();
+updateOnlineState();
+</script>
+
+<script>
+/* تثبيت التطبيق وتشغيله بدون إنترنت — بسكربت منفصل عشان يشتغل حتى لو صار خطأ بغيره */
+if('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')){
+  navigator.serviceWorker.register('sw.js').catch(function(e){ console.warn("SW", e); });
+}
 </script>
 
 <script>
