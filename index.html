@@ -12,6 +12,7 @@
      ============================================================ -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 
 <!-- ============================================================
      بحث الأصناف: قراءة الشيت + مسح الكيو آر كود
@@ -163,6 +164,17 @@
     margin-top:14px; background:none; border:none; color:var(--steel-500);
     font-size:12.5px; font-family:'Tajawal', sans-serif; cursor:pointer; text-decoration:underline;
   }
+
+  /* نافذة دخول الإدارة بالإيميل */
+  .login-card{ text-align:right; }
+  .login-card h2, .login-card > p{ text-align:center; }
+  .login-card .field input{ letter-spacing:0; direction:ltr; text-align:left; font-family:'Tajawal', sans-serif; font-size:15px; }
+  .login-links{ display:flex; justify-content:space-between; gap:10px; margin-top:12px; }
+  .login-links button{ background:none; border:none; color:var(--steel-500); font-size:12.5px; font-family:'Tajawal', sans-serif; cursor:pointer; text-decoration:underline; padding:0; }
+  .admin-user-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:12px; color:var(--steel-500);
+    background:var(--steel-200); border-radius:8px; padding:8px 10px; margin-bottom:14px; direction:ltr; }
+  .admin-user-row button{ background:none; border:1px solid var(--line); color:var(--steel-900); border-radius:7px; padding:5px 10px;
+    font-family:'Tajawal', sans-serif; font-size:12px; cursor:pointer; }
 
   .sync-note{
     display:flex; align-items:center; gap:8px; font-size:11.5px; color:var(--steel-500);
@@ -412,6 +424,10 @@
       </button>
       <h2>الإدارة العامة</h2>
     </div>
+    <div class="admin-user-row">
+      <span id="adminUserEmail"></span>
+      <button id="adminLogoutBtn">تسجيل خروج</button>
+    </div>
     <div class="list">
       <button class="list-btn" id="adminItemsBtn">
         <div class="list-icon">
@@ -455,7 +471,7 @@
             <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
           </svg>
         </div>
-        <div class="list-text"><strong>الإعدادات</strong><span>تغيير الرمز السري للموظف والإدارة</span></div>
+        <div class="list-text"><strong>الإعدادات</strong><span>تغيير الرمز السري للموظف</span></div>
         <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
       </button>
     </div>
@@ -530,10 +546,7 @@
       <label>رمز دخول الموظف (4 أرقام)</label>
       <input type="text" inputmode="numeric" maxlength="4" id="employeePinInput" placeholder="••••">
     </div>
-    <div class="field">
-      <label>رمز دخول الإدارة العامة (4 أرقام)</label>
-      <input type="text" inputmode="numeric" maxlength="4" id="adminPinInput" placeholder="••••">
-    </div>
+    <p style="font-size:12px; color:var(--steel-500); margin:-6px 0 18px;">دخول الإدارة العامة صار بالإيميل وكلمة المرور — تتغير كلمة المرور من رابط "نسيت كلمة المرور" بشاشة الدخول.</p>
 
     <button class="primary-btn" id="savePinsBtn">حفظ التغييرات</button>
     <div class="msg" id="settingsMsg"></div>
@@ -557,6 +570,28 @@
     </div>
     <div class="pin-error" id="pinError"></div>
     <button class="pin-cancel" id="pinCancel">رجوع</button>
+  </div>
+</div>
+
+<!-- ============ نافذة دخول الإدارة العامة بالإيميل ============ -->
+<div class="pin-overlay" id="loginOverlay">
+  <div class="pin-card login-card">
+    <h2>دخول الإدارة العامة</h2>
+    <p>أدخل الإيميل وكلمة المرور</p>
+    <div class="field">
+      <label>الإيميل</label>
+      <input type="email" id="loginEmail" autocomplete="username" placeholder="name@gmail.com">
+    </div>
+    <div class="field">
+      <label>كلمة المرور</label>
+      <input type="password" id="loginPassword" autocomplete="current-password" placeholder="••••••">
+    </div>
+    <button class="primary-btn" id="loginSubmit">دخول</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="login-links">
+      <button id="loginForgot">نسيت كلمة المرور؟</button>
+      <button id="loginCancel">رجوع</button>
+    </div>
   </div>
 </div>
 
@@ -585,7 +620,18 @@ const firebaseConfig = {
 };
 
 let db = null;
+let auth = null;
 let firebaseReady = false;
+
+// الإيميلات المسموح لها بدخول الإدارة العامة (نفس القائمة لازم تكون بقواعد Firestore)
+const ADMIN_EMAILS = [
+  "abdofakroun20@gmail.com",
+  "no3y.fakroun20@gmail.com",
+  "islam.aljhani@gmail.com"
+];
+function isAdminEmail(email){
+  return !!email && ADMIN_EMAILS.includes(String(email).trim().toLowerCase());
+}
 
 // الرموز الافتراضية (تُستخدم فقط إذا تعذّر الاتصال بقاعدة البيانات)
 let PINS = { employee: "1234", admin: "9999" };
@@ -596,6 +642,18 @@ function initFirebase(){
   try {
     firebase.initializeApp(firebaseConfig);
     db = firebase.firestore();
+    auth = firebase.auth();
+    auth.languageCode = "ar";
+    auth.onAuthStateChanged(user => {
+      if (user && !isAdminEmail(user.email)) { auth.signOut(); return; }
+      const el = document.getElementById('adminUserEmail');
+      if (el) el.textContent = user ? user.email : "";
+      // لو خرج المستخدم وهو داخل شاشات الإدارة، نرجعه للواجهة الرئيسية
+      if (!user) {
+        const active = document.querySelector('.view.active');
+        if (active && active.id.startsWith('view-admin')) showView('gate');
+      }
+    });
     firebaseReady = true;
     loadPins();
     loadSettings();
@@ -620,10 +678,6 @@ async function loadPins(){
     if (doc.exists) {
       const data = doc.data();
       PINS.employee = data.employee || PINS.employee;
-      PINS.admin = data.admin || PINS.admin;
-    } else {
-      // أول مرة: نزرع القيم الافتراضية بقاعدة البيانات
-      await db.collection("settings").doc("pins").set(PINS);
     }
     setSyncStatus(true, "متصل — الرموز متزامنة مع كل الأجهزة");
   } catch(e) {
@@ -763,6 +817,7 @@ document.querySelectorAll('.role-btn').forEach(btn => {
       }
       return;
     }
+    if (role === "admin") { openAdminLogin(); return; }
     currentRole = role;
     entered = "";
     pinTitle.textContent = roleLabels[role] || "كلمة المرور";
@@ -814,23 +869,21 @@ function closeOverlay(){
 // ---------------------------------------------------------------
 function fillSettingsForm(){
   document.getElementById('employeePinInput').value = PINS.employee;
-  document.getElementById('adminPinInput').value = PINS.admin;
   document.getElementById('settingsMsg').textContent = "";
   document.getElementById('settingsMsg').className = "msg";
 }
 
 document.getElementById('savePinsBtn').addEventListener('click', async () => {
   const empVal = document.getElementById('employeePinInput').value.trim();
-  const adminVal = document.getElementById('adminPinInput').value.trim();
   const msg = document.getElementById('settingsMsg');
 
-  if (!/^\d{4}$/.test(empVal) || !/^\d{4}$/.test(adminVal)) {
-    msg.textContent = "لازم يكون كل رمز 4 أرقام بالضبط";
+  if (!/^\d{4}$/.test(empVal)) {
+    msg.textContent = "لازم يكون الرمز 4 أرقام بالضبط";
     msg.className = "msg err";
     return;
   }
 
-  const newPins = { employee: empVal, admin: adminVal };
+  const newPins = { employee: empVal };
 
   if (!db) {
     // لا يوجد اتصال بقاعدة البيانات: نحدّث محليًا فقط (لن ينعكس على باقي الأجهزة)
@@ -849,6 +902,93 @@ document.getElementById('savePinsBtn').addEventListener('click', async () => {
     msg.textContent = "تعذّر الحفظ، تحقق من الاتصال بالإنترنت وحاول مرة أخرى";
     msg.className = "msg err";
   }
+});
+
+// ---------------------------------------------------------------
+// دخول الإدارة العامة بالإيميل وكلمة المرور (Firebase Authentication)
+// ---------------------------------------------------------------
+const loginOverlay = document.getElementById('loginOverlay');
+const loginEmail = document.getElementById('loginEmail');
+const loginPassword = document.getElementById('loginPassword');
+const loginMsg = document.getElementById('loginMsg');
+const loginSubmit = document.getElementById('loginSubmit');
+
+function setLoginMsg(text, ok){
+  loginMsg.textContent = text || "";
+  loginMsg.className = "msg" + (text ? (ok ? " ok" : " err") : "");
+}
+function enterAdmin(){
+  loginOverlay.classList.remove('open');
+  loginPassword.value = "";
+  setLoginMsg("");
+  showView("admin");
+}
+function openAdminLogin(){
+  if (!auth) { alertNoAuth(); return; }
+  const u = auth.currentUser;
+  if (u && isAdminEmail(u.email)) { enterAdmin(); return; } // مسجّل دخول من قبل على هذا الجهاز
+  setLoginMsg("");
+  loginPassword.value = "";
+  loginOverlay.classList.add('open');
+  setTimeout(()=> (loginEmail.value ? loginPassword : loginEmail).focus(), 50);
+}
+function alertNoAuth(){
+  setLoginMsg("تعذّر الاتصال بخدمة الدخول — تحقق من الإنترنت");
+  loginOverlay.classList.add('open');
+}
+function authErrorText(e){
+  const c = (e && e.code) || "";
+  if (c.includes("invalid-email")) return "صيغة الإيميل غير صحيحة";
+  if (c.includes("invalid-credential") || c.includes("wrong-password") || c.includes("user-not-found") || c.includes("invalid-login"))
+    return "الإيميل أو كلمة المرور غير صحيحة";
+  if (c.includes("too-many-requests")) return "محاولات كثيرة — انتظر شوي وحاول مرة ثانية";
+  if (c.includes("network")) return "لا يوجد اتصال بالإنترنت";
+  if (c.includes("unauthorized-domain")) return "هذا الموقع غير مضاف في Authorized domains";
+  if (c.includes("operation-not-allowed")) return "الدخول بالإيميل غير مفعّل في Firebase";
+  return "تعذّر الدخول، حاول مرة أخرى";
+}
+
+loginSubmit.addEventListener('click', async ()=>{
+  const email = loginEmail.value.trim().toLowerCase();
+  const pass = loginPassword.value;
+  if (!email || !pass) { setLoginMsg("أدخل الإيميل وكلمة المرور"); return; }
+  if (!isAdminEmail(email)) { setLoginMsg("هذا الإيميل غير مسموح له بدخول الإدارة"); return; }
+  if (!auth) { alertNoAuth(); return; }
+  loginSubmit.disabled = true;
+  setLoginMsg("جارِ الدخول…", true);
+  try {
+    await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+    await auth.signInWithEmailAndPassword(email, pass);
+    enterAdmin();
+  } catch(e) {
+    setLoginMsg(authErrorText(e));
+  } finally {
+    loginSubmit.disabled = false;
+  }
+});
+loginPassword.addEventListener('keydown', e => { if (e.key === "Enter") loginSubmit.click(); });
+loginEmail.addEventListener('keydown', e => { if (e.key === "Enter") loginPassword.focus(); });
+
+document.getElementById('loginForgot').addEventListener('click', async ()=>{
+  const email = loginEmail.value.trim().toLowerCase();
+  if (!email) { setLoginMsg("اكتب الإيميل أولًا، ثم اضغط نسيت كلمة المرور"); return; }
+  if (!isAdminEmail(email)) { setLoginMsg("هذا الإيميل غير مسموح له بدخول الإدارة"); return; }
+  if (!auth) { alertNoAuth(); return; }
+  try {
+    await auth.sendPasswordResetEmail(email);
+    setLoginMsg("أرسلنا رابط تغيير كلمة المرور على إيميلك (شيك البريد المزعج Spam كمان)", true);
+  } catch(e) {
+    setLoginMsg(authErrorText(e));
+  }
+});
+document.getElementById('loginCancel').addEventListener('click', ()=>{
+  loginOverlay.classList.remove('open');
+  loginPassword.value = "";
+  setLoginMsg("");
+});
+document.getElementById('adminLogoutBtn').addEventListener('click', async ()=>{
+  if (auth) await auth.signOut();
+  showView('gate');
 });
 
 // =====================================================================
