@@ -17,28 +17,21 @@
      بحث الأصناف: قراءة الشيت + مسح الكيو آر كود
      ============================================================ -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.js"></script>
+<script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
 
 <style>
   :root{
-    --bg:#F7F5F1;
-    --steel-200:#E7E2D9;
-    --steel-500:#8A8578;
-    --steel-900:#2B2A26;
-    --amber:#C98A2C;
-    --amber-dark:#8F5C20;
-    --line:#DDD7CB;
-    --ok:#3E7A52;
-    --warn:#B0432E;
-  }
-  @media (prefers-color-scheme: dark){
-    :root{
-      --bg:#17160F;
-      --steel-200:#2E2C25;
-      --steel-500:#9A9484;
-      --steel-900:#EFEBE1;
-      --line:#38352C;
-    }
+    /* هوية جادو — طابع داكن ثابت (لا يتغير مع إعداد الوضع الليلي/النهاري بالهاتف) */
+    --bg:#0F0E0D;
+    --surface:#1B1917;
+    --steel-200:#242220;
+    --steel-500:#9A9484;
+    --steel-900:#F5F2EA;
+    --amber:#E10A1E;
+    --amber-dark:#FF6B5E;
+    --line:#322F2A;
+    --ok:#6FCF8E;
+    --warn:#FF6B5E;
   }
   *{box-sizing:border-box;}
   html,body{margin:0; padding:0;}
@@ -57,44 +50,42 @@
   .view.active{ display:block; animation:rise .2s ease; }
   @keyframes rise{ from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);} }
 
-  .brand{ display:flex; align-items:center; gap:12px; margin-bottom:30px; }
-  .brand-mark{
-    width:46px; height:46px; flex-shrink:0; border-radius:8px;
-    background:var(--steel-900); color:var(--bg);
-    display:flex; align-items:center; justify-content:center;
-    font-family:'IBM Plex Mono', monospace; font-weight:700; font-size:20px;
-  }
-  .brand-name{ display:flex; flex-direction:column; gap:1px; min-width:0; }
-  .brand-name strong{ font-size:16px; font-weight:900; line-height:1.25; }
-  .brand-name span{ font-size:11.5px; color:var(--steel-500); font-weight:500; line-height:1.3; }
+  /* هيرو الشعار — يمتد بعرض الشاشة كاملًا (يكسر padding الصفحة بهامش سالب) */
+  .hero{ position:relative; margin:-20px -20px 22px; overflow:hidden; }
+  .hero img{ display:block; width:100%; height:280px; object-fit:cover; object-position:center; }
 
-  .headline{ text-align:center; margin-bottom:32px; }
-  .headline h1{ margin:0 0 6px; font-size:22px; font-weight:900; }
-  .headline p{ margin:0; font-size:14px; color:var(--steel-500); }
+  .headline{ text-align:center; margin-bottom:26px; }
+  .headline p{ margin:0; font-size:13.5px; color:var(--steel-500); }
 
   .menu{ display:flex; flex-direction:column; gap:14px; }
   .role-btn{
     display:flex; align-items:center; gap:14px; width:100%;
-    padding:20px 18px; background:transparent; border:1.5px solid var(--line);
-    border-radius:12px; cursor:pointer; font-family:'Tajawal', sans-serif;
+    padding:16px; background:var(--surface); border:1.5px solid var(--line);
+    border-radius:14px; cursor:pointer; font-family:'Tajawal', sans-serif;
     text-align:right; transition:border-color .15s ease, background .15s ease;
   }
   .role-btn:active{ background:var(--steel-200); }
-  .role-btn:hover{ border-color:var(--steel-900); }
+  .role-btn:hover{ border-color:var(--amber); }
   .role-icon{
-    width:42px; height:42px; flex-shrink:0; border-radius:9px;
-    background:var(--steel-200); display:flex; align-items:center; justify-content:center;
+    width:42px; height:42px; flex-shrink:0; border-radius:11px;
+    background:rgba(225,10,30,0.16); display:flex; align-items:center; justify-content:center;
   }
-  .role-icon svg{ width:22px; height:22px; color:var(--steel-900); }
+  .role-icon svg{ width:21px; height:21px; color:#FF4E4E; }
   .role-text{ flex:1; min-width:0; }
-  .role-text strong{ display:block; font-size:16px; font-weight:700; }
-  .role-text span{ display:block; font-size:12px; color:var(--steel-500); margin-top:2px; }
-  .role-lock{ width:16px; height:16px; color:var(--steel-500); flex-shrink:0; }
+  .role-text strong{ display:block; font-size:15px; font-weight:700; }
+  .role-text span{ display:block; font-size:11px; color:var(--steel-500); margin-top:2px; }
+  .role-lock{ width:15px; height:15px; color:var(--steel-500); flex-shrink:0; }
+  .role-btn.role-admin{ background:linear-gradient(135deg, var(--amber), #7A0410); border-color:var(--amber); }
+  .role-btn.role-admin .role-icon{ background:rgba(255,255,255,0.18); }
+  .role-btn.role-admin .role-icon svg{ color:#ffffff; }
+  .role-btn.role-admin .role-text strong{ color:#ffffff; }
+  .role-btn.role-admin .role-text span{ color:rgba(255,255,255,0.8); }
+  .role-btn.role-admin .role-lock{ color:#ffffff; }
 
   .back-row{ display:flex; align-items:center; gap:10px; margin-bottom:24px; }
   .back-btn{
     width:36px; height:36px; border-radius:9px; border:1.5px solid var(--line);
-    background:transparent; display:flex; align-items:center; justify-content:center; cursor:pointer;
+    background:var(--surface); display:flex; align-items:center; justify-content:center; cursor:pointer;
   }
   .back-btn svg{ width:18px; height:18px; color:var(--steel-900); }
   .back-row h2{ margin:0; font-size:16px; font-weight:700; }
@@ -102,17 +93,17 @@
   .list{ display:flex; flex-direction:column; gap:12px; }
   .list-btn{
     display:flex; align-items:center; gap:14px; width:100%;
-    padding:16px 16px; background:transparent; border:1.5px solid var(--line);
-    border-radius:10px; cursor:pointer; font-family:'Tajawal', sans-serif; text-align:right;
+    padding:16px; background:var(--surface); border:1.5px solid var(--line);
+    border-radius:12px; cursor:pointer; font-family:'Tajawal', sans-serif; text-align:right;
   }
   .list-btn:active{ background:var(--steel-200); }
   .list-icon{
-    width:36px; height:36px; flex-shrink:0; border-radius:8px;
-    background:var(--steel-200); display:flex; align-items:center; justify-content:center;
+    width:36px; height:36px; flex-shrink:0; border-radius:9px;
+    background:rgba(225,10,30,0.16); display:flex; align-items:center; justify-content:center;
   }
-  .list-icon svg{ width:18px; height:18px; color:var(--steel-900); }
+  .list-icon svg{ width:18px; height:18px; color:#FF4E4E; }
   .list-text{ flex:1; }
-  .list-text strong{ display:flex; align-items:center; gap:8px; font-size:14.5px; font-weight:700; }
+  .list-text strong{ display:flex; align-items:center; gap:8px; font-size:14.5px; font-weight:700; color:var(--steel-900); }
   .list-text span{ display:block; font-size:11.5px; color:var(--steel-500); margin-top:1px; }
   .chev{ width:16px; height:16px; color:var(--steel-500); transform:scaleX(-1); }
   .list-badge{
@@ -126,13 +117,13 @@
     width:100%; padding:13px 14px; font-size:16px;
     font-family:'IBM Plex Mono', monospace; direction:ltr; text-align:center;
     letter-spacing:4px; border:1.5px solid var(--line); border-radius:9px;
-    background:var(--bg); color:var(--steel-900); outline:none;
+    background:var(--surface); color:var(--steel-900); outline:none;
   }
   .field input:focus{ border-color:var(--amber); }
 
   .primary-btn{
     width:100%; padding:15px; border:none; border-radius:10px;
-    background:var(--steel-900); color:var(--bg); font-family:'Tajawal', sans-serif;
+    background:var(--amber); color:#ffffff; font-family:'Tajawal', sans-serif;
     font-size:15px; font-weight:700; cursor:pointer; margin-top:6px;
   }
   .primary-btn:active{ opacity:.85; }
@@ -151,7 +142,7 @@
   }
   .pin-overlay.open{ display:flex; }
   .pin-card{
-    width:100%; max-width:320px; background:var(--bg); border-radius:14px;
+    width:100%; max-width:320px; background:var(--surface); border-radius:14px;
     border:1px solid var(--line); padding:26px 22px; text-align:center;
   }
   .pin-card h2{ margin:0 0 4px; font-size:16px; font-weight:700; }
@@ -184,68 +175,77 @@
   .search-row{ display:flex; gap:8px; margin-bottom:14px; }
   .search-row input{
     flex:1; padding:12px 14px; font-size:14px; font-family:'Tajawal', sans-serif;
-    border:1.5px solid var(--line); border-radius:9px; background:var(--bg); color:var(--steel-900); outline:none;
+    border:1.5px solid var(--line); border-radius:9px; background:var(--surface); color:var(--steel-900); outline:none;
   }
   .search-row input:focus{ border-color:var(--amber); }
   .scan-btn{
-    width:44px; height:44px; flex-shrink:0; border-radius:9px; border:1.5px solid var(--line);
-    background:transparent; display:flex; align-items:center; justify-content:center; cursor:pointer;
+    width:44px; height:44px; flex-shrink:0; border-radius:9px; border:none;
+    background:linear-gradient(135deg, var(--amber), #7A0410); display:flex; align-items:center; justify-content:center; cursor:pointer;
   }
-  .scan-btn svg{ width:20px; height:20px; color:var(--steel-900); }
+  .scan-btn svg{ width:20px; height:20px; color:#ffffff; }
 
   /* شبكة اختيار التصنيف */
   .cat-grid{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
   .cat-box{
-    display:flex; align-items:center; justify-content:center; text-align:center;
-    padding:26px 12px; border:1.5px solid var(--line); border-radius:12px; background:transparent;
-    font-family:'Tajawal', sans-serif; font-size:14.5px; font-weight:700; color:var(--steel-900); cursor:pointer;
-    min-height:76px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; text-align:center;
+    padding:18px 10px; border:1.5px solid var(--line); border-radius:14px; background:var(--surface);
+    font-family:'Tajawal', sans-serif; font-size:13.5px; font-weight:700; color:var(--steel-900); cursor:pointer;
+    min-height:100px;
   }
   .cat-box:active{ background:var(--steel-200); }
-  .cat-box.all{ grid-column:1 / -1; background:var(--steel-900); color:var(--bg); border-color:var(--steel-900); }
+  .cat-box .cat-icon{
+    width:50px; height:50px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    background:rgba(225,10,30,0.16); flex-shrink:0;
+  }
+  .cat-box .cat-icon svg{ width:24px; height:24px; }
+  .cat-box.all{
+    grid-column:1 / -1; flex-direction:row; gap:10px; min-height:auto; padding:18px 12px;
+    background:linear-gradient(135deg, var(--amber), #7A0410); color:#ffffff; border-color:var(--amber); font-size:14.5px;
+  }
+  .cat-box.all .cat-icon{ width:26px; height:26px; background:transparent; }
+  .cat-box.all .cat-icon svg{ width:22px; height:22px; }
 
   .item-count{ font-size:11.5px; color:var(--steel-500); margin-bottom:10px; }
 
   .results{ display:flex; flex-direction:column; gap:8px; max-height:60vh; overflow-y:auto; }
   .item-row{
     display:flex; flex-direction:column; gap:8px; width:100%; padding:12px 14px;
-    /* مؤقت: خلفية بيضاء ثابتة وخط أسود عشان وضوح القراءة — لين نعدّل الألوان بشكل نهائي لاحقًا */
-    background:#FFFFFF !important; border:1.5px solid var(--line); border-radius:10px;
+    background:var(--surface); border:1.5px solid var(--line); border-right:3px solid var(--amber); border-radius:10px;
     cursor:pointer; font-family:'Tajawal', sans-serif; text-align:right;
   }
-  .item-row, .item-row .item-name, .item-row .item-price, .item-row .ir-sub, .item-row .num-badge{ color:#111111 !important; }
-  .item-row:active{ background:#F0F0F0 !important; }
+  .item-row, .item-row .item-name{ color:var(--steel-900); }
+  .item-row:active{ background:var(--steel-200); }
   .ir-top{ display:flex; align-items:center; gap:10px; width:100%; }
   .item-row .num-badge{
-    font-family:'IBM Plex Mono', monospace; font-size:11.5px; font-weight:700;
-    background:#EFEFEF !important; border-radius:6px; padding:4px 7px; flex-shrink:0;
+    font-family:'IBM Plex Mono', monospace; font-size:11.5px; font-weight:700; color:var(--amber-dark);
+    background:rgba(225,10,30,0.16); border-radius:6px; padding:4px 7px; flex-shrink:0;
   }
   .item-row .item-name{ flex:1; min-width:0; font-size:13.5px; font-weight:600; }
-  .item-row .item-price{ font-family:'IBM Plex Mono', monospace; font-size:13px; font-weight:700; flex-shrink:0; }
+  .item-row .item-price{ font-family:'IBM Plex Mono', monospace; font-size:13px; font-weight:700; flex-shrink:0; color:var(--steel-900); }
   .ir-bottom{ display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%; }
   .ir-sub{ font-size:11.5px; color:var(--steel-500); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .qty-pill{
     font-family:'IBM Plex Mono', monospace; font-size:11px; font-weight:700; flex-shrink:0;
     border-radius:20px; padding:3px 10px;
   }
-  .qty-pill.in{ background:rgba(62,122,82,0.15); color:var(--ok); }
-  .qty-pill.out{ background:rgba(176,67,46,0.15); color:var(--warn); }
+  .qty-pill.in{ background:rgba(111,207,142,0.16); color:var(--ok); }
+  .qty-pill.out{ background:rgba(255,107,94,0.16); color:var(--warn); }
   .empty-note{ text-align:center; font-size:13px; color:var(--steel-500); padding:30px 10px; }
 
   /* بطاقة تفاصيل الصنف */
-  .item-card{ border:1.5px solid var(--line); border-radius:14px; padding:18px; }
+  .item-card{ background:var(--surface); border:1.5px solid var(--line); border-radius:16px; padding:18px; }
   .item-card .ic-num{
     font-family:'IBM Plex Mono', monospace; font-size:12px; font-weight:700; color:var(--amber-dark);
-    background:var(--steel-200); display:inline-block; border-radius:6px; padding:4px 8px; margin-bottom:10px;
+    background:rgba(225,10,30,0.16); display:inline-block; border-radius:6px; padding:4px 8px; margin-bottom:10px;
   }
-  .item-card h3{ margin:0 0 2px; font-size:18px; font-weight:900; }
+  .item-card h3{ margin:0 0 2px; font-size:18px; font-weight:900; color:var(--steel-900); }
   .item-card .ic-en{ margin:0 0 14px; font-size:12.5px; color:var(--steel-500); }
-  .item-card .ic-price{ font-family:'IBM Plex Mono', monospace; font-size:26px; font-weight:700; color:var(--amber-dark); margin-bottom:16px; }
+  .item-card .ic-price{ font-family:'IBM Plex Mono', monospace; font-size:26px; font-weight:700; color:var(--amber); margin-bottom:16px; }
   .stat-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px; }
   .stat{ background:var(--steel-200); border-radius:9px; padding:10px 12px; }
   .stat .k{ display:block; font-size:11px; color:var(--steel-500); margin-bottom:3px; }
-  .stat .v{ display:block; font-size:13.5px; font-weight:700; }
-  .stat.wide{ grid-column:1 / -1; background:transparent; border:1.5px solid var(--steel-900); }
+  .stat .v{ display:block; font-size:13.5px; font-weight:700; color:var(--steel-900); }
+  .stat.wide{ grid-column:1 / -1; background:linear-gradient(135deg, rgba(225,10,30,0.22), rgba(225,10,30,0.05)); border:1.5px solid var(--amber); }
   .stat.wide .v{ font-family:'IBM Plex Mono', monospace; }
   .stat .v.big{ font-size:20px; }
   .section-label{ font-size:12px; color:var(--steel-500); font-weight:600; margin-bottom:8px; }
@@ -255,7 +255,7 @@
   .share-row{ display:flex; gap:10px; }
   .share-btn{
     flex:1; display:flex; align-items:center; justify-content:center; gap:8px;
-    padding:13px; border-radius:10px; border:1.5px solid var(--line); background:transparent;
+    padding:13px; border-radius:10px; border:1.5px solid var(--line); background:var(--surface);
     font-family:'Tajawal', sans-serif; font-size:13.5px; font-weight:700; cursor:pointer; color:var(--steel-900);
   }
   .share-btn.wa{ background:#25D366; border-color:#25D366; color:#fff; }
@@ -282,15 +282,10 @@
 
   <!-- ============ الشاشة الرئيسية ============ -->
   <div class="view active" id="view-gate">
-    <div class="brand">
-      <div class="brand-mark">ج</div>
-      <div class="brand-name">
-        <strong>شركة جادو</strong>
-        <span>لإستيراد معدات المطاعم والمقاهي</span>
-      </div>
+    <div class="hero">
+      <img src="jadu-logo.png" alt="شركة جادو — لإستيراد معدات المطاعم والمقاهي">
     </div>
     <div class="headline">
-      <h1>اختر الآن</h1>
       <p>حدد نوع الدخول للمتابعة</p>
     </div>
     <div class="menu">
@@ -313,7 +308,7 @@
         </div>
         <div class="role-text"><strong>زبون</strong><span>تصفح الأصناف والأسعار بدون رمز دخول</span></div>
       </button>
-      <button class="role-btn" data-role="admin" data-locked="true">
+      <button class="role-btn role-admin" data-role="admin" data-locked="true">
         <div class="role-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 2 3 6v6c0 5 4 9 9 10 5-1 9-5 9-10V6l-9-4Z"/>
@@ -346,7 +341,7 @@
     <div id="employeeSearchScreen" style="display:none;">
       <div class="search-row">
         <input type="text" id="employeeSearchInput" placeholder="ابحث برقم الصنف أو الاسم…">
-        <button class="scan-btn" id="employeeScanBtn" title="مسح كيو آر كود">
+        <button class="scan-btn" id="employeeScanBtn" title="مسح كيو آر كود أو باركود">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/>
             <rect x="7" y="7" width="10" height="10" rx="1"/>
@@ -370,7 +365,7 @@
       </div>
 
       <!-- نموذج تغيير السعر -->
-      <div id="priceChangeForm" style="display:none; margin-top:14px; border:1.5px solid var(--line); border-radius:12px; padding:14px;">
+      <div id="priceChangeForm" style="display:none; margin-top:14px; background:var(--surface); border:1.5px solid var(--line); border-radius:12px; padding:14px;">
         <div class="section-label">تغيير السعر — <span id="pcfItemNum"></span></div>
         <div class="field">
           <label>السعر القطاعي الجديد (الحالي: <span id="pcfOldRetail"></span>)</label>
@@ -557,8 +552,7 @@
 <div class="cam-overlay" id="camOverlay">
   <button class="cam-close" id="camCloseBtn">✕</button>
   <video id="camVideo" playsinline autoplay muted></video>
-  <canvas id="camCanvas"></canvas>
-  <div class="cam-hint" id="camHint">وجّه الكاميرا نحو الكيو آر كود الخاص بالمنتج</div>
+  <div class="cam-hint" id="camHint">وجّه الكاميرا نحو الكيو آر كود أو الباركود الخاص بالمنتج</div>
 </div>
 
 <script>
@@ -861,12 +855,19 @@ let ITEMS = [];
 
 // تجميع تصنيفات الشيت الفعلية بأزرار مختصرة بشاشة اختيار التصنيف.
 // "values: null" = زر "الكل" (يشمل كل شي، بما فيه أي تصنيف جديد أو غير مدرج هنا مثل "عام").
+const CAT_ICONS = {
+  all: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>',
+  equip: '<svg viewBox="0 0 24 24" fill="#FF6B5E"><path d="M7 2c.3 1.6-1.2 2-1.2 3.6C5.8 6.8 6.8 7.5 8 7.5s2.2-.7 2.2-1.9C10.2 4 8.7 3.6 9 2c-.9.3-1.4 1-1.4 1.8C7.6 3 7.1 2.3 7 2Z"/><path d="M13.5 2.2c.3 1.4-1.1 1.8-1.1 3.2 0 1.1.9 1.7 2 1.7s2-.6 2-1.7c0-1.4-1.4-1.8-1.1-3.2-.8.3-1.3 1-1.3 1.7-.1-.7-.5-1.4-.5-1.7Z"/><path d="M3 10a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-9Z"/><circle cx="8" cy="14.5" r="1.5" fill="#1B1917"/><circle cx="12" cy="14.5" r="1.5" fill="#1B1917"/><circle cx="16" cy="14.5" r="1.5" fill="#1B1917"/></svg>',
+  accessories: '<svg viewBox="0 0 24 24" fill="#FFC15E"><path d="M8.5 2a1 1 0 0 1 1 1v5.6a3.2 3.2 0 0 1-1.8 2.9l-.2.1V21a1 1 0 1 1-2 0v-9.4l-.2-.1A3.2 3.2 0 0 1 3.5 8.6V3a1 1 0 1 1 2 0v5.2h.5V3a1 1 0 1 1 2 0v5.2h.5V3a1 1 0 0 1 1-1Z"/><path d="M17 2c-2.2 0-4 2-4 5.4 0 2.4 1.2 4.1 3 4.7V21a1 1 0 1 0 2 0V12.1c1.8-.6 3-2.3 3-4.7C21 4 19.2 2 17 2Z"/></svg>',
+  spareparts: '<svg viewBox="0 0 24 24" fill="#9AA7B5"><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+  cleaning: '<svg viewBox="0 0 24 24" fill="#6FCF8E"><path d="M11 2a1 1 0 0 1 1 1v3.2l3.6-1.6a1 1 0 1 1 .8 1.8l-4 1.8a1 1 0 0 1-.4.1v.7l4.8 2.8a1 1 0 1 1-1 1.7L12 11l-3.8 2.5a1 1 0 1 1-1-1.7L12 9v-.8L6.2 5.5a1 1 0 1 1 .8-1.8L11 5.2V3a1 1 0 0 1 1-1Z" fill-opacity=".55"/><path d="M9.5 15h5l1.8 6.3a1 1 0 0 1-1 1.7H8.7a1 1 0 0 1-1-1.7L9.5 15Z"/></svg>'
+};
 const CATEGORY_GROUPS = [
-  { label: "الكل", values: null },
-  { label: "المعدات", values: ["معدات", "تبريد"] },
-  { label: "الإكسسوارات", values: ["اكسسوارات", "احواض وحافظات"] },
-  { label: "قطع غيار", values: ["قطع غيار", "قطع غيار مكينة قهوة"] },
-  { label: "معدات نظافة", values: ["معدات نظافة"] }
+  { label: "الكل", values: null, icon: CAT_ICONS.all },
+  { label: "المعدات", values: ["معدات", "تبريد"], icon: CAT_ICONS.equip },
+  { label: "الإكسسوارات", values: ["اكسسوارات", "احواض وحافظات"], icon: CAT_ICONS.accessories },
+  { label: "قطع غيار", values: ["قطع غيار", "قطع غيار مكينة قهوة"], icon: CAT_ICONS.spareparts },
+  { label: "معدات نظافة", values: ["معدات نظافة"], icon: CAT_ICONS.cleaning }
 ];
 let activeCategoryValues = null; // null = بدون فلترة (الكل)
 
@@ -930,7 +931,10 @@ function loadItems(){
 function renderCategoryGrid(){
   const wrap = document.getElementById('employeeCategoryGrid');
   wrap.innerHTML = CATEGORY_GROUPS.map((g, i) =>
-    `<button class="cat-box ${g.values === null ? 'all' : ''}" data-idx="${i}">${g.label}</button>`
+    `<button class="cat-box ${g.values === null ? 'all' : ''}" data-idx="${i}">
+      <span class="cat-icon">${g.icon}</span>
+      <span>${g.label}</span>
+    </button>`
   ).join('');
   wrap.querySelectorAll('.cat-box').forEach(box=>{
     box.addEventListener('click', ()=>{
@@ -1395,53 +1399,64 @@ document.getElementById('pcfAddBtn').addEventListener('click', ()=>{
 updatePriceCartBadge();
 
 // =====================================================================
-// مسح الكيو آر كود بالكاميرا
+// مسح الكود بالكاميرا — يدعم الكيو آر كود (QR) والباركود العادي (1D:
+// Code128, EAN-13, EAN-8, UPC-A/E, Code39) عبر مكتبة ZXing
+// تُستخدم بنفس الزر في الواجهات الثلاثة (موظف / زبون / إدارة عامة) لأنها كلها
+// تعرض نفس شاشة البحث (#view-employee)
 // =====================================================================
 const camOverlay = document.getElementById('camOverlay');
 const camVideo = document.getElementById('camVideo');
-const camCanvas = document.getElementById('camCanvas');
 const camHint = document.getElementById('camHint');
-let camStream = null;
-let camScanning = false;
+let zxingReader = null;
+let camControls = null;
+
+function getZxingReader(){
+  if(!zxingReader){
+    const hints = new Map();
+    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+      ZXing.BarcodeFormat.QR_CODE,
+      ZXing.BarcodeFormat.CODE_128,
+      ZXing.BarcodeFormat.CODE_39,
+      ZXing.BarcodeFormat.EAN_13,
+      ZXing.BarcodeFormat.EAN_8,
+      ZXing.BarcodeFormat.UPC_A,
+      ZXing.BarcodeFormat.UPC_E,
+      ZXing.BarcodeFormat.ITF
+    ]);
+    hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+    zxingReader = new ZXing.BrowserMultiFormatReader(hints);
+  }
+  return zxingReader;
+}
 
 async function openCamera(){
-  camHint.textContent = "وجّه الكاميرا نحو الكيو آر كود الخاص بالمنتج";
+  camHint.textContent = "وجّه الكاميرا نحو الكيو آر كود أو الباركود الخاص بالمنتج";
   camOverlay.classList.add('open');
   try {
-    camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-    camVideo.srcObject = camStream;
-    camScanning = true;
-    requestAnimationFrame(tickCamera);
+    const reader = getZxingReader();
+    camControls = await reader.decodeFromConstraints(
+      { video: { facingMode: "environment" } },
+      camVideo,
+      (result, err, controls) => {
+        if(result && result.getText){
+          const text = result.getText().trim();
+          closeCamera();
+          const found = ITEMS.find(it => it.number === text || it.typeCode === text);
+          if(found){
+            openItemDetail(found.number);
+          } else {
+            alert("ما فيه صنف مطابق لهذا الكود: " + text);
+          }
+        }
+      }
+    );
   } catch(e){
     camHint.textContent = "تعذّر فتح الكاميرا — تحقق من صلاحيات المتصفح";
   }
 }
 function closeCamera(){
-  camScanning = false;
   camOverlay.classList.remove('open');
-  if(camStream){ camStream.getTracks().forEach(t => t.stop()); camStream = null; }
-}
-function tickCamera(){
-  if(!camScanning) return;
-  if(camVideo.readyState === camVideo.HAVE_ENOUGH_DATA){
-    camCanvas.width = camVideo.videoWidth;
-    camCanvas.height = camVideo.videoHeight;
-    const ctx = camCanvas.getContext('2d');
-    ctx.drawImage(camVideo, 0, 0, camCanvas.width, camCanvas.height);
-    const imageData = ctx.getImageData(0, 0, camCanvas.width, camCanvas.height);
-    const code = jsQR(imageData.data, imageData.width, imageData.height);
-    if(code && code.data){
-      const found = ITEMS.find(it => it.number === code.data.trim());
-      closeCamera();
-      if(found){
-        openItemDetail(found.number);
-      } else {
-        alert("ما فيه صنف مطابق لهذا الكيو آر كود: " + code.data);
-      }
-      return;
-    }
-  }
-  requestAnimationFrame(tickCamera);
+  if(camControls){ try{ camControls.stop(); }catch(e){} camControls = null; }
 }
 document.getElementById('employeeScanBtn').addEventListener('click', openCamera);
 document.getElementById('camCloseBtn').addEventListener('click', closeCamera);
