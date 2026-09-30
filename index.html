@@ -1417,20 +1417,27 @@ const camVideo = document.getElementById('camVideo');
 const camHint = document.getElementById('camHint');
 let zxingReader = null;
 let camControls = null;
+let camStream = null;
+let camDetector = null;
+let camDetectTimer = null;
+let camScanning = false;
+
+const CAM_FORMATS_ZXING = [
+  ZXing.BarcodeFormat.QR_CODE,
+  ZXing.BarcodeFormat.CODE_128,
+  ZXing.BarcodeFormat.CODE_39,
+  ZXing.BarcodeFormat.EAN_13,
+  ZXing.BarcodeFormat.EAN_8,
+  ZXing.BarcodeFormat.UPC_A,
+  ZXing.BarcodeFormat.UPC_E,
+  ZXing.BarcodeFormat.ITF
+];
+const CAM_FORMATS_NATIVE = ['qr_code','code_128','code_39','ean_13','ean_8','upc_a','upc_e','itf'];
 
 function getZxingReader(){
   if(!zxingReader){
     const hints = new Map();
-    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
-      ZXing.BarcodeFormat.QR_CODE,
-      ZXing.BarcodeFormat.CODE_128,
-      ZXing.BarcodeFormat.CODE_39,
-      ZXing.BarcodeFormat.EAN_13,
-      ZXing.BarcodeFormat.EAN_8,
-      ZXing.BarcodeFormat.UPC_A,
-      ZXing.BarcodeFormat.UPC_E,
-      ZXing.BarcodeFormat.ITF
-    ]);
+    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, CAM_FORMATS_ZXING);
     hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
     // فحص أسرع (كل 100 ملي ثانية بدل الافتراضي ~500) لزيادة فرصة التقاط باركود 1D أثناء تحريك الهاتف
     zxingReader = new ZXing.BrowserMultiFormatReader(hints, 100);
@@ -1438,43 +1445,96 @@ function getZxingReader(){
   return zxingReader;
 }
 
+function handleScanResult(text){
+  closeCamera();
+  const found = ITEMS.find(it => it.number === text || it.typeCode === text);
+  if(found){
+    openItemDetail(found.number);
+  } else {
+    alert("ما فيه صنف مطابق لهذا الكود: " + text);
+  }
+}
+
+// المسار الأول: BarcodeDetector المدمج بالمتصفح (متوفر بمعظم متصفحات أندرويد/كروم) —
+// يستخدم محرك التعرف الأصلي للجهاز وهو أدق بكثير من أي مكتبة جافاسكربت بقراءة
+// الباركود العادي (1D)، وهو سبب ضعف قراءة الباركود العادي مقارنة بالكيو آر كود سابقًا.
+async function openCameraWithBarcodeDetector(constraints){
+  let formats = CAM_FORMATS_NATIVE;
+  if(typeof BarcodeDetector.getSupportedFormats === 'function'){
+    try{
+      const supported = await BarcodeDetector.getSupportedFormats();
+      const filtered = formats.filter(f => supported.includes(f));
+      if(filtered.length) formats = filtered;
+    }catch(e){ /* نكمل بالقائمة الافتراضية */ }
+  }
+  camDetector = new BarcodeDetector({ formats });
+  camStream = await navigator.mediaDevices.getUserMedia(constraints);
+  camVideo.srcObject = camStream;
+  await camVideo.play();
+  camScanning = true;
+
+  const tick = async () => {
+    if(!camScanning) return;
+    try {
+      const barcodes = await camDetector.detect(camVideo);
+      if(barcodes && barcodes.length){
+        const text = (barcodes[0].rawValue || '').trim();
+        if(text){ handleScanResult(text); return; }
+      }
+    } catch(e){ /* نكمل بالإطار التالي */ }
+    if(camScanning){ camDetectTimer = setTimeout(tick, 150); }
+  };
+  tick();
+}
+
+// المسار البديل: مكتبة ZXing — يُستخدم فقط إذا كان المتصفح لا يدعم BarcodeDetector
+async function openCameraWithZxing(constraints){
+  const reader = getZxingReader();
+  camControls = await reader.decodeFromConstraints(
+    constraints,
+    camVideo,
+    (result, err, controls) => {
+      if(result && result.getText){
+        handleScanResult(result.getText().trim());
+      }
+    }
+  );
+}
+
 async function openCamera(){
   camHint.textContent = "قرّب الباركود من الكاميرا (10-15 سم) وثبّت يدك لثانية";
   camOverlay.classList.add('open');
+  // دقة أعلى + تركيز تلقائي مستمر يساعدان كثيرًا بقراءة الباركود العادي (1D) اللي يحتاج وضوح بالتفاصيل الدقيقة
+  const constraints = {
+    video: {
+      facingMode: { ideal: "environment" },
+      width: { ideal: 1920 },
+      height: { ideal: 1080 },
+      advanced: [{ focusMode: "continuous" }]
+    }
+  };
   try {
-    const reader = getZxingReader();
-    // دقة أعلى + تركيز تلقائي مستمر يساعدان كثيرًا بقراءة الباركود العادي (1D) اللي يحتاج وضوح بالتفاصيل الدقيقة
-    const constraints = {
-      video: {
-        facingMode: { ideal: "environment" },
-        width: { ideal: 1920 },
-        height: { ideal: 1080 },
-        advanced: [{ focusMode: "continuous" }]
-      }
-    };
-    camControls = await reader.decodeFromConstraints(
-      constraints,
-      camVideo,
-      (result, err, controls) => {
-        if(result && result.getText){
-          const text = result.getText().trim();
-          closeCamera();
-          const found = ITEMS.find(it => it.number === text || it.typeCode === text);
-          if(found){
-            openItemDetail(found.number);
-          } else {
-            alert("ما فيه صنف مطابق لهذا الكود: " + text);
-          }
-        }
-      }
-    );
+    if(typeof BarcodeDetector !== 'undefined'){
+      await openCameraWithBarcodeDetector(constraints);
+    } else {
+      await openCameraWithZxing(constraints);
+    }
   } catch(e){
-    camHint.textContent = "تعذّر فتح الكاميرا — تحقق من صلاحيات المتصفح";
+    // لو فشل الماسح المدمج لأي سبب، نجرب ZXing كخطة بديلة قبل ما نستسلم
+    try {
+      await openCameraWithZxing(constraints);
+    } catch(e2){
+      camHint.textContent = "تعذّر فتح الكاميرا — تحقق من صلاحيات المتصفح";
+    }
   }
 }
 function closeCamera(){
   camOverlay.classList.remove('open');
+  camScanning = false;
+  if(camDetectTimer){ clearTimeout(camDetectTimer); camDetectTimer = null; }
   if(camControls){ try{ camControls.stop(); }catch(e){} camControls = null; }
+  if(camStream){ try{ camStream.getTracks().forEach(t => t.stop()); }catch(e){} camStream = null; }
+  camVideo.srcObject = null;
 }
 document.getElementById('employeeScanBtn').addEventListener('click', openCamera);
 document.getElementById('camCloseBtn').addEventListener('click', closeCamera);
