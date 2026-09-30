@@ -663,6 +663,7 @@ function initFirebase(){
       if (user && !isAdminEmail(user.email)) { auth.signOut(); return; }
       const el = document.getElementById('adminUserEmail');
       if (el) el.textContent = user ? user.email : "";
+      if (user) loadPrivateData(); else clearPrivateData();
       // لو خرج المستخدم وهو داخل شاشات الإدارة، نرجعه للواجهة الرئيسية
       if (!user) {
         const active = document.querySelector('.view.active');
@@ -1067,17 +1068,14 @@ function mapRow(r){
   const number = (r['رقم الصنف'] || '').toString().trim();
   const name = (r['اسم الصنف'] || '').toString().trim();
   const priceRetail = parseFloat(r['سعر القطاعي']) || 0;
-  const priceWholesale = parseFloat(r['سعر الجملة']) || 0;
   const company = (r['الشركة المصنعة'] || '').toString().trim();
   const country = (r['بلد الصنع'] || '').toString().trim();
   const color = (r['اللون'] || '').toString().trim();
   const typeCode = (r['شفرة النوع'] || '').toString().trim();
   const category = (r['التصنيف الرئيسي'] || '').toString().trim();
-  // بيانات الشراء — إدارية/حساسة، ما تظهر للموظف
-  const lastPurchasePrice = parseFloat(r['آخر سعر شراء']) || 0;
-  const purchaseCurrency = (r['العملة'] || '').toString().trim();
-  const exchangeRate = parseFloat(r['سعر الصرف']) || 0;
-  const lastPurchaseDate = (r['تاريخ آخر شراء'] || '').toString().trim();
+  // بيانات الشراء وسعر الجملة ما عادت موجودة بالشيت العام —
+  // تنقرأ من قاعدة البيانات المحمية للإدارة فقط (شوف loadPrivateData)
+  const priceWholesale = 0, lastPurchasePrice = 0, purchaseCurrency = '', exchangeRate = 0, lastPurchaseDate = '';
 
   const branches = {};
   Object.keys(r).forEach(k=>{
@@ -1092,6 +1090,51 @@ function mapRow(r){
     lastPurchasePrice, purchaseCurrency, exchangeRate, lastPurchaseDate,
     branches, totalQty
   };
+}
+
+// ---------------------------------------------------------------
+// بيانات الشراء وسعر الجملة — من Firestore، للإدارة المسجّلة فقط
+// (قواعد Firestore ترفض القراءة لأي أحد غير إيميلات الإدارة)
+// ---------------------------------------------------------------
+let PRIVATE = null;          // { "رقم الصنف": { w, p, c, r, d } }
+let privateLoaded = false;
+let privateError = "";
+async function loadPrivateData(){
+  if(!db) return;
+  privateError = "";
+  try {
+    const meta = await db.collection("private").doc("meta").get();
+    if(!meta.exists){ privateError = "لم تتم مزامنة بيانات الشراء بعد"; PRIVATE = {}; }
+    else {
+      const n = meta.data().chunks || 1;
+      const docs = await Promise.all(Array.from({length:n}, (_,i)=> db.collection("private").doc("purchase_" + i).get()));
+      const all = {};
+      docs.forEach(d => { if(d.exists){ try { Object.assign(all, JSON.parse(d.data().data || "{}")); } catch(e){} } });
+      PRIVATE = all;
+    }
+    privateLoaded = true;
+  } catch(e) {
+    console.warn("تعذّرت قراءة بيانات الشراء", e);
+    privateError = "تعذّرت قراءة بيانات الشراء";
+    PRIVATE = null; privateLoaded = false;
+  }
+  applyPrivateData();
+  renderCapitalReport();
+  if(employeeStep === "detail" && currentItem && employeeEntryPoint === "admin") openItemDetail(currentItem.number);
+}
+function applyPrivateData(){
+  ITEMS.forEach(it=>{
+    const x = (PRIVATE && PRIVATE[it.number]) || {};
+    it.priceWholesale = parseFloat(x.w) || 0;
+    it.lastPurchasePrice = parseFloat(x.p) || 0;
+    it.purchaseCurrency = (x.c || '').toString().trim();
+    it.exchangeRate = parseFloat(x.r) || 0;
+    it.lastPurchaseDate = (x.d || '').toString().trim();
+  });
+}
+function clearPrivateData(){
+  PRIVATE = null; privateLoaded = false; privateError = "";
+  applyPrivateData();
 }
 
 function formatNum(n){
@@ -1109,6 +1152,7 @@ function loadItems(){
     complete: function(res){
       ITEMS = res.data.map(mapRow).filter(it => it.number);
       itemsLoaded = true;
+      applyPrivateData();
       renderResults();
       renderAdminOverview();
       renderCapitalReport();
@@ -1258,13 +1302,17 @@ function openItemDetail(number){
   const priceChangeForm = document.getElementById('priceChangeForm');
   if(isAdminContext){
     purchaseInfo.style.display = "block";
-    purchaseInfo.innerHTML = `
+    purchaseInfo.innerHTML = !privateLoaded ? `
+      <div class="section-label">بيانات الشراء (إدارية)</div>
+      <div class="empty-note">${privateError || "جارِ التحميل…"}</div>
+    ` : `
       <div class="section-label">بيانات الشراء (إدارية)</div>
       <div class="stat-grid">
         <div class="stat"><span class="k">آخر سعر شراء</span><span class="v">${item.lastPurchasePrice ? formatNum(item.lastPurchasePrice) : '—'}</span></div>
         <div class="stat"><span class="k">العملة</span><span class="v">${item.purchaseCurrency || '—'}</span></div>
         <div class="stat"><span class="k">سعر الصرف</span><span class="v">${item.exchangeRate ? formatNum(item.exchangeRate) : '—'}</span></div>
         <div class="stat"><span class="k">تاريخ آخر شراء</span><span class="v">${item.lastPurchaseDate || '—'}</span></div>
+        <div class="stat"><span class="k">سعر الجملة</span><span class="v">${item.priceWholesale ? formatNum(item.priceWholesale) + ' ' + CURRENCY : '—'}</span></div>
       </div>
     `;
     priceChangeRow.style.display = "flex";
@@ -1323,6 +1371,10 @@ function renderCapitalReport(){
   if(!body) return;
   if(!itemsLoaded || !ITEMS.length){
     body.innerHTML = `<div class="empty-note">جارِ تحميل بيانات الأصناف…</div>`;
+    return;
+  }
+  if(!privateLoaded){
+    body.innerHTML = `<div class="empty-note">${privateError || "جارِ تحميل بيانات الشراء…"}</div>`;
     return;
   }
 
