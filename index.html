@@ -52,7 +52,8 @@
 
   /* هيرو الشعار — يمتد بعرض الشاشة كاملًا (يكسر padding الصفحة بهامش سالب) */
   .hero{ position:relative; margin:-20px -20px 22px; overflow:hidden; }
-  .hero img{ display:block; width:100%; height:auto; aspect-ratio:1159/897; object-fit:cover; }
+  .hero img, .hero video{ display:block; width:100%; height:auto; aspect-ratio:1159/897; object-fit:cover; background:#8e0610; }
+  .hero [hidden]{ display:none; }
 
   .headline{ text-align:center; margin-bottom:26px; }
   .headline p{ margin:0; font-size:13.5px; color:var(--steel-500); }
@@ -290,7 +291,10 @@
   <!-- ============ الشاشة الرئيسية ============ -->
   <div class="view active" id="view-gate">
     <div class="hero">
-      <img src="jadu-logo.png" alt="شركة جادو — لإستيراد معدات المطاعم والمقاهي">
+      <!-- مقدمة متحركة: الشعار يتكوّن من العدم، ثم يتوقف على آخر لقطة (الشعار كاملًا) -->
+      <video id="heroIntro" src="jadu-intro.mp4" poster="jadu-logo.png" autoplay muted playsinline preload="auto"
+             aria-label="شركة جادو — لإستيراد معدات المطاعم والمقاهي"></video>
+      <img id="heroLogo" src="jadu-logo.png" alt="شركة جادو — لإستيراد معدات المطاعم والمقاهي" hidden>
     </div>
     <div class="headline">
       <p>حدد نوع الدخول للمتابعة</p>
@@ -1543,5 +1547,17 @@ document.getElementById('camCloseBtn').addEventListener('click', closeCamera);
 initFirebase();
 </script>
 
+<script>
+/* مقدمة الشعار: تُعرض مرة عند فتح الصفحة، وتبقى على آخر لقطة. إن تعذّر التشغيل تظهر الصورة الثابتة */
+(function(){
+  var v = document.getElementById('heroIntro'), img = document.getElementById('heroLogo');
+  if(!v || !img) return;
+  function showStill(){ v.pause(); v.hidden = true; img.hidden = false; }
+  if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) { showStill(); return; }
+  v.addEventListener('error', showStill);
+  var p = v.play && v.play();
+  if (p && p.catch) p.catch(showStill);
+})();
+</script>
 </body>
 </html>
