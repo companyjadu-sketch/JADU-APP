@@ -292,9 +292,10 @@
   <div class="view active" id="view-gate">
     <div class="hero">
       <!-- مقدمة متحركة: الشعار يتكوّن من العدم، ثم يتوقف على آخر لقطة (الشعار كاملًا) -->
-      <video id="heroIntro" src="jadu-intro.mp4" poster="jadu-logo.png" autoplay muted playsinline preload="auto"
+      <video id="heroIntro" src="jadu-intro.mp4" poster="jadu-intro-poster.jpg" autoplay muted playsinline preload="auto"
              aria-label="شركة جادو — لإستيراد معدات المطاعم والمقاهي"></video>
-      <img id="heroLogo" src="jadu-logo.png" alt="شركة جادو — لإستيراد معدات المطاعم والمقاهي" hidden>
+      <!-- الصورة الثابتة لا تُحمَّل إلا إذا تعذّر تشغيل الفيديو -->
+      <img id="heroLogo" data-src="jadu-logo.png" alt="شركة جادو — لإستيراد معدات المطاعم والمقاهي" hidden>
     </div>
     <div class="headline">
       <p>حدد نوع الدخول للمتابعة</p>
@@ -1552,7 +1553,7 @@ initFirebase();
 (function(){
   var v = document.getElementById('heroIntro'), img = document.getElementById('heroLogo');
   if(!v || !img) return;
-  function showStill(){ v.pause(); v.hidden = true; img.hidden = false; }
+  function showStill(){ v.pause(); v.hidden = true; if(!img.src) img.src = img.dataset.src; img.hidden = false; }
   if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) { showStill(); return; }
   v.addEventListener('error', showStill);
   var p = v.play && v.play();
