@@ -1467,7 +1467,9 @@ function renderResults(){
       </div>
       <div class="ir-bottom">
         <span class="ir-sub">${subParts.length ? subParts.join(' · ') : ''}</span>
-        ${showQty ? `<span class="qty-pill ${inStock ? 'in' : 'out'}">${inStock ? '✓' : '✕'} الكمية: ${formatNum(it.totalQty)}</span>` : ''}
+        ${showQty
+          ? `<span class="qty-pill ${inStock ? 'in' : 'out'}">${inStock ? '✓' : '✕'} الكمية: ${formatNum(it.totalQty)}</span>`
+          : `<span class="qty-pill ${inStock ? 'in' : 'out'}">${inStock ? '✓ متوفر' : '✕ غير متوفر'}</span>`}
       </div>
     </button>
   `;
