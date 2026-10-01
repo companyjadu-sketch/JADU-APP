@@ -1504,12 +1504,14 @@ function openItemDetail(number){
   `).join('');
 
   const showQty = currentViewerRole !== "customer"; // الزبون ما يشوف أي بيانات كمية إطلاقًا
+  const isAdminContext = employeeEntryPoint === "admin";
 
   document.getElementById('employeeItemCard').innerHTML = `
     <div class="ic-num">${escapeHtml(item.number)}</div>
     <h3>${escapeHtml(item.name) || '—'}</h3>
     <div class="ic-price">${formatPrice(item.priceRetail)}</div>
     <div class="stat-grid">
+      ${isAdminContext ? `<div class="stat wide"><span class="k">سعر الجملة</span><span class="v big">${formatPrice(item.priceWholesale)}</span></div>` : ''}
       <div class="stat"><span class="k">الشركة المصنعة</span><span class="v">${escapeHtml(item.company) || '—'}</span></div>
       <div class="stat"><span class="k">بلد الصنع</span><span class="v">${escapeHtml(item.country) || '—'}</span></div>
       ${item.color ? `<div class="stat"><span class="k">اللون</span><span class="v">${escapeHtml(item.color)}</span></div>` : ''}
@@ -1527,7 +1529,6 @@ function openItemDetail(number){
   // زر المشاركة يظهر للموظف فقط (يُلغى للإدارة العامة وللزبون)
   document.getElementById('employeeShareRow').style.display = currentViewerRole === "employee" ? "flex" : "none";
 
-  const isAdminContext = employeeEntryPoint === "admin";
   const purchaseInfo = document.getElementById('adminPurchaseInfo');
   const priceChangeRow = document.getElementById('adminPriceChangeRow');
   const priceChangeForm = document.getElementById('priceChangeForm');
