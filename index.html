@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>شركة جادو</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&family=IBM+Plex+Mono:wght@600;700&display=swap" rel="stylesheet">
@@ -211,6 +211,14 @@
   }
   .scan-btn svg{ width:20px; height:20px; color:#ffffff; }
 
+  /* زر حذف صنف من قائمة تغيير الأسعار — هدف لمس كامل 44×44 حول أيقونة أصغر بصريًا */
+  .cart-remove-btn{
+    width:44px; height:44px; flex-shrink:0; border-radius:9px; border:1.5px solid var(--line);
+    background:var(--steel-200); color:var(--warn); font-size:15px; font-weight:700;
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+  }
+  .cart-remove-btn:active{ background:var(--line); }
+
   /* شبكة اختيار التصنيف */
   .cat-grid{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
   .cat-box{
@@ -339,7 +347,7 @@
   <div class="view active" id="view-gate">
     <div class="hero">
       <!-- مقدمة متحركة: الشعار يتكوّن من العدم، ثم يتوقف على آخر لقطة (الشعار كاملًا) -->
-      <video id="heroIntro" src="jadu-intro.mp4" poster="jadu-intro-poster.jpg" autoplay muted playsinline preload="auto"
+      <video id="heroIntro" src="jadu-intro.mp4" poster="jadu-intro-poster.jpg" muted playsinline preload="none"
              aria-label="شركة جادو — لإستيراد معدات المطاعم والمقاهي"></video>
       <!-- الصورة الثابتة لا تُحمَّل إلا إذا تعذّر تشغيل الفيديو -->
       <img id="heroLogo" data-src="jadu-logo.png" alt="شركة جادو — لإستيراد معدات المطاعم والمقاهي" hidden>
@@ -385,7 +393,7 @@
   <!-- ============ واجهة الموظف — بحث الأصناف ============ -->
   <div class="view" id="view-employee">
     <div class="back-row">
-      <button class="back-btn" id="employeeBackBtn">
+      <button class="back-btn" id="employeeBackBtn" aria-label="رجوع">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
       </button>
       <h2 id="employeeHeaderTitle">اختر التصنيف</h2>
@@ -454,7 +462,7 @@
   <!-- ============ الإدارة العامة — القائمة الرئيسية ============ -->
   <div class="view" id="view-admin">
     <div class="back-row">
-      <button class="back-btn" data-back="gate">
+      <button class="back-btn" data-back="gate" aria-label="رجوع">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
       </button>
       <h2>الإدارة العامة</h2>
@@ -463,6 +471,7 @@
       <span id="adminUserEmail"></span>
       <button id="adminLogoutBtn">تسجيل خروج</button>
     </div>
+    <div class="section-label">البيانات</div>
     <div class="list">
       <button class="list-btn" id="adminItemsBtn">
         <div class="list-icon">
@@ -500,6 +509,9 @@
         <div class="list-text"><strong>قائمة تغيير الأسعار <span class="list-badge" id="priceCartBadge" style="display:none;">0</span></strong><span>مراجعة التغييرات المضافة ومشاركتها</span></div>
         <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
       </button>
+    </div>
+    <div class="section-label" style="margin-top:18px;">الإعدادات</div>
+    <div class="list">
       <button class="list-btn" data-go="admin-settings">
         <div class="list-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -515,7 +527,7 @@
   <!-- ============ الإدارة العامة — قائمة تغيير الأسعار ============ -->
   <div class="view" id="view-admin-pricelist">
     <div class="back-row">
-      <button class="back-btn" data-back="admin">
+      <button class="back-btn" data-back="admin" aria-label="رجوع">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
       </button>
       <h2>قائمة تغيير الأسعار</h2>
@@ -536,7 +548,7 @@
   <!-- ============ الإدارة العامة — نظرة عامة ============ -->
   <div class="view" id="view-admin-overview">
     <div class="back-row">
-      <button class="back-btn" data-back="admin">
+      <button class="back-btn" data-back="admin" aria-label="رجوع">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
       </button>
       <h2>نظرة عامة</h2>
@@ -547,7 +559,7 @@
   <!-- ============ الإدارة العامة — كشف رأس المال ============ -->
   <div class="view" id="view-admin-capital">
     <div class="back-row">
-      <button class="back-btn" data-back="admin">
+      <button class="back-btn" data-back="admin" aria-label="رجوع">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
       </button>
       <h2>كشف رأس المال</h2>
@@ -566,7 +578,7 @@
   <!-- ============ الإدارة العامة — الإعدادات ============ -->
   <div class="view" id="view-admin-settings">
     <div class="back-row">
-      <button class="back-btn" data-back="admin">
+      <button class="back-btn" data-back="admin" aria-label="رجوع">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
       </button>
       <h2>الإعدادات — الرموز السرية</h2>
@@ -633,7 +645,7 @@
 
 <!-- ============ كاميرا مسح الكيو آر كود ============ -->
 <div class="cam-overlay" id="camOverlay">
-  <button class="cam-close" id="camCloseBtn">✕</button>
+  <button class="cam-close" id="camCloseBtn" aria-label="إغلاق الكاميرا">✕</button>
   <video id="camVideo" playsinline autoplay muted></video>
   <canvas id="camZoomCanvas"></canvas>
   <div class="cam-frame" id="camFrame"></div>
@@ -1012,11 +1024,14 @@ document.getElementById('savePinsBtn').addEventListener('click', async () => {
 // إظهار / إخفاء الرمز السري وكلمة المرور
 // ---------------------------------------------------------------
 document.querySelectorAll('.eye-btn[data-eye]').forEach(btn=>{
+  const hideLabel = btn.getAttribute('aria-label').replace('إظهار', 'إخفاء');
+  const showLabel = btn.getAttribute('aria-label');
   btn.addEventListener('click', ()=>{
     const input = document.getElementById(btn.dataset.eye);
     const show = input.type === "password";
     input.type = show ? "text" : "password";
     btn.classList.toggle('shown', show);
+    btn.setAttribute('aria-label', show ? hideLabel : showLabel);
   });
 });
 document.getElementById('pinEyeBtn').addEventListener('click', ()=>{
@@ -1584,7 +1599,7 @@ function renderPriceCart(){
       <div class="ir-top">
         <span class="num-badge">${e.number}</span>
         <span class="item-name">${e.name || '—'}</span>
-        <button class="scan-btn" data-remove="${e.number}" title="حذف من القائمة" style="width:32px; height:32px;">✕</button>
+        <button class="cart-remove-btn" data-remove="${e.number}" aria-label="حذف من القائمة" title="حذف من القائمة">✕</button>
       </div>
       <div class="ir-bottom" style="flex-direction:column; align-items:flex-start; gap:4px;">
         ${e.newRetail !== null && e.newRetail !== undefined ? `<span class="ir-sub">قطاعي: ${formatNum(e.oldRetail)} ← ${formatNum(e.newRetail)} ${CURRENCY}</span>` : ''}
@@ -1721,7 +1736,11 @@ function handleScanResult(text){
   if(found){
     openItemDetail(found.number);
   } else {
-    showAlert("ما فيه صنف مطابق لهذا الكود: " + text, { title:"لم يُعثر على الصنف" });
+    // نعبّئ مربع البحث بالكود المقروء فورًا — لو كان خطأ بسيط بالقراءة يقدر المستخدم يشوفه ويعدّله مباشرة
+    const searchInput = document.getElementById('employeeSearchInput');
+    if(searchInput){ searchInput.value = text; renderResults(); }
+    showConfirm("ما فيه صنف مطابق لهذا الكود: " + text, { title:"لم يُعثر على الصنف", okText:"مسح مرة أخرى", cancelText:"حسنًا" })
+      .then(scanAgain => { if(scanAgain) openCamera(); });
   }
 }
 
@@ -1863,13 +1882,19 @@ initFirebase();
 </script>
 
 <script>
-/* مقدمة الشعار: تُعرض مرة عند فتح الصفحة، وتبقى على آخر لقطة. إن تعذّر التشغيل تظهر الصورة الثابتة */
+/* مقدمة الشعار: تُعرض مرة واحدة فقط لكل جلسة متصفح (لتوفير البيانات على إنترنت ضعيف)،
+   وبعدها تظهر الصورة الثابتة مباشرة. إن تعذّر التشغيل أو كان الجهاز بوضع توفير البيانات تظهر الصورة الثابتة فورًا */
 (function(){
   var v = document.getElementById('heroIntro'), img = document.getElementById('heroLogo');
   if(!v || !img) return;
   function showStill(){ v.pause(); v.hidden = true; if(!img.src) img.src = img.dataset.src; img.hidden = false; }
-  if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) { showStill(); return; }
+  var alreadyPlayed = false;
+  try{ alreadyPlayed = sessionStorage.getItem('jaduIntroPlayed') === '1'; }catch(e){}
+  var saveData = (navigator.connection && navigator.connection.saveData) || false;
+  if (alreadyPlayed || saveData || (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)) { showStill(); return; }
   v.addEventListener('error', showStill);
+  v.addEventListener('ended', function(){ try{ sessionStorage.setItem('jaduIntroPlayed', '1'); }catch(e){} });
+  v.preload = "auto";
   var p = v.play && v.play();
   if (p && p.catch) p.catch(showStill);
 })();
