@@ -1905,10 +1905,11 @@ const camFrame = document.getElementById('camFrame');
 const camHint = document.getElementById('camHint');
 let zxingReader = null;
 let camControls = null;
-let camStream = null;
 let camDetector = null;
 let camDetectTimer = null;
 let camScanning = false;
+// يمنع استدعاء handleScanResult مرتين لو حركين الكشف (ZXing + BarcodeDetector) لقوا نتيجة بنفس اللحظة تقريبًا
+let scanResultHandled = false;
 
 const CAM_FORMATS_ZXING = [
   ZXing.BarcodeFormat.QR_CODE,
@@ -1934,6 +1935,8 @@ function getZxingReader(){
 }
 
 function handleScanResult(text){
+  if(scanResultHandled) return; // نتيجة ثانية من المحرك الآخر بعد ما عالجنا نتيجة سابقة — نتجاهلها
+  scanResultHandled = true;
   closeCamera();
   // نجمع كل الأصناف المطابقة (مو أول واحد بس) لاكتشاف حالة تكرار نفس الكود بأكثر من صنف
   const matches = ITEMS.filter(it => it.number === text || it.typeCode === text);
@@ -1954,13 +1957,13 @@ function handleScanResult(text){
   }
 }
 
-// المسار الأول: BarcodeDetector المدمج بالمتصفح (متوفر بمعظم متصفحات أندرويد/كروم) —
-// يستخدم محرك التعرف الأصلي للجهاز وهو أدق بكثير من أي مكتبة جافاسكربت بقراءة
-// الباركود العادي (1D). لكن تبيّن إن السبب الحقيقي لفشل قراءة باركود الليبل الحراري
-// (رغم إنه سليم ويُقرأ فورًا لما نكبّره/نزوم عليه بغوغل لنس) هو إن التطبيق كان يحلّل
-// الفيديو بحجمه الطبيعي، فالباركود يظهر صغير جدًا ضمن الإطار الكامل ليقرأه المحرك.
-// الحل: نكبّر رقميًا (نقص على منطقة الإطار البرتقالي المركزية ونكبّرها) قبل التحليل،
-// ونحاول نفعّل الزوم الحقيقي بالكاميرا لو الجهاز يدعمه.
+// تشغيل محركَي قراءة بالتوازي معًا (بدل اختيار واحد فقط) — لأن تبيّن إن بعض الأجهزة
+// عندها BarcodeDetector المدمج بالمتصفح (الدالة موجودة فعليًا) لكن محرك التعرف الحقيقي
+// خلفها (مزوّد عبر خدمات النظام) ما يدعم قراءة الباركود العادي (1D) إطلاقًا على ذاك
+// الجهاز بالذات، فتظل الكاميرا تدور بدون ما تكتشف أي شيء ولا حتى تعطي خطأ. ولأن مكتبة
+// ZXing (جافاسكربت بحتة، تعمل بنفس الطريقة على كل الأجهزة والمتصفحات) أثبتت موثوقية
+// أعلى، صارت هي المسؤولة عن طلب الكاميرا دائمًا، و BarcodeDetector (لو موجود) يشتغل
+// بالتوازي كفرصة إضافية على نفس الفيديو — وأول محرك يلقى نتيجة يفوز فورًا.
 let camVideoTrack = null;
 
 async function tryApplyOpticalZoom(track){
@@ -1975,7 +1978,9 @@ async function tryApplyOpticalZoom(track){
   }catch(e){ /* الزوم الحقيقي غير مدعوم — نعتمد على الزوم الرقمي فقط */ }
 }
 
-async function openCameraWithBarcodeDetector(constraints){
+// يشغّل محرك BarcodeDetector المدمج بالمتصفح (لو متوفر) بالقراءة من نفس عنصر الفيديو
+// اللي فتحته ZXing أصلًا — بدون طلب كاميرا مستقلة، فقط قراءة إضافية بالتوازي
+async function startBarcodeDetectorLoop(){
   let formats = CAM_FORMATS_NATIVE;
   if(typeof BarcodeDetector.getSupportedFormats === 'function'){
     try{
@@ -1985,16 +1990,13 @@ async function openCameraWithBarcodeDetector(constraints){
     }catch(e){ /* نكمل بالقائمة الافتراضية */ }
   }
   camDetector = new BarcodeDetector({ formats });
-  camStream = await navigator.mediaDevices.getUserMedia(constraints);
-  camVideo.srcObject = camStream;
-  await camVideo.play();
   camScanning = true;
 
-  camVideoTrack = camStream.getVideoTracks()[0] || null;
-  if(camVideoTrack){ tryApplyOpticalZoom(camVideoTrack); }
+  const track = (camVideo.srcObject && camVideo.srcObject.getVideoTracks) ? camVideo.srcObject.getVideoTracks()[0] : null;
+  if(track){ camVideoTrack = track; tryApplyOpticalZoom(track); }
 
   const tick = async () => {
-    if(!camScanning) return;
+    if(!camScanning || scanResultHandled) return;
     try {
       let target = camVideo;
       // نقص على منطقة الإطار البرتقالي فقط ونكبّرها — هذا يعطي الباركود مساحة أكبر
@@ -2029,12 +2031,13 @@ async function openCameraWithBarcodeDetector(constraints){
         if(text){ handleScanResult(text); return; }
       }
     } catch(e){ /* نكمل بالإطار التالي */ }
-    if(camScanning){ camDetectTimer = setTimeout(tick, 150); }
+    if(camScanning && !scanResultHandled){ camDetectTimer = setTimeout(tick, 150); }
   };
   tick();
 }
 
-// المسار البديل: مكتبة ZXing — يُستخدم فقط إذا كان المتصفح لا يدعم BarcodeDetector
+// ZXing هي المسؤولة دائمًا عن طلب الكاميرا — أثبتت أنها تعمل بثبات أكبر عبر مختلف
+// الأجهزة والمتصفحات من الاعتماد فقط على BarcodeDetector المدمج
 async function openCameraWithZxing(constraints){
   const reader = getZxingReader();
   camControls = await reader.decodeFromConstraints(
@@ -2052,6 +2055,7 @@ async function openCamera(){
   camHint.textContent = "حط الباركود داخل الإطار البرتقالي وثبّت يدك لثانية — التكبير تلقائي";
   camOverlay.classList.add('open');
   openFocusTrap(camOverlay);
+  scanResultHandled = false;
   // دقة أعلى + تركيز تلقائي مستمر يساعدان كثيرًا بقراءة الباركود العادي (1D) اللي يحتاج وضوح بالتفاصيل الدقيقة
   const constraints = {
     video: {
@@ -2062,18 +2066,14 @@ async function openCamera(){
     }
   };
   try {
+    await openCameraWithZxing(constraints);
+    // إضافيًا وبالتوازي: لو الجهاز يدعم BarcodeDetector المدمج، نشغّله كفرصة ثانية
+    // على نفس الفيديو — أول محرك يلقى نتيجة يفوز، وما فيه ضرر لو ما لقى شيء
     if(typeof BarcodeDetector !== 'undefined'){
-      await openCameraWithBarcodeDetector(constraints);
-    } else {
-      await openCameraWithZxing(constraints);
+      startBarcodeDetectorLoop().catch(()=>{});
     }
   } catch(e){
-    // لو فشل الماسح المدمج لأي سبب، نجرب ZXing كخطة بديلة قبل ما نستسلم
-    try {
-      await openCameraWithZxing(constraints);
-    } catch(e2){
-      camHint.textContent = "تعذّر فتح الكاميرا — تحقق من صلاحيات المتصفح";
-    }
+    camHint.textContent = "تعذّر فتح الكاميرا — تحقق من صلاحيات المتصفح";
   }
 }
 function closeCamera(){
@@ -2082,7 +2082,7 @@ function closeCamera(){
   camScanning = false;
   if(camDetectTimer){ clearTimeout(camDetectTimer); camDetectTimer = null; }
   if(camControls){ try{ camControls.stop(); }catch(e){} camControls = null; }
-  if(camStream){ try{ camStream.getTracks().forEach(t => t.stop()); }catch(e){} camStream = null; }
+  if(camVideo.srcObject){ try{ camVideo.srcObject.getTracks().forEach(t => t.stop()); }catch(e){} }
   camVideoTrack = null;
   camVideo.srcObject = null;
 }
