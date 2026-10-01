@@ -4,6 +4,19 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>شركة جادو</title>
+
+<!-- ============================================================
+     تثبيت التطبيق (PWA) + العمل بدون إنترنت
+     ============================================================ -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0F0E0D">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="جادو">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&family=IBM+Plex+Mono:wght@600;700&display=swap" rel="stylesheet">
 
@@ -1205,22 +1218,68 @@ function formatNum(n){
 }
 
 let itemsLoaded = false;
-function loadItems(){
-  if(itemsLoaded || !SHEET_CSV_URL) return;
+let itemsFetching = false;
+let itemsLastLoadedAt = null; // وقت آخر تحميل ناجح من الشيت (مو من التخزين المحلي)
+const ITEMS_CACHE_KEY = 'jadu_items_cache_v1';
+
+// يحمّل آخر نسخة محفوظة بالجهاز (تشتغل حتى بدون إنترنت) — يرجع true لو لقى بيانات صالحة
+function loadItemsFromCache_(){
+  try {
+    const raw = localStorage.getItem(ITEMS_CACHE_KEY);
+    if(!raw) return false;
+    const parsed = JSON.parse(raw);
+    if(!parsed || !Array.isArray(parsed.items) || !parsed.items.length) return false;
+    ITEMS = parsed.items;
+    itemsLastLoadedAt = parsed.savedAt ? new Date(parsed.savedAt) : null;
+    itemsLoaded = true;
+    return true;
+  } catch(e){ return false; }
+}
+
+function saveItemsToCache_(){
+  try {
+    localStorage.setItem(ITEMS_CACHE_KEY, JSON.stringify({ items: ITEMS, savedAt: itemsLastLoadedAt ? itemsLastLoadedAt.toISOString() : null }));
+  } catch(e){ /* التخزين ممتلئ أو غير متاح — نتجاهل، ما يوقف التطبيق */ }
+}
+
+// force=true يفرض إعادة التحميل من الشبكة حتى لو عندنا بيانات أصلًا (زر "مزامنة الآن" والتحديث الدوري)
+function loadItems(force){
+  if(itemsFetching) return;
+
+  // أول ظهور للتطبيق: نعرض آخر نسخة محفوظة محليًا فورًا (يشتغل حتى بدون إنترنت)
+  if(!itemsLoaded && loadItemsFromCache_()){
+    renderResults();
+    renderAdminOverview();
+    renderCapitalReport();
+  }
+
+  if(itemsLoaded && !force) return;
+  if(!SHEET_CSV_URL) return;
+
+  itemsFetching = true;
   Papa.parse(SHEET_CSV_URL, {
     download: true,
     header: true,
     skipEmptyLines: true,
     complete: function(res){
-      ITEMS = res.data.map(mapRow).filter(it => it.number);
+      itemsFetching = false;
+      const freshItems = res.data.map(mapRow).filter(it => it.number);
+      if(!freshItems.length) return; // تجاهل نتيجة فاضية (خطأ مؤقت بالشيت) ونبقي النسخة القديمة
+      ITEMS = freshItems;
       itemsLoaded = true;
+      itemsLastLoadedAt = new Date();
+      saveItemsToCache_();
+      secureLoaded = false; // الأصناف اتجدّدت، لازم ندمج بيانات الشراء المحمية فيها من جديد
       renderResults();
       renderAdminOverview();
       renderCapitalReport();
       loadSecureItems(); // لو الإدارة داخلة أصلًا، نجيب بيانات الشراء المحمية الآن
     },
     error: function(err){
-      document.getElementById('employeeItemCount').textContent = "تعذّر تحميل بيانات الأصناف — تحقق من الاتصال بالإنترنت";
+      itemsFetching = false;
+      if(!itemsLoaded){
+        document.getElementById('employeeItemCount').textContent = "تعذّر تحميل بيانات الأصناف — تحقق من الاتصال بالإنترنت";
+      }
       console.warn("Sheet load error", err);
     }
   });
@@ -1437,7 +1496,21 @@ function renderAdminOverview(){
     return `<div class="stat"><span class="k">${name}</span><span class="v">${zeroCount} صنف ناقص</span></div>`;
   }).join('');
 
+  const lastUpdatedText = itemsLastLoadedAt
+    ? itemsLastLoadedAt.toLocaleString('ar-LY', { dateStyle: 'medium', timeStyle: 'short' })
+    : 'غير معروف (بيانات محفوظة محليًا)';
+
   body.innerHTML = `
+    <div class="sync-note" style="margin-bottom:14px;">
+      <div class="sync-dot ${itemsFetching ? '' : 'on'}" id="itemsSyncDot"></div>
+      <span>آخر تحديث للبيانات: ${lastUpdatedText}</span>
+    </div>
+    <button class="list-btn" id="syncItemsNowBtn" type="button" style="margin-bottom:18px;">
+      <div class="list-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+      </div>
+      <div class="list-text"><strong>مزامنة الآن</strong><span id="syncItemsNowStatus">جلب آخر نسخة من الشيت مباشرة</span></div>
+    </button>
     <div class="stat-grid">
       <div class="stat"><span class="k">إجمالي عدد الأصناف</span><span class="v big">${total}</span></div>
       <div class="stat"><span class="k">أصناف متوفرة</span><span class="v big">${inStock}</span></div>
@@ -1448,6 +1521,17 @@ function renderAdminOverview(){
       ${branchRows || '<div class="empty-note">لا توجد بيانات فروع</div>'}
     </div>
   `;
+
+  const syncBtn = document.getElementById('syncItemsNowBtn');
+  if(syncBtn){
+    syncBtn.addEventListener('click', function(){
+      const statusEl = document.getElementById('syncItemsNowStatus');
+      if(statusEl) statusEl.textContent = "جارِ التحديث…";
+      syncBtn.disabled = true;
+      loadItems(true);
+      setTimeout(() => { renderAdminOverview(); }, 1500); // نعيد الرسم بعد مهلة قصيرة لتحديث الحالة والوقت
+    });
+  }
 }
 
 // ---------------------------------------------------------------
@@ -1918,6 +2002,16 @@ document.getElementById('camCloseBtn').addEventListener('click', closeCamera);
 
 // ---------------------------------------------------------------
 initFirebase();
+
+// تحديث دوري لبيانات الأصناف كل 5 دقائق (يشتغل بالخلفية طالما الصفحة مفتوحة)
+setInterval(() => { if(itemsLoaded) loadItems(true); }, 5 * 60 * 1000);
+
+// تسجيل Service Worker لدعم التثبيت كتطبيق والعمل بدون إنترنت
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(e => console.warn('تعذّر تسجيل Service Worker', e));
+  });
+}
 </script>
 
 <script>
