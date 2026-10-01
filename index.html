@@ -1271,6 +1271,12 @@ function formatNum(n){
   return rounded.toLocaleString('en-US', { maximumFractionDigits: 3 });
 }
 
+// لعرض الأسعار تحديدًا: سعر صفر يعني "غير مسجّل بالشيت" وليس سعرًا فعليًا بصفر،
+// فنعرضه كشرطة "—" بدل "0 د.ل" حتى لا يُفهم خطأً إنه مجاني أو مقصود
+function formatPrice(n){
+  return (n && n > 0) ? `${formatNum(n)} ${CURRENCY}` : '—';
+}
+
 // تعقيم أمني: يحوّل أي رمز HTML خطير بنص قادم من الشيت أو من المستخدم (اسم صنف، شركة، بحث...)
 // إلى نص عادي غير قابل للتنفيذ، قبل إدراجه بالصفحة عبر innerHTML
 function escapeHtml(str){
@@ -1463,7 +1469,7 @@ function renderResults(){
       <div class="ir-top">
         <span class="num-badge">${escapeHtml(it.number)}</span>
         <span class="item-name">${escapeHtml(it.name) || '—'}</span>
-        <span class="item-price">${formatNum(it.priceRetail)} ${CURRENCY}</span>
+        <span class="item-price">${formatPrice(it.priceRetail)}</span>
       </div>
       <div class="ir-bottom">
         <span class="ir-sub">${subParts.length ? subParts.join(' · ') : ''}</span>
@@ -1502,7 +1508,7 @@ function openItemDetail(number){
   document.getElementById('employeeItemCard').innerHTML = `
     <div class="ic-num">${escapeHtml(item.number)}</div>
     <h3>${escapeHtml(item.name) || '—'}</h3>
-    <div class="ic-price">${formatNum(item.priceRetail)} ${CURRENCY}</div>
+    <div class="ic-price">${formatPrice(item.priceRetail)}</div>
     <div class="stat-grid">
       <div class="stat"><span class="k">الشركة المصنعة</span><span class="v">${escapeHtml(item.company) || '—'}</span></div>
       <div class="stat"><span class="k">بلد الصنع</span><span class="v">${escapeHtml(item.country) || '—'}</span></div>
@@ -1670,7 +1676,7 @@ function buildShareText(item){
   if(item.company) lines.push(`الشركة المصنعة: ${item.company}`);
   if(item.country) lines.push(`بلد الصنع: ${item.country}`);
   if(item.color) lines.push(`اللون: ${item.color}`);
-  lines.push(`سعر القطاعي: ${formatNum(item.priceRetail)} ${CURRENCY}`);
+  lines.push(`سعر القطاعي: ${formatPrice(item.priceRetail)}`);
   return lines.join('\n');
 }
 
@@ -1772,10 +1778,10 @@ function buildPriceCartShareText(){
   priceCart.items.forEach((e, i) => {
     lines.push(`${i + 1}) رقم: ${e.number} — ${e.name || ''}`);
     if(e.newRetail !== null && e.newRetail !== undefined){
-      lines.push(`   قطاعي: ${formatNum(e.oldRetail)} ← ${formatNum(e.newRetail)}`);
+      lines.push(`   قطاعي: ${formatPrice(e.oldRetail)} ← ${formatNum(e.newRetail)}`);
     }
     if(e.newWholesale !== null && e.newWholesale !== undefined){
-      lines.push(`   جملة: ${formatNum(e.oldWholesale)} ← ${formatNum(e.newWholesale)}`);
+      lines.push(`   جملة: ${formatPrice(e.oldWholesale)} ← ${formatNum(e.newWholesale)}`);
     }
   });
   lines.push("———————————");
@@ -1798,8 +1804,8 @@ function renderPriceCart(){
         <button class="cart-remove-btn" data-remove="${escapeHtml(e.number)}" aria-label="حذف من القائمة" title="حذف من القائمة">✕</button>
       </div>
       <div class="ir-bottom" style="flex-direction:column; align-items:flex-start; gap:4px;">
-        ${e.newRetail !== null && e.newRetail !== undefined ? `<span class="ir-sub">قطاعي: ${formatNum(e.oldRetail)} ← ${formatNum(e.newRetail)} ${CURRENCY}</span>` : ''}
-        ${e.newWholesale !== null && e.newWholesale !== undefined ? `<span class="ir-sub">جملة: ${formatNum(e.oldWholesale)} ← ${formatNum(e.newWholesale)} ${CURRENCY}</span>` : ''}
+        ${e.newRetail !== null && e.newRetail !== undefined ? `<span class="ir-sub">قطاعي: ${formatPrice(e.oldRetail)} ← ${formatNum(e.newRetail)} ${CURRENCY}</span>` : ''}
+        ${e.newWholesale !== null && e.newWholesale !== undefined ? `<span class="ir-sub">جملة: ${formatPrice(e.oldWholesale)} ← ${formatNum(e.newWholesale)} ${CURRENCY}</span>` : ''}
       </div>
     </div>
   `).join('');
@@ -1848,8 +1854,8 @@ document.getElementById('openPriceChangeBtn').addEventListener('click', ()=>{
   form.style.display = isOpen ? "none" : "block";
   if(!isOpen && currentItem){
     document.getElementById('pcfItemNum').textContent = currentItem.number;
-    document.getElementById('pcfOldRetail').textContent = `${formatNum(currentItem.priceRetail)} ${CURRENCY}`;
-    document.getElementById('pcfOldWholesale').textContent = `${formatNum(currentItem.priceWholesale)} ${CURRENCY}`;
+    document.getElementById('pcfOldRetail').textContent = formatPrice(currentItem.priceRetail);
+    document.getElementById('pcfOldWholesale').textContent = formatPrice(currentItem.priceWholesale);
     document.getElementById('pcfNewRetail').value = "";
     document.getElementById('pcfNewWholesale').value = "";
     document.getElementById('pcfMsg').textContent = "";
