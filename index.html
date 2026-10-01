@@ -756,6 +756,11 @@ function initFirebase(){
       if (!user) {
         const active = document.querySelector('.view.active');
         if (active && active.id.startsWith('view-admin')) showView('gate');
+        secureLoaded = false; // نظّف البيانات الحساسة من الذاكرة بعد الخروج
+        ITEMS.forEach(it => { it.priceWholesale = 0; it.lastPurchasePrice = 0; it.purchaseCurrency = ''; it.exchangeRate = 0; it.lastPurchaseDate = ''; });
+      } else {
+        // دخول إداري معتمد — اجلب بيانات الشراء المحمية من Firestore
+        loadSecureItems();
       }
     });
     firebaseReady = true;
@@ -1132,7 +1137,9 @@ document.getElementById('adminLogoutBtn').addEventListener('click', async ()=>{
 // بحث الأصناف — قراءة بيانات الشيت
 // =====================================================================
 // رابط الشيت المنشور بصيغة CSV (File > Share > Publish to web > CSV بجوجل شيت)
-const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSYJP_O-jmrABM6jSTcEGTq5WZAE1J5k-wO-deCQvnpM_5gHbZmuYR2PVR7cPSZoAQHXtk68dOzH65K/pub?output=csv";
+// ملاحظة أمان: هذا رابط تبويب "عام" المنشور فقط — لا يحتوي على بيانات الشراء/سعر الجملة
+// (تلك البيانات انتقلت إلى Firestore المحمي بدخول الإدارة فقط).
+const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSYJP_O-jmrABM6jSTcEGTq5WZAE1J5k-wO-deCQvnpM_5gHbZmuYR2PVR7cPSZoAQHXtk68dOzH65K/pub?gid=385150651&single=true&output=csv";
 
 const CURRENCY = "د.ل";
 
@@ -1210,11 +1217,43 @@ function loadItems(){
       renderResults();
       renderAdminOverview();
       renderCapitalReport();
+      loadSecureItems(); // لو الإدارة داخلة أصلًا، نجيب بيانات الشراء المحمية الآن
     },
     error: function(err){
       document.getElementById('employeeItemCount').textContent = "تعذّر تحميل بيانات الأصناف — تحقق من الاتصال بالإنترنت";
       console.warn("Sheet load error", err);
     }
+  });
+}
+
+// بيانات الشراء الحساسة (سعر الجملة، آخر سعر شراء، العملة، سعر الصرف، تاريخ آخر شراء)
+// محمية بـ Firestore ولا تُجلب إلا لحساب إداري معتمد وبعد تسجيل الدخول فعليًا
+let secureLoaded = false;
+function loadSecureItems(){
+  if(secureLoaded || !firebaseReady || !db) return;
+  const user = auth && auth.currentUser;
+  if(!user || !isAdminEmail(user.email)) return; // مو إدارة معتمدة — ما نحاول نقرأ أصلًا
+  if(!itemsLoaded || !ITEMS.length) return; // لسا الأصناف ما تحملت، هتُستدعى تاني من loadItems()
+
+  db.collection('secure_items').get().then(snap => {
+    snap.forEach(doc => {
+      const d = doc.data();
+      const item = ITEMS.find(it => it.number === doc.id);
+      if(item){
+        item.priceWholesale    = Number(d.priceWholesale) || 0;
+        item.lastPurchasePrice = Number(d.lastPurchasePrice) || 0;
+        item.purchaseCurrency  = d.purchaseCurrency || '';
+        item.exchangeRate      = Number(d.exchangeRate) || 0;
+        item.lastPurchaseDate  = d.lastPurchaseDate || '';
+      }
+    });
+    secureLoaded = true;
+    renderCapitalReport();
+    if(currentItem && employeeEntryPoint === "admin"){
+      openItemDetail(currentItem.number); // لتحديث قسم بيانات الشراء المعروض حاليًا لو مفتوح
+    }
+  }).catch(err => {
+    console.warn("تعذّر تحميل بيانات الشراء المحمية من Firestore", err);
   });
 }
 
