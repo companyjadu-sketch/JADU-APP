@@ -289,6 +289,12 @@
   }
   .qty-pill.in{ background:rgba(111,207,142,0.16); color:var(--ok); }
   .qty-pill.out{ background:rgba(255,107,94,0.16); color:var(--warn); }
+
+  /* بطاقة توفر الصنف لواجهة الزبون — توضّح متوفر/غير متوفر بدون كشف الكمية الفعلية */
+  .stat.avail-in{ background:rgba(111,207,142,0.16); border:1.5px solid var(--ok); }
+  .stat.avail-in .v{ color:var(--ok); }
+  .stat.avail-out{ background:rgba(255,107,94,0.16); border:1.5px solid var(--warn); }
+  .stat.avail-out .v{ color:var(--warn); }
   .empty-note{ text-align:center; font-size:13px; color:var(--steel-500); padding:30px 10px; }
 
   /* بطاقة تفاصيل الصنف */
@@ -1500,6 +1506,7 @@ function openItemDetail(number){
       <div class="stat"><span class="k">بلد الصنع</span><span class="v">${escapeHtml(item.country) || '—'}</span></div>
       ${item.color ? `<div class="stat"><span class="k">اللون</span><span class="v">${escapeHtml(item.color)}</span></div>` : ''}
       ${showQty ? `<div class="stat wide"><span class="k">الكمية الإجمالية (كل الفروع)</span><span class="v big">${formatNum(item.totalQty)}</span></div>` : ''}
+      ${currentViewerRole === "customer" ? `<div class="stat wide ${item.totalQty > 0 ? 'avail-in' : 'avail-out'}"><span class="k">التوفر</span><span class="v big">${item.totalQty > 0 ? '✓ متوفر' : '✕ غير متوفر'}</span></div>` : ''}
     </div>
     ${showQty ? `
     <div class="section-label">الكمية حسب الفرع</div>
