@@ -61,8 +61,11 @@
   }
   .app{ width:100%; max-width:420px; }
   .view{ display:none; }
-  .view.active{ display:block; animation:rise .2s ease; }
-  @keyframes rise{ from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);} }
+  /* انتقال "تقريب" (zoom-in) بين الشاشات: كل شاشة تدخل مكبّرة شوي من حجمها الطبيعي
+     وشفافة، وتوصل لحجمها وشفافيتها الكاملة بسرعة — إحساس أقرب للتطبيقات الأصلية */
+  .view.active{ display:block; animation:rise .22s cubic-bezier(.22,.9,.32,1); transform-origin:center top; }
+  @keyframes rise{ from{opacity:0; transform:scale(.96) translateY(4px);} to{opacity:1; transform:scale(1) translateY(0);} }
+  @media (prefers-reduced-motion: reduce){ .view.active{ animation:none; } }
 
   /* هيرو الشعار — يمتد بعرض الشاشة كاملًا (يكسر padding الصفحة بهامش سالب) */
   .hero{ position:relative; margin:-20px -20px 22px; overflow:hidden; }
