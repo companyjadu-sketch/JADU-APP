@@ -298,6 +298,10 @@
   .item-row .item-price{ font-family:'IBM Plex Mono', monospace; font-size:13px; font-weight:700; flex-shrink:0; color:var(--steel-900); }
   .ir-bottom{ display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%; }
   .ir-sub{ font-size:12.5px; color:var(--steel-500); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .price-log-entry{ cursor:default; margin-bottom:10px; }
+  .price-log-entry:active{ background:var(--surface); }
+  .price-log-items{ display:flex; flex-direction:column; gap:3px; padding-top:8px; border-top:1px solid var(--line); }
+  .price-log-items .ir-sub{ white-space:normal; }
   .qty-pill{
     font-family:'IBM Plex Mono', monospace; font-size:11px; font-weight:700; flex-shrink:0;
     border-radius:20px; padding:3px 10px;
@@ -538,6 +542,15 @@
         <div class="list-text"><strong>قائمة تغيير الأسعار <span class="list-badge" id="priceCartBadge" style="display:none;">0</span></strong><span>مراجعة التغييرات المضافة ومشاركتها</span></div>
         <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
       </button>
+      <button class="list-btn" id="adminPriceLogBtn">
+        <div class="list-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>
+          </svg>
+        </div>
+        <div class="list-text"><strong>سجل تغيير الأسعار</strong><span>كل القوائم التي أُرسلت سابقًا، مع التاريخ والمرسِل</span></div>
+        <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
     </div>
     <div class="section-label" style="margin-top:18px;">الإعدادات</div>
     <div class="list">
@@ -572,6 +585,17 @@
         مشاركة أخرى
       </button>
     </div>
+  </div>
+
+  <!-- ============ الإدارة العامة — سجل تغيير الأسعار ============ -->
+  <div class="view" id="view-admin-pricelog">
+    <div class="back-row">
+      <button class="back-btn" data-back="admin" aria-label="رجوع">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <h2>سجل تغيير الأسعار</h2>
+    </div>
+    <div id="priceLogBody"><div class="empty-note"><span class="spinner"></span> جارِ التحميل…</div></div>
   </div>
 
   <!-- ============ الإدارة العامة — نظرة عامة ============ -->
@@ -1911,7 +1935,65 @@ function renderPriceCart(){
   });
 }
 
+// ===== سجل دائم لتغيير الأسعار (Firestore: price_log) =====
+// كل قائمة تُرسل (واتساب أو مشاركة) تُحفظ كمستند واحد: التاريخ + المرسِل + الأصناف.
+// القراءة والإضافة للإدارة فقط، ولا يمكن تعديل أو حذف السجل (حسب قواعد الأمان).
+function logPriceCartToFirestore_(){
+  if(!firebaseReady || !db || !priceCart.items.length) return;
+  const user = auth && auth.currentUser;
+  if(!user || !isAdminEmail(user.email)) return;
+  const items = priceCart.items.map(e => ({
+    number: String(e.number || ''), name: String(e.name || ''),
+    oldRetail: Number(e.oldRetail) || 0, oldWholesale: Number(e.oldWholesale) || 0,
+    newRetail: (e.newRetail === null || e.newRetail === undefined) ? null : Number(e.newRetail),
+    newWholesale: (e.newWholesale === null || e.newWholesale === undefined) ? null : Number(e.newWholesale)
+  }));
+  db.collection('price_log').add({
+    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    by: String(user.email).toLowerCase(),
+    count: items.length,
+    items
+  }).catch(err => console.warn("تعذّر حفظ القائمة في سجل الأسعار", err));
+}
+
+function renderPriceLog(){
+  const body = document.getElementById('priceLogBody');
+  if(!body) return;
+  body.innerHTML = `<div class="empty-note"><span class="spinner"></span> جارِ التحميل…</div>`;
+  if(!firebaseReady || !db){ body.innerHTML = `<div class="empty-note">تعذّر الاتصال بقاعدة البيانات</div>`; return; }
+  db.collection('price_log').orderBy('createdAt', 'desc').limit(30).get().then(snap => {
+    if(snap.empty){ body.innerHTML = `<div class="empty-note">لا يوجد سجل بعد — يُحفظ تلقائيًا عند مشاركة قائمة تغيير الأسعار</div>`; return; }
+    body.innerHTML = snap.docs.map(doc => {
+      const d = doc.data();
+      const when = d.createdAt && d.createdAt.toDate ? d.createdAt.toDate().toLocaleString('ar-LY', { dateStyle:'medium', timeStyle:'short' }) : '—';
+      const rows = (d.items || []).map(e => `
+        <div class="ir-sub"><span class="num-badge">${escapeHtml(e.number)}</span> ${escapeHtml(e.name) || ''}</div>
+        ${e.newRetail !== null && e.newRetail !== undefined ? `<div class="ir-sub">قطاعي: ${formatPrice(e.oldRetail)} ← ${formatNum(e.newRetail)} ${CURRENCY}</div>` : ''}
+        ${e.newWholesale !== null && e.newWholesale !== undefined ? `<div class="ir-sub">جملة: ${formatPrice(e.oldWholesale)} ← ${formatNum(e.newWholesale)} ${CURRENCY}</div>` : ''}
+      `).join('');
+      return `
+        <div class="item-row price-log-entry">
+          <div class="ir-top">
+            <span class="item-name">${escapeHtml(when)}</span>
+            <span class="ir-sub">${escapeHtml(d.count || (d.items || []).length)} صنف</span>
+          </div>
+          <div class="ir-sub">${escapeHtml(d.by || '')}</div>
+          <div class="price-log-items">${rows}</div>
+        </div>`;
+    }).join('');
+  }).catch(err => {
+    console.warn("تعذّر تحميل سجل الأسعار", err);
+    body.innerHTML = `<div class="empty-note">تعذّر تحميل السجل — ${err && err.code === 'permission-denied' ? 'قاعدة الأمان لم تُضف بعد في Firebase' : 'تحقق من الإنترنت'}</div>`;
+  });
+}
+
+document.getElementById('adminPriceLogBtn').addEventListener('click', ()=>{
+  showView("admin-pricelog");
+  renderPriceLog();
+});
+
 async function afterPriceCartShared(){
+  logPriceCartToFirestore_();
   const clear = await showConfirm("هل تريد مسح القائمة الآن؟", { title:"مسح القائمة" });
   if(clear){
     priceCart = { items: [], shared: false };
