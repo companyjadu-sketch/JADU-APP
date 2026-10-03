@@ -97,6 +97,18 @@
   .role-btn.role-admin .role-text span{ color:#ffffff; }
   .role-btn.role-admin .role-lock{ color:#ffffff; }
 
+  /* دخول الموظف/الإدارة كأيقونتين صغيرتين عائمتين فوق زاوية الشعار (hero) — بديل مُصغَّر لنفس role-btn */
+  .staff-row{ position:absolute; top:14px; left:14px; z-index:2; display:flex; gap:8px; }
+  .role-btn.compact{
+    width:36px; height:36px; padding:0; flex:none; border-radius:10px;
+    display:flex; align-items:center; justify-content:center;
+    background:rgba(27,25,23,0.55); backdrop-filter:blur(4px); border-color:rgba(245,242,234,0.2);
+  }
+  .role-btn.compact svg{ width:16px; height:16px; color:#fff; }
+  /* نلغي تمييز الإدارة اللوني البارز هنا — الهدف إنها ما تلفت الانتباه بالشاشة الرئيسية */
+  .role-btn.compact.role-admin{ background:rgba(27,25,23,0.55); border-color:rgba(245,242,234,0.2); }
+  .role-btn.compact.role-admin svg{ color:#fff; }
+
   .back-row{ display:flex; align-items:center; gap:10px; margin-bottom:24px; }
   .back-btn{
     width:36px; height:36px; border-radius:9px; border:1.5px solid var(--line);
@@ -381,42 +393,26 @@
              aria-label="شركة جادو — لإستيراد معدات المطاعم والمقاهي"></video>
       <!-- الصورة الثابتة لا تُحمَّل إلا إذا تعذّر تشغيل الفيديو -->
       <img id="heroLogo" data-src="jadu-logo.png" alt="شركة جادو — لإستيراد معدات المطاعم والمقاهي" hidden>
-    </div>
-    <div class="headline">
-      <p>حدد نوع الدخول للمتابعة</p>
-    </div>
-    <div class="menu">
-      <button class="role-btn" data-role="employee" data-locked="true">
-        <div class="role-icon">
+      <!-- دخول الموظف/الإدارة — أيقونتين صغيرتين عائمتين فوق الشعار بالزاوية، بدون نص ظاهر،
+           بنفس منطق أزرار الدخول القديمة تمامًا (role-btn + data-role + data-locked) حتى
+           يشتغلوا بدون أي تغيير بالسكربت -->
+      <div class="staff-row">
+        <button class="role-btn compact" data-role="employee" data-locked="true" aria-label="دخول الموظف">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
           </svg>
-        </div>
-        <div class="role-text"><strong>موظف</strong><span>بحث الأصناف ومشاركة البيانات</span></div>
-        <svg class="role-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>
-        </svg>
-      </button>
-      <button class="role-btn" data-role="customer" data-locked="false">
-        <div class="role-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M9 20a6 6 0 0 1 12 0"/><circle cx="15" cy="8" r="4"/><path d="M3 20a5 5 0 0 1 7-4.6"/><circle cx="7" cy="8" r="3"/>
-          </svg>
-        </div>
-        <div class="role-text"><strong>زبون</strong><span>تصفح الأصناف والأسعار بدون رمز دخول</span></div>
-      </button>
-      <button class="role-btn role-admin" data-role="admin" data-locked="true">
-        <div class="role-icon">
+        </button>
+        <button class="role-btn compact role-admin" data-role="admin" data-locked="true" aria-label="دخول الإدارة العامة">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 2 3 6v6c0 5 4 9 9 10 5-1 9-5 9-10V6l-9-4Z"/>
           </svg>
-        </div>
-        <div class="role-text"><strong>إدارة عامة</strong><span>الجرد والحسابات والإعدادات</span></div>
-        <svg class="role-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>
-        </svg>
-      </button>
+        </button>
+      </div>
     </div>
+    <div class="headline">
+      <p>اختر التصنيف للتصفح</p>
+    </div>
+    <div class="cat-grid" id="gateCategoryGrid"><!-- تُبنى ديناميكيًا --></div>
     <footer>© شركة جادو — لإستيراد معدات المطاعم والمقاهي<br><span style="opacity:.6; font-size:10.5px;">آخر تحديث: 1 أكتوبر 2026</span></footer>
   </div>
 
@@ -871,15 +867,63 @@ async function loadSettings(){
 }
 
 // ---------------------------------------------------------------
-// التنقل بين الشاشات
+// التنقل بين الشاشات + ربطها بزر الرجوع الفعلي (هاتف/متصفح)
 // ---------------------------------------------------------------
+// بدون هذا الربط، كل تنقل داخل التطبيق (دخول موظف -> تصنيف -> بحث...)
+// ما يترك أثرًا بتاريخ المتصفح، فزر الرجوع الحقيقي بالهاتف ما يلقى شيء
+// "يرجع له" غير الصفحة اللي قبل فتح التطبيق، فيطلع المستخدم كليًا.
+// الحل: كل تنقل للأمام يسجَّل بـ history.pushState، وزر الرجوع (داخل
+// التطبيق أو زر الهاتف) يستخدم history.back() بدل تغيير الشاشة مباشرة،
+// ويتكفّل مستمع popstate بإعادة رسم الشاشة الصحيحة من حالة التاريخ.
+let isRestoringNav = false; // true أثناء استرجاع حالة من popstate (يمنع تسجيل حالة جديدة فوقها)
+let currentNav = { view: 'gate', step: null }; // آخر حالة تنقل مُسجَّلة فعليًا بتاريخ المتصفح
+
+function navMatchesCurrent(view, step){
+  return currentNav.view === view && (view !== 'employee' || currentNav.step === step);
+}
+function pushNavState(view, step){
+  currentNav = { view, step: view === 'employee' ? step : null };
+  if (isRestoringNav) return;
+  try { history.pushState({ view, step: currentNav.step }, '', view === 'employee' ? ('#employee-' + step) : ('#' + view)); } catch(e){}
+}
+
+function applyNavState(state){
+  const view = (state && state.view) || 'gate';
+  const step = (state && state.step) || 'category';
+  currentNav = { view, step: view === 'employee' ? step : null };
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  const target = document.getElementById('view-' + view);
+  if (target) target.classList.add('active');
+  if (view === 'employee') {
+    employeeStep = step;
+    document.getElementById('employeeCategoryScreen').style.display = step === "category" ? "block" : "none";
+    document.getElementById('employeeSearchScreen').style.display = step === "search" ? "block" : "none";
+    document.getElementById('employeeDetailScreen').style.display = step === "detail" ? "block" : "none";
+    const titles = { category: "اختر التصنيف", search: "بحث الأصناف", detail: "تفاصيل الصنف" };
+    document.getElementById('employeeHeaderTitle').textContent = titles[step];
+  }
+}
+
 function showView(id){
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.getElementById('view-' + id).classList.add('active');
+  // شاشة الموظف تسجَّل بتاريخ المتصفح عبر goEmployeeStep (لأنها اللي تعرف الخطوة الداخلية الصحيحة)
+  if (id === 'employee') return;
+  if (!navMatchesCurrent(id, null)) pushNavState(id, null);
 }
 
+window.addEventListener('popstate', (e) => {
+  isRestoringNav = true;
+  applyNavState(e.state);
+  isRestoringNav = false;
+});
+
+// نهيئ أول حالة بتاريخ المتصفح (الشاشة الرئيسية) حتى يكون فيها "قاعدة"
+// يرجع لها زر الرجوع بدل ما يطلع من الصفحة مباشرة
+try { history.replaceState({ view: 'gate' }, '', location.pathname + location.search); } catch(e){}
+
 document.querySelectorAll('[data-back]').forEach(btn=>{
-  btn.addEventListener('click', ()=> showView(btn.dataset.back));
+  btn.addEventListener('click', ()=> history.back());
 });
 
 // تنقّل واجهة الموظف بين 3 شاشات داخلية: التصنيف -> البحث -> تفاصيل الصنف
@@ -895,12 +939,9 @@ function goEmployeeStep(step){
   document.getElementById('employeeDetailScreen').style.display = step === "detail" ? "block" : "none";
   const titles = { category: "اختر التصنيف", search: "بحث الأصناف", detail: "تفاصيل الصنف" };
   document.getElementById('employeeHeaderTitle').textContent = titles[step];
+  if (!navMatchesCurrent('employee', step)) pushNavState('employee', step);
 }
-document.getElementById('employeeBackBtn').addEventListener('click', ()=>{
-  if(employeeStep === "detail") goEmployeeStep("search");
-  else if(employeeStep === "search") goEmployeeStep("category");
-  else showView(employeeEntryPoint);
-});
+document.getElementById('employeeBackBtn').addEventListener('click', ()=>{ history.back(); });
 document.querySelectorAll('[data-go]').forEach(btn=>{
   btn.addEventListener('click', ()=>{
     showView(btn.dataset.go);
@@ -1387,8 +1428,11 @@ function loadSecureItems(){
   });
 }
 
-function renderCategoryGrid(){
-  const wrap = document.getElementById('employeeCategoryGrid');
+// containerId: أي عنصر cat-grid نبنيه فيه — onSelect: شنو يصير لما يضغط تصنيف
+// (بالموظف/الإدارة يروح لشاشة البحث بواجهة الموظف، وبالشاشة الرئيسية يدخل مباشرة كزبون)
+function renderCategoryGrid(containerId, onSelect){
+  const wrap = document.getElementById(containerId);
+  if(!wrap) return;
   wrap.innerHTML = CATEGORY_GROUPS.map((g, i) =>
     `<button class="cat-box ${g.values === null ? 'all' : ''}" data-idx="${i}" aria-label="تصفية حسب: ${escapeHtml(g.label)}">
       <span class="cat-icon">${g.icon}</span>
@@ -1398,14 +1442,27 @@ function renderCategoryGrid(){
   wrap.querySelectorAll('.cat-box').forEach(box=>{
     box.addEventListener('click', ()=>{
       const group = CATEGORY_GROUPS[Number(box.dataset.idx)];
-      activeCategoryValues = group.values;
-      document.getElementById('employeeSearchInput').value = "";
-      goEmployeeStep("search");
-      renderResults();
+      onSelect(group);
     });
   });
 }
-renderCategoryGrid(); // ثابتة، ما تعتمد على تحميل بيانات الشيت
+function selectEmployeeCategory_(group){
+  activeCategoryValues = group.values;
+  document.getElementById('employeeSearchInput').value = "";
+  goEmployeeStep("search");
+  renderResults();
+}
+// الشاشة الرئيسية: اختيار تصنيف يدخل الزائر مباشرة كزبون لشاشة البحث بنفس التصنيف،
+// بدون أي حاجة لاختيار "موظف/زبون/إدارة" أولًا
+function selectGateCategory_(group){
+  currentViewerRole = "customer";
+  employeeEntryPoint = "gate";
+  showView("employee");
+  loadItems();
+  selectEmployeeCategory_(group);
+}
+renderCategoryGrid('employeeCategoryGrid', selectEmployeeCategory_); // ثابتة، ما تعتمد على تحميل بيانات الشيت
+renderCategoryGrid('gateCategoryGrid', selectGateCategory_);
 
 // يقسّم نص البحث إلى قطع بحسب الفراغات (بحث بالأجزاء: "كرب فر كهرب" -> ["كرب","فر","كهرب"])
 function tokenizeQuery(q){
