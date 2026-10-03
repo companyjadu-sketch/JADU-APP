@@ -817,6 +817,7 @@ function initFirebase(){
         const active = document.querySelector('.view.active');
         if (active && active.id.startsWith('view-admin')) showView('gate');
         secureLoaded = false; // نظّف البيانات الحساسة من الذاكرة بعد الخروج
+        SECURE_MAP = null; secureFetchedAt = 0; secureError = false;
         ITEMS.forEach(it => { it.priceWholesale = 0; it.lastPurchasePrice = 0; it.purchaseCurrency = ''; it.exchangeRate = 0; it.lastPurchaseDate = ''; });
       } else {
         // دخول إداري معتمد — اجلب بيانات الشراء المحمية من Firestore
@@ -1402,33 +1403,60 @@ function loadItems(force){
 
 // بيانات الشراء الحساسة (سعر الجملة، آخر سعر شراء، العملة، سعر الصرف، تاريخ آخر شراء)
 // محمية بـ Firestore ولا تُجلب إلا لحساب إداري معتمد وبعد تسجيل الدخول فعليًا
+// مهم: تُجلب من Firestore مرة واحدة كل ساعة فقط وتُحفظ بالذاكرة (SECURE_MAP)،
+// وتُدمج من الذاكرة مع كل تحديث للشيت (كل 5 دقائق) بدون قراءة Firestore من جديد.
+// السبب: إعادة قراءة ~3000 مستند كل 5 دقائق كانت تستهلك حصة القراءة المجانية اليومية (50,000)
+// فتتوقف القراءة وتظهر بيانات الشراء "—".
 let secureLoaded = false;
-function loadSecureItems(){
-  if(secureLoaded || !firebaseReady || !db) return;
+let secureError = false;
+let secureFetching = false;
+let SECURE_MAP = null;      // Map: رقم الصنف -> بيانات الشراء
+let secureFetchedAt = 0;
+const SECURE_TTL_MS = 60 * 60 * 1000;
+
+function applySecureToItems_(){
+  if(!SECURE_MAP) return;
+  ITEMS.forEach(item => {
+    const d = SECURE_MAP.get(item.number);
+    if(d){
+      item.priceWholesale    = Number(d.priceWholesale) || 0;
+      item.lastPurchasePrice = Number(d.lastPurchasePrice) || 0;
+      item.purchaseCurrency  = d.purchaseCurrency || '';
+      item.exchangeRate      = Number(d.exchangeRate) || 0;
+      item.lastPurchaseDate  = d.lastPurchaseDate || '';
+    }
+  });
+  secureLoaded = true;
+  renderCapitalReport();
+  if(currentItem && employeeEntryPoint === "admin"){
+    openItemDetail(currentItem.number); // لتحديث قسم بيانات الشراء المعروض حاليًا لو مفتوح
+  }
+}
+
+function loadSecureItems(forceFetch){
+  if(!firebaseReady || !db) return;
   const user = auth && auth.currentUser;
   if(!user || !isAdminEmail(user.email)) return; // مو إدارة معتمدة — ما نحاول نقرأ أصلًا
   if(!itemsLoaded || !ITEMS.length) return; // لسا الأصناف ما تحملت، هتُستدعى تاني من loadItems()
 
+  const fresh = SECURE_MAP && (Date.now() - secureFetchedAt) < SECURE_TTL_MS;
+  if(fresh && !forceFetch){ applySecureToItems_(); return; } // من الذاكرة — بدون أي قراءة من Firestore
+  if(secureFetching) return;
+
+  secureFetching = true;
   db.collection('secure_items').get().then(snap => {
-    snap.forEach(doc => {
-      const d = doc.data();
-      const item = ITEMS.find(it => it.number === doc.id);
-      if(item){
-        item.priceWholesale    = Number(d.priceWholesale) || 0;
-        item.lastPurchasePrice = Number(d.lastPurchasePrice) || 0;
-        item.purchaseCurrency  = d.purchaseCurrency || '';
-        item.exchangeRate      = Number(d.exchangeRate) || 0;
-        item.lastPurchaseDate  = d.lastPurchaseDate || '';
-      }
-    });
-    secureLoaded = true;
-    renderCapitalReport();
-    if(currentItem && employeeEntryPoint === "admin"){
-      openItemDetail(currentItem.number); // لتحديث قسم بيانات الشراء المعروض حاليًا لو مفتوح
-    }
+    const map = new Map();
+    snap.forEach(doc => map.set(String(doc.id).trim(), doc.data()));
+    SECURE_MAP = map;
+    secureFetchedAt = Date.now();
+    secureError = false;
+    applySecureToItems_();
   }).catch(err => {
     console.warn("تعذّر تحميل بيانات الشراء المحمية من Firestore", err);
-  });
+    secureError = true;
+    if(SECURE_MAP){ applySecureToItems_(); } // نستخدم آخر نسخة ناجحة بدل ما تختفي البيانات
+    else if(currentItem && employeeEntryPoint === "admin"){ openItemDetail(currentItem.number); }
+  }).finally(() => { secureFetching = false; });
 }
 
 // containerId: أي عنصر cat-grid نبنيه فيه — onSelect: شنو يصير لما يضغط تصنيف
@@ -1596,6 +1624,8 @@ function openItemDetail(number){
     purchaseInfo.style.display = "block";
     purchaseInfo.innerHTML = `
       <div class="section-label">بيانات الشراء (إدارية)</div>
+      ${(secureError && !SECURE_MAP) ? `<div class="section-label" role="alert">تعذّر تحميل بيانات الشراء الآن — تحقق من الإنترنت أو حاول لاحقًا</div>` : ''}
+      ${(!secureLoaded && !secureError) ? `<div class="section-label">جارِ تحميل بيانات الشراء…</div>` : ''}
       <div class="stat-grid">
         <div class="stat"><span class="k">آخر سعر شراء</span><span class="v">${item.lastPurchasePrice ? formatNum(item.lastPurchasePrice) : '—'}</span></div>
         <div class="stat"><span class="k">العملة</span><span class="v">${escapeHtml(item.purchaseCurrency) || '—'}</span></div>
@@ -1668,6 +1698,7 @@ function renderAdminOverview(){
       const statusEl = document.getElementById('syncItemsNowStatus');
       if(statusEl) statusEl.textContent = "جارِ التحديث…";
       syncBtn.disabled = true;
+      secureFetchedAt = 0; // المزامنة اليدوية تجلب بيانات الشراء من جديد أيضًا
       loadItems(true);
       setTimeout(() => { renderAdminOverview(); }, 1500); // نعيد الرسم بعد مهلة قصيرة لتحديث الحالة والوقت
     });
