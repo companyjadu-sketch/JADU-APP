@@ -31,6 +31,7 @@
      بحث الأصناف: قراءة الشيت + مسح الكيو آر كود
      ============================================================ -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="item-images.js"></script>
 <script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
 
 <style>
@@ -297,6 +298,10 @@
   .item-row .item-name{ flex:1; min-width:0; font-size:13.5px; font-weight:600; }
   .item-row .item-price{ font-family:'IBM Plex Mono', monospace; font-size:13px; font-weight:700; flex-shrink:0; color:var(--steel-900); }
   .ir-bottom{ display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%; }
+  .item-row.has-thumb{ display:grid; grid-template-columns:56px minmax(0,1fr); column-gap:12px; align-items:center; }
+  .ir-body{ display:flex; flex-direction:column; gap:8px; min-width:0; }
+  .ir-thumb{ width:56px; height:56px; border-radius:8px; background:#fff; object-fit:contain; grid-row:1; }
+  .ic-photo{ width:100%; max-height:260px; object-fit:contain; background:#fff; border-radius:12px; margin-bottom:14px; display:block; }
   .ir-sub{ font-size:12.5px; color:var(--steel-500); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .price-log-entry{ cursor:default; margin-bottom:10px; }
   .price-log-entry:active{ background:var(--surface); }
@@ -1581,7 +1586,9 @@ function renderResults(){
     const subParts = [it.company, it.country, it.color].filter(Boolean).map(escapeHtml);
     const inStock = it.totalQty > 0;
     return `
-    <button class="item-row" data-num="${escapeHtml(it.number)}">
+    <button class="item-row${itemImage(it.number) ? ' has-thumb' : ''}" data-num="${escapeHtml(it.number)}">
+      ${itemImage(it.number) ? `<img class="ir-thumb" src="${escapeHtml(itemImage(it.number))}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove();this.closest('.item-row')&&this.closest('.item-row').classList.remove('has-thumb')">` : ''}
+      <div class="ir-body">
       <div class="ir-top">
         <span class="num-badge">${escapeHtml(it.number)}</span>
         <span class="item-name">${escapeHtml(it.name) || '—'}</span>
@@ -1592,6 +1599,7 @@ function renderResults(){
         ${showQty
           ? `<span class="qty-pill ${inStock ? 'in' : 'out'}">${inStock ? '✓' : '✕'} الكمية: ${formatNum(it.totalQty)}</span>`
           : `<span class="qty-pill ${inStock ? 'in' : 'out'}">${inStock ? '✓ متوفر' : '✕ غير متوفر'}</span>`}
+      </div>
       </div>
     </button>
   `;
@@ -1608,6 +1616,11 @@ document.getElementById('employeeSearchInput').addEventListener('input', () => {
   searchDebounceTimer = setTimeout(renderResults, 150);
 });
 
+// صورة الصنف من item-images.js (الصور المعتمدة فقط) — ترجع "" لو ما فيه صورة
+function itemImage(number){
+  return (typeof ITEM_IMAGES !== 'undefined' && ITEM_IMAGES[String(number).trim()]) || '';
+}
+
 let currentItem = null;
 function openItemDetail(number){
   const item = ITEMS.find(it => it.number === number);
@@ -1622,7 +1635,9 @@ function openItemDetail(number){
   const showQty = currentViewerRole !== "customer"; // الزبون ما يشوف أي بيانات كمية إطلاقًا
   const isAdminContext = employeeEntryPoint === "admin";
 
+  const photo = itemImage(item.number);
   document.getElementById('employeeItemCard').innerHTML = `
+    ${photo ? `<img class="ic-photo" src="${escapeHtml(photo)}" alt="${escapeHtml(item.name)}" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}
     <div class="ic-num">${escapeHtml(item.number)}</div>
     <h3>${escapeHtml(item.name) || '—'}</h3>
     <div class="ic-price">${formatPrice(item.priceRetail)}</div>
