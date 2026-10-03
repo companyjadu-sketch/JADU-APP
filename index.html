@@ -1363,13 +1363,17 @@ function loadItems(force){
   if(itemsFetching) return;
 
   // أول ظهور للتطبيق: نعرض آخر نسخة محفوظة محليًا فورًا (يشتغل حتى بدون إنترنت)
+  // ثم نكمل ونجلب نسخة جديدة من الشيت بالخلفية مباشرة (بدل انتظار التحديث الدوري بعد 5 دقائق)
+  let fromCache = false;
   if(!itemsLoaded && loadItemsFromCache_()){
+    fromCache = true;
     renderResults();
     renderAdminOverview();
     renderCapitalReport();
+    loadSecureItems(); // الإدارة داخلة أصلًا؟ ندمج بيانات الشراء مع النسخة المحلية فورًا
   }
 
-  if(itemsLoaded && !force) return;
+  if(itemsLoaded && !force && !fromCache) return;
   if(!SHEET_CSV_URL) return;
 
   itemsFetching = true;
@@ -1621,6 +1625,7 @@ function openItemDetail(number){
   const priceChangeRow = document.getElementById('adminPriceChangeRow');
   const priceChangeForm = document.getElementById('priceChangeForm');
   if(isAdminContext){
+    if(!secureLoaded && !secureError && !secureFetching) loadSecureItems();
     purchaseInfo.style.display = "block";
     purchaseInfo.innerHTML = `
       <div class="section-label">بيانات الشراء (إدارية)</div>
