@@ -298,10 +298,25 @@
   .item-row .item-name{ flex:1; min-width:0; font-size:13.5px; font-weight:600; }
   .item-row .item-price{ font-family:'IBM Plex Mono', monospace; font-size:13px; font-weight:700; flex-shrink:0; color:var(--steel-900); }
   .ir-bottom{ display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%; }
-  .item-row.has-thumb{ display:grid; grid-template-columns:56px minmax(0,1fr); column-gap:12px; align-items:center; }
+  .item-row.with-thumb{ display:grid; grid-template-columns:56px minmax(0,1fr); column-gap:12px; align-items:center; }
   .ir-body{ display:flex; flex-direction:column; gap:8px; min-width:0; }
-  .ir-thumb{ width:56px; height:56px; border-radius:8px; background:#fff; object-fit:contain; grid-row:1; }
-  .ic-photo{ width:100%; max-height:260px; object-fit:contain; background:#fff; border-radius:12px; margin-bottom:14px; display:block; }
+  .ir-thumb{ position:relative; width:56px; height:56px; border-radius:8px; overflow:hidden; background:var(--steel-200); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .ir-thumb .ir-ph{ width:26px; height:26px; opacity:.55; display:flex; }
+  .ir-thumb .ir-ph svg{ width:100%; height:100%; }
+  .ir-thumb img{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; background:#fff; }
+  .ic-photo-wrap{ position:relative; display:block; width:100%; margin:0 0 14px; padding:0; border:0; background:#fff; border-radius:12px; overflow:hidden; cursor:zoom-in; }
+  .ic-photo{ width:100%; max-height:260px; object-fit:contain; display:block; }
+  .ic-zoom-hint{ position:absolute; bottom:8px; left:8px; width:34px; height:34px; border-radius:50%; background:rgba(0,0,0,.6); color:#fff; display:flex; align-items:center; justify-content:center; }
+  .ic-zoom-hint svg{ width:18px; height:18px; }
+  .lightbox{ position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,.97); display:flex; align-items:center; justify-content:center; overflow:hidden; touch-action:none; }
+  .lightbox[hidden]{ display:none; }
+  .lightbox img{ max-width:100%; max-height:100%; object-fit:contain; transform-origin:center center; transition:transform .15s ease; user-select:none; -webkit-user-drag:none; }
+  .lightbox img.dragging{ transition:none; }
+  .lb-bar{ position:absolute; left:0; right:0; bottom:0; padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px)); display:flex; justify-content:center; gap:12px; }
+  .lb-btn{ width:48px; height:48px; border-radius:50%; border:0; background:rgba(255,255,255,.14); color:#fff; font-size:22px; display:flex; align-items:center; justify-content:center; cursor:pointer; }
+  .lb-btn svg{ width:22px; height:22px; }
+  .lb-close{ position:absolute; top:calc(12px + env(safe-area-inset-top,0px)); right:12px; }
+  @media (prefers-reduced-motion:reduce){ .lightbox img{ transition:none; } }
   .ir-sub{ font-size:12.5px; color:var(--steel-500); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .price-log-entry{ cursor:default; margin-bottom:10px; }
   .price-log-entry:active{ background:var(--surface); }
@@ -1586,8 +1601,11 @@ function renderResults(){
     const subParts = [it.company, it.country, it.color].filter(Boolean).map(escapeHtml);
     const inStock = it.totalQty > 0;
     return `
-    <button class="item-row${itemImage(it.number) ? ' has-thumb' : ''}" data-num="${escapeHtml(it.number)}">
-      ${itemImage(it.number) ? `<img class="ir-thumb" src="${escapeHtml(itemImage(it.number))}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove();this.closest('.item-row')&&this.closest('.item-row').classList.remove('has-thumb')">` : ''}
+    <button class="item-row with-thumb" data-num="${escapeHtml(it.number)}">
+      <span class="ir-thumb" aria-hidden="true">
+        <span class="ir-ph">${categoryIcon(it.category)}</span>
+        ${itemImage(it.number) ? `<img src="${escapeHtml(itemImage(it.number))}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}
+      </span>
       <div class="ir-body">
       <div class="ir-top">
         <span class="num-badge">${escapeHtml(it.number)}</span>
@@ -1616,6 +1634,13 @@ document.getElementById('employeeSearchInput').addEventListener('input', () => {
   searchDebounceTimer = setTimeout(renderResults, 150);
 });
 
+// أيقونة التصنيف كبديل عن الصورة في مربع الصورة الصغير
+function categoryIcon(category){
+  const c = String(category || '').trim();
+  const g = CATEGORY_GROUPS.find(g => g.values && g.values.includes(c));
+  return g ? g.icon : CAT_ICONS.all;
+}
+
 // صورة الصنف من item-images.js (الصور المعتمدة فقط) — ترجع "" لو ما فيه صورة
 function itemImage(number){
   return (typeof ITEM_IMAGES !== 'undefined' && ITEM_IMAGES[String(number).trim()]) || '';
@@ -1637,7 +1662,10 @@ function openItemDetail(number){
 
   const photo = itemImage(item.number);
   document.getElementById('employeeItemCard').innerHTML = `
-    ${photo ? `<img class="ic-photo" src="${escapeHtml(photo)}" alt="${escapeHtml(item.name)}" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}
+    ${photo ? `<button type="button" class="ic-photo-wrap" id="icPhotoBtn" aria-label="تكبير صورة الصنف">
+      <img class="ic-photo" src="${escapeHtml(photo)}" alt="${escapeHtml(item.name)}" referrerpolicy="no-referrer" onerror="this.closest('.ic-photo-wrap').remove()">
+      <span class="ic-zoom-hint" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3M11 8v6M8 11h6"/></svg></span>
+    </button>` : ''}
     <div class="ic-num">${escapeHtml(item.number)}</div>
     <h3>${escapeHtml(item.name) || '—'}</h3>
     <div class="ic-price">${formatPrice(item.priceRetail)}</div>
@@ -2312,6 +2340,58 @@ if ('serviceWorker' in navigator) {
   v.preload = "metadata";
   var p = v.play && v.play();
   if (p && p.catch) p.catch(showStill);
+})();
+</script>
+<div class="lightbox" id="lightbox" hidden role="dialog" aria-modal="true" aria-label="عرض الصورة">
+  <img id="lbImg" alt="" referrerpolicy="no-referrer">
+  <button type="button" class="lb-btn lb-close" id="lbClose" aria-label="إغلاق">✕</button>
+  <div class="lb-bar">
+    <button type="button" class="lb-btn" id="lbOut" aria-label="تصغير">−</button>
+    <button type="button" class="lb-btn" id="lbReset" aria-label="الحجم الأصلي"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></button>
+    <button type="button" class="lb-btn" id="lbIn" aria-label="تكبير">+</button>
+  </div>
+</div>
+<script>
+// عارض الصورة بملء الشاشة: تكبير/تصغير بالأزرار، ضغطتين للتكبير، إصبعين للتكبير، وسحب للتحريك
+(function(){
+  const box = document.getElementById('lightbox'), img = document.getElementById('lbImg');
+  let s = 1, x = 0, y = 0, lastFocus = null;
+  const pts = new Map(); let startDist = 0, startScale = 1, dragStart = null, lastTap = 0;
+  const MIN = 1, MAX = 5;
+  function apply(){ img.style.transform = `translate(${x}px, ${y}px) scale(${s})`; }
+  function setScale(n){ s = Math.min(MAX, Math.max(MIN, n)); if(s === 1){ x = 0; y = 0; } apply(); }
+  window.openLightbox = function(src, alt){
+    lastFocus = document.activeElement;
+    img.src = src; img.alt = alt || ''; s = 1; x = 0; y = 0; apply();
+    box.hidden = false; document.body.style.overflow = 'hidden';
+    document.getElementById('lbClose').focus();
+  };
+  function close(){ box.hidden = true; document.body.style.overflow = ''; img.removeAttribute('src'); if(lastFocus) lastFocus.focus(); }
+  document.getElementById('lbClose').addEventListener('click', close);
+  document.getElementById('lbIn').addEventListener('click', () => setScale(s * 1.5));
+  document.getElementById('lbOut').addEventListener('click', () => setScale(s / 1.5));
+  document.getElementById('lbReset').addEventListener('click', () => setScale(1));
+  document.addEventListener('keydown', e => { if(!box.hidden && e.key === 'Escape') close(); });
+  box.addEventListener('wheel', e => { e.preventDefault(); setScale(s * (e.deltaY < 0 ? 1.15 : 1/1.15)); }, { passive:false });
+  img.addEventListener('pointerdown', e => {
+    img.setPointerCapture(e.pointerId); pts.set(e.pointerId, { x:e.clientX, y:e.clientY });
+    if(pts.size === 2){ const [a,b] = [...pts.values()]; startDist = Math.hypot(a.x-b.x, a.y-b.y); startScale = s; dragStart = null; }
+    else { dragStart = { px:e.clientX, py:e.clientY, x, y };
+      const now = Date.now(); if(now - lastTap < 300){ setScale(s > 1 ? 1 : 2.5); dragStart = null; } lastTap = now; }
+    img.classList.add('dragging');
+  });
+  img.addEventListener('pointermove', e => {
+    if(!pts.has(e.pointerId)) return; pts.set(e.pointerId, { x:e.clientX, y:e.clientY });
+    if(pts.size === 2 && startDist){ const [a,b] = [...pts.values()]; setScale(startScale * Math.hypot(a.x-b.x, a.y-b.y) / startDist); }
+    else if(dragStart && s > 1){ x = dragStart.x + (e.clientX - dragStart.px); y = dragStart.y + (e.clientY - dragStart.py); apply(); }
+  });
+  function up(e){ pts.delete(e.pointerId); if(pts.size < 2) startDist = 0; if(!pts.size){ dragStart = null; img.classList.remove('dragging'); } }
+  img.addEventListener('pointerup', up); img.addEventListener('pointercancel', up);
+  box.addEventListener('click', e => { if(e.target === box) close(); });
+  document.addEventListener('click', e => {
+    const btn = e.target.closest('#icPhotoBtn'); if(!btn) return;
+    const im = btn.querySelector('img'); if(im) openLightbox(im.src, im.alt);
+  });
 })();
 </script>
 </body>
