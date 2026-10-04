@@ -326,7 +326,14 @@
   .photo-basket-bar svg{ width:20px; height:20px; }
   .pb-card{ border:1.5px solid var(--line); border-radius:12px; padding:12px; margin-bottom:16px; }
   .pb-head{ display:flex; flex-direction:column; gap:2px; margin-bottom:10px; }
-  .pb-item{ cursor:pointer; }
+  .pb-item{ display:flex; flex-direction:column; gap:8px; padding:12px 0; border-top:1px solid var(--line); }
+  .pb-compare{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .pb-compare figure{ margin:0; display:flex; flex-direction:column; gap:4px; min-width:0; }
+  .pb-compare figcaption{ font-size:12.5px; color:var(--steel-500); font-weight:600; }
+  .pb-img{ display:flex; align-items:center; justify-content:center; width:100%; aspect-ratio:1; padding:0; border:1.5px solid var(--line); border-radius:10px; background:#fff; overflow:hidden; cursor:zoom-in; }
+  .pb-img img{ width:100%; height:100%; object-fit:contain; }
+  .pb-new{ border-color:var(--amber); }
+  .pb-none{ background:var(--steel-200); color:var(--steel-500); font-size:13px; cursor:default; }
   .pb-check{ display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:600; }
   .pb-check input{ width:20px; height:20px; accent-color:var(--amber); }
   .pb-actions{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
@@ -1930,15 +1937,21 @@ async function renderPhotoEvents(){
       const when = bt.at && bt.at.toDate ? bt.at.toDate().toLocaleString('ar-LY', { dateStyle:'medium', timeStyle:'short' }) : '—';
       parts.push(`<div class="pb-card" data-batch="${escapeHtml(bt.id)}">
         <div class="pb-head"><strong>دفعة من ${escapeHtml(bt.by || 'موظف')}</strong><span class="ir-sub">${escapeHtml(when)} · ${items.length} صورة</span></div>
-        ${items.map(it => `<label class="pe-row pb-item">
-          <span class="ir-thumb"><img src="${escapeHtml(it.thumb || '')}" alt=""></span>
-          <div style="min-width:0">
-            <div class="ir-top"><span class="num-badge">${escapeHtml(it.num)}</span><span class="item-name">${escapeHtml(it.name) || '—'}</span></div>
-            <div class="pe-actions">
-              <span class="pb-check"><input type="checkbox" checked data-pid="${escapeHtml(it.id)}"> اعتماد</span>
-              <button type="button" data-zoom="${escapeHtml(it.id)}">تكبير</button>
-            </div>
-          </div></label>`).join('')}
+        ${items.map(it => { const cur = itemImage(it.num); const itm = ITEMS.find(x => x.number === it.num); return `<div class="pb-item">
+          <div class="ir-top"><span class="num-badge">${escapeHtml(it.num)}</span><span class="item-name">${escapeHtml((itm && itm.name) || it.name) || '—'}</span></div>
+          ${itm ? `<div class="ir-sub">${[itm.company, itm.country, itm.color].filter(Boolean).map(escapeHtml).join(' · ')}</div>` : ''}
+          <div class="pb-compare">
+            <figure>
+              <figcaption>الصورة الحالية</figcaption>
+              ${cur ? `<button type="button" class="pb-img" data-zoomsrc="${escapeHtml(cur)}"><img src="${escapeHtml(cur)}" alt="" referrerpolicy="no-referrer"></button>` : `<div class="pb-img pb-none">بدون صورة</div>`}
+            </figure>
+            <figure>
+              <figcaption>الصورة الجديدة</figcaption>
+              <button type="button" class="pb-img pb-new" data-zoom="${escapeHtml(it.id)}"><img src="${escapeHtml(it.thumb || '')}" alt=""></button>
+            </figure>
+          </div>
+          <label class="pb-check"><input type="checkbox" checked data-pid="${escapeHtml(it.id)}"> اعتماد الصورة الجديدة</label>
+        </div>`; }).join('')}
         <div class="pb-actions">
           <button type="button" class="primary-btn" data-approve="${escapeHtml(bt.id)}" style="margin-top:0">اعتماد المحدد ورفض الباقي</button>
           <button type="button" class="photo-delete-btn" data-reject="${escapeHtml(bt.id)}">رفض الدفعة كاملة</button>
@@ -1949,6 +1962,7 @@ async function renderPhotoEvents(){
     body.innerHTML = parts.join('');
     const findItem = id => { for(const b of batches) for(const it of b._items) if(it.id === id) return it; return null; };
     body.querySelectorAll('[data-zoom]').forEach(b => b.addEventListener('click', e => { e.preventDefault(); const it = findItem(b.dataset.zoom); if(it) openLightbox(it.full, it.name); }));
+    body.querySelectorAll('[data-zoomsrc]').forEach(b => b.addEventListener('click', () => { const n = b.closest('.pb-item').querySelector('.num-badge').textContent; const full = fullPhotoCache[n]; openLightbox(full || b.dataset.zoomsrc, ''); if(!full && UPLOADED_PHOTOS[n]) loadFullPhoto_(n).then(f => { if(f) openLightbox(f, ''); }); }));
     const finish = async (bt, approveIds, card) => {
       const m = card.querySelector('.msg'); m.innerHTML = '<span class="spinner"></span> جارِ الحفظ…'; m.className = 'msg';
       try {
