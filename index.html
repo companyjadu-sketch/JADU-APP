@@ -2087,6 +2087,42 @@ function renderAdminOverview(){
     ? itemsLastLoadedAt.toLocaleString('ar-LY', { dateStyle: 'medium', timeStyle: 'short' })
     : 'غير معروف (بيانات محفوظة محليًا)';
 
+  // تنبيه تكرار رقم الصنف: نفس "رقم الصنف" مستخدم لأكثر من صف في الشيت
+  // (عادة نتيجة نسخ صف كقالب عند إضافة صنف جديد دون تعديل الرقم)
+  const numberGroups = {};
+  ITEMS.forEach(it => {
+    const key = (it.number || '').toString().trim();
+    if(!key) return;
+    (numberGroups[key] = numberGroups[key] || []).push(it);
+  });
+  const dupNumbers = Object.keys(numberGroups).filter(k => numberGroups[k].length > 1);
+
+  const dupBlock = dupNumbers.length ? `
+    <div class="section-label" style="color:var(--warn);">⚠ تنبيه: أرقام أصناف مكرّرة (${dupNumbers.length})</div>
+    <div class="empty-note" style="text-align:center;background:var(--steel-200);border:1px dashed var(--warn);border-radius:10px;padding:10px 12px;margin-bottom:12px;color:var(--steel-900);">
+      نفس رقم الصنف مستخدم لأكثر من صنف في الشيت — غالبًا خطأ إدخال (نسخ صف كقالب دون تعديل الرقم). يفضّل تصحيحه مباشرة في الشيت.
+    </div>
+    <div class="dup-list" style="margin-bottom:18px;">
+      ${dupNumbers.map(num => `
+        <div style="font-size:11.5px; color:var(--steel-500); font-weight:600; margin:10px 0 6px;">رقم الصنف ${escapeHtml(num)} — ${numberGroups[num].length} أصناف</div>
+        ${numberGroups[num].map(it => `
+          <button class="item-row" data-num="${escapeHtml(it.number)}" style="margin-bottom:6px;">
+            <div class="ir-body">
+              <div class="ir-top">
+                <span class="num-badge">${escapeHtml(it.number)}</span>
+                <span class="item-name">${escapeHtml(it.name) || '—'}</span>
+                <span class="item-price">${formatPrice(it.priceRetail)}</span>
+              </div>
+              <div class="ir-bottom">
+                <span class="ir-sub">${[it.company, it.country, it.color].filter(Boolean).map(escapeHtml).join(' · ')}</span>
+              </div>
+            </div>
+          </button>
+        `).join('')}
+      `).join('')}
+    </div>
+  ` : '';
+
   body.innerHTML = `
     <div class="sync-note" style="margin-bottom:14px;">
       <div class="sync-dot ${itemsFetching ? '' : 'on'}" id="itemsSyncDot"></div>
@@ -2098,6 +2134,7 @@ function renderAdminOverview(){
       </div>
       <div class="list-text"><strong>مزامنة الآن</strong><span id="syncItemsNowStatus">جلب آخر نسخة من الشيت مباشرة</span></div>
     </button>
+    ${dupBlock}
     <div class="stat-grid">
       <div class="stat"><span class="k">إجمالي عدد الأصناف</span><span class="v big">${total}</span></div>
       <div class="stat"><span class="k">أصناف متوفرة</span><span class="v big">${inStock}</span></div>
@@ -2120,6 +2157,9 @@ function renderAdminOverview(){
       setTimeout(() => { renderAdminOverview(); }, 1500); // نعيد الرسم بعد مهلة قصيرة لتحديث الحالة والوقت
     });
   }
+  body.querySelectorAll('.dup-list .item-row').forEach(row => {
+    row.addEventListener('click', () => openItemDetail(row.dataset.num));
+  });
 }
 
 // ---------------------------------------------------------------
