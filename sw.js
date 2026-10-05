@@ -3,11 +3,16 @@
 // مباشرة من كود الصفحة نفسها (مع نسخة احتياطية محليًا عبر localStorage)،
 // هذا الملف مسؤول فقط عن تخزين "هيكل" التطبيق (الصفحة، الصور، المكتبات) عشان يفتح بدون إنترنت.
 
-const CACHE_NAME = 'jadu-app-v1';
+const CACHE_NAME = 'jadu-app-v2';
 const CORE_ASSETS = [
   './',
   './index.html',
+  './staff.html',
+  './app.css',
+  './app.js',
+  './item-images.js',
   './manifest.json',
+  './manifest-staff.json',
   './icon-192.png',
   './icon-512.png',
   './jadu-logo.png',
@@ -45,7 +50,24 @@ self.addEventListener('fetch', event => {
           caches.open(CACHE_NAME).then(cache => cache.put(req, copy));
           return res;
         })
-        .catch(() => caches.match('./index.html'))
+        // كل صفحة ترجع لنسختها المخزنة (صفحة الموظفين ما ترجع لصفحة الزبون والعكس)
+        .catch(() => caches.match(req, { ignoreSearch: true })
+          .then(r => r || caches.match(new URL(req.url).pathname.endsWith('staff.html') ? './staff.html' : './index.html')))
+    );
+    return;
+  }
+
+  // كود التطبيق نفسه (app.js / app.css / item-images.js): الشبكة أول مثل الصفحة،
+  // عشان أي تحديث يوصل فورًا وما تشتغل صفحة جديدة مع كود قديم من الكاش
+  const url = new URL(req.url);
+  if (url.origin === self.location.origin && /\.(js|css)$/.test(url.pathname)) {
+    event.respondWith(
+      fetch(req)
+        .then(res => {
+          if (res && res.ok) { const copy = res.clone(); caches.open(CACHE_NAME).then(cache => cache.put(req, copy)); }
+          return res;
+        })
+        .catch(() => caches.match(req, { ignoreSearch: true }))
     );
     return;
   }
