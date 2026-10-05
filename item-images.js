@@ -76,5 +76,12 @@ const ITEM_IMAGES = {
   "2999": "https://sheffieldafrica.com/storage/uploads/1788874657_commercial-vegetable-food-processor-qc205a-imgfpr00239.jpg",
   "3000": "https://krdcatering.co.uk/cdn/shop/files/0d4c6ffdc90d68b404e6fc798326302.jpg",
   "3083": "https://www.viber.com.tr/uploads/2025-guncel-urunler/sebze-dograma/vhe-sdm-01.png",
-  "3084": "https://www.viber.com.tr/uploads/2025-guncel-urunler/hamur-yogurma/vhe-hyk-25m.png"
+  "3084": "https://www.viber.com.tr/uploads/2025-guncel-urunler/hamur-yogurma/vhe-hyk-25m.png",
+  "152": "https://alsaedco.com/wp-content/uploads/2020/03/Coffee-Grinder-CUNIL-–-MARFIL.jpg",
+  "1634": "https://www.mechtrace.com/web/image/product.product/4291/image_1024/%5BMARFIL%5D%20Cunill%20Marfil%20Tron%20Inox%20Coffee%20Grinder?unique=f6a946d",
+  "136": "https://witcdn.cafemarkt.com/empero-900-plus-dolapli-fritoz-24-24-l-elektrikli-fritozler-empero-43421-25-O.jpg",
+  "2528": "https://static.ticimax.cloud/cdn-cgi/image/width=800,quality=85,format=webp/53979/uploads/urunresimleri/buyuk/net-celik-helvane-tencere-kapakli-1103-a1-e71.jpg",
+  "2529": "https://static.ticimax.cloud/cdn-cgi/image/width=800,quality=85,format=webp/53979/uploads/urunresimleri/buyuk/net-celik-helvane-tencere-kapakli-1103-a1-e71.jpg",
+  "2531": "https://static.ticimax.cloud/cdn-cgi/image/width=800,quality=85,format=webp/53979/uploads/urunresimleri/buyuk/net-celik-helvane-tencere-kapakli-1103-a1-e71.jpg",
+  "2533": "https://static.ticimax.cloud/cdn-cgi/image/width=800,quality=85,format=webp/53979/uploads/urunresimleri/buyuk/net-celik-helvane-tencere-kapakli-1103-a1-e71.jpg"
 };
