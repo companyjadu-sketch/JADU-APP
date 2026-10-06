@@ -23,6 +23,13 @@ const firstName = n => String(n || "").split(" ")[0];
 const shortDate = s => { const p = s.split("-"); return attDayName(s) + " " + Number(p[2]) + "/" + Number(p[1]); };
 const fmtDays = n => { n = Math.round(n * 100) / 100; return n === 0 ? "0" : n === 0.5 ? "نصف" : String(n); };
 
+// "حضور 10:30 ص · وقت التسجيل الفعلي 10:45 ص (فرق 15 د)"
+function timePair(label, chosen, real){
+  if (!chosen) return label + ": —";
+  const d = attTimeDiff(chosen, real);
+  return label + " " + attFmt12(chosen) + (real && d > 0 ? " · وقت التسجيل الفعلي " + attFmt12(real) + " (فرق " + d + " د)" : "");
+}
+
 const ICON = {
   clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
   pin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-6.2 7-12a7 7 0 1 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></svg>',
@@ -337,7 +344,7 @@ function renderEmployee(){
   const rows = MY.records.slice().reverse().map(r => `
     <div class="att-row"><div class="l"><b>${esc(shortDate(r.date))}</b>
       <small>${r.inTime ? `<span class="times">${esc(attFmt12(r.inTime))}${r.outTime ? " – " + esc(attFmt12(r.outTime)) : ""}</span>` : ""}
-      ${r.lateMin ? " · تأخير " + r.lateMin + " د" : ""}${r.deduct ? " · خصم " + fmtDays(r.deduct) + " يوم" : ""}${r.points ? " · +" + r.points + " نقطة" : ""}</small>
+      ${r.inDiff ? " · سُجّل فعليًا " + esc(attFmt12(r.inReal)) : ""}${r.lateMin ? " · تأخير " + r.lateMin + " د" : ""}${r.deduct ? " · خصم " + fmtDays(r.deduct) + " يوم" : ""}${r.points ? " · +" + r.points + " نقطة" : ""}</small>
       ${r.pending ? `<small style="color:#9DB8FF">${esc(r.pending)}</small>` : ""}
       ${r.inTime ? `<button class="att-link" data-edit="${esc(r.id)}">طلب تعديل الوقت</button>` : ""}</div>
       <div class="r">${catPill(r)}</div></div>`).join("");
@@ -436,7 +443,8 @@ function renderAdmin(){
     if (kind === "absent") { title = `${r.emp} — غائب`; sub = shortDate(r.date) + " · لم يسجّل حضوره"; btns = `<button class="att-btn" data-dec="absent_excused" data-id="${r.id}">بعذر</button><button class="att-btn bad" data-dec="absent" data-id="${r.id}">بدون عذر</button>`; }
     else if (kind === "stay") { title = `${r.emp} — بقاء بعد الإغلاق`; sub = shortDate(r.date) + " · انصراف " + attFmt12(r.outTime) + " · " + String(r.stay).replace(/^طلب نقاط: /, "") + (r.note ? " · " + r.note : ""); btns = `<button class="att-btn ok" data-dec="stay_points" data-id="${r.id}">منح ${rules.points_per_stay} نقطة</button><button class="att-btn" data-dec="stay_no" data-id="${r.id}">رفض</button>`; }
     else { title = `${r.emp} — ${r.inStatus === ATT_STATUS.PENDING ? "حضور " + attFmt12(r.inTime) : r.outStatus === ATT_STATUS.PENDING && !/تعديل/.test(r.pending) ? "انصراف " + attFmt12(r.outTime) : "طلب تعديل"}`;
-      sub = shortDate(r.date) + (r.opener ? " · مسؤول الفتح" : "") + " · " + (r.pending || "") + (r.note ? " · " + r.note : "");
+      sub = shortDate(r.date) + (r.opener ? " · مسؤول الفتح" : "") + " · " + timePair("حضور", r.inTime, r.inReal)
+        + (r.outTime ? " · " + timePair("انصراف", r.outTime, r.outReal) : "") + " · " + (r.pending || "") + (r.note ? " · " + r.note : "");
       btns = `<button class="att-btn ok" data-dec="approve" data-id="${r.id}">موافقة</button><button class="att-btn bad" data-dec="reject" data-id="${r.id}">رفض</button><button class="att-btn" data-dec="excuse" data-id="${r.id}">عذر طارئ</button>`; }
     return `<div class="att-row" style="display:block"><div class="l"><b>${esc(title)}</b><small>${esc(sub)}</small></div><div class="att-btns">${btns}</div></div>`;
   }).join("");
@@ -444,12 +452,18 @@ function renderAdmin(){
   const sums = Object.values(d.summary).sort((a, b) => b.points - a.points || a.deduct - b.deduct);
   const sumHtml = sums.map(s => `<div class="att-sum"><div class="top"><b>${esc(s.emp)}</b><span class="att-pill ${/متميز/.test(s.rating) ? "ok" : /ملاحظات/.test(s.rating) ? "warn" : "mute"}">${esc(s.rating)}</span></div>
     <div class="nums"><span><b>${s.present}</b>أيام حضور</span><span><b>${fmtDays(s.deduct)}</b>أيام خصم</span><span><b>${s.points}</b>نقاط</span>
-      <span><b>${s.t2 + s.t3 + s.t4}</b>تأخيرات</span><span><b>${s.absent}</b>غياب</span><span><b>${s.lateMin}</b>دقائق تأخير</span></div></div>`).join("");
+      <span><b>${s.t2 + s.t3 + s.t4}</b>تأخيرات</span><span><b>${s.absent}</b>غياب</span><span><b>${s.lateMin}</b>دقائق تأخير</span></div>
+    ${s.diffAlert ? `<div class="att-alert warn" style="margin:10px 0 0;padding:10px;font-size:12.5px">${esc(s.diffAlert)}</div>` : ""}</div>`).join("");
+  const alerts = sums.filter(s => s.diffAlert);
+  const alertHtml = alerts.length ? `<div class="att-box" style="border-color:rgba(255,184,0,.45)"><h3>ملاحظات للتفحص <span class="att-pill warn">${alerts.length}</span></h3>
+    ${alerts.map(s => `<div class="att-row" style="display:block"><div class="l"><b>${esc(s.emp)}</b><small>${esc(s.diffAlert)}</small>
+      ${s.diffs.map(x => `<small>• ${esc(shortDate(x.date))}: ${esc(x.inDiff >= x.outDiff ? timePair("حضور", x.inTime, x.inReal) : timePair("انصراف", x.outTime, x.outReal))}</small>`).join("")}</div></div>`).join("")}</div>` : "";
 
   let unread = 0;
   try { unread = Number(localStorage.getItem(LS_LOG_SEEN + "_n") || 0); } catch (e) {}
   body.innerHTML = `
     <select class="att-month" id="attMonthSel" aria-label="الشهر">${months.map(m => `<option value="${m}" ${m === d.month ? "selected" : ""}>${esc(attMonthTitle(m))}</option>`).join("")}</select>
+    ${alertHtml}
     <div class="att-box"><h3>بانتظار الموافقة <span class="att-pill ${pend.length ? "info" : "mute"}">${pend.length}</span></h3>${pendHtml || '<div class="att-empty" style="padding:6px">لا توجد طلبات معلّقة</div>'}</div>
     <div class="att-box"><h3>الحضور اليومي <span class="sub">اضغط على أي يوم للتفاصيل</span></h3>${heatGrid(d, rules)}</div>
     <div class="att-box att-chart"><h3>دقائق التأخير خلال الشهر</h3>${lateChart(d, rules)}</div>
@@ -503,13 +517,13 @@ function heatGrid(d, rules){
       else if (r.deduct > 0) { cls = "bad"; txt = r.lateMin; }
       else if (r.lateMin > rules.grace_min) { cls = "t2"; txt = r.lateMin; }
       else { cls = "ok"; txt = r.lateMin ? r.lateMin : "✓"; }
-      tr += `<td class="c ${cls}" data-id="${esc(r.id)}" title="${esc(r.cat || "")}">${txt}</td>`;
+      tr += `<td class="c ${cls}${r.bigDiff ? " diff" : ""}" data-id="${esc(r.id)}" title="${esc((r.cat || "") + (r.bigDiff ? " — الوقت المختار يختلف عن وقت التسجيل الفعلي" : ""))}">${txt}</td>`;
     }
     return tr + "</tr>";
   }).join("");
   return `<div class="att-heat-wrap"><table class="att-heat">${head}${rows}</table></div>
     <div class="att-legend"><span><i style="background:rgba(111,207,142,.5)"></i>منتظم (الرقم = دقائق التأخير)</span><span><i style="background:rgba(255,184,0,.55)"></i>تأخير بدون خصم</span>
-      <span><i style="background:rgba(255,107,94,.6)"></i>خصم أو غياب (غ)</span><span><i style="background:rgba(120,160,255,.55)"></i>بانتظار الموافقة</span><span><i style="background:var(--steel-200)"></i>سماح، عذر، أو غياب بعذر</span><span>ع = عطلة</span></div>`;
+      <span><i style="background:rgba(255,107,94,.6)"></i>خصم أو غياب (غ)</span><span><i style="background:rgba(120,160,255,.55)"></i>بانتظار الموافقة</span><span><i style="background:var(--steel-200)"></i>سماح، عذر، أو غياب بعذر</span><span>ع = عطلة</span><span><i style="background:transparent;box-shadow:inset 0 0 0 2px #FF8A80"></i>وقت مختار يختلف عن وقت التسجيل الفعلي</span></div>`;
 }
 
 // مخطط دقائق التأخير: المحور الأفقي أيام الشهر، والعمودي دقائق التأخير
@@ -559,8 +573,8 @@ function openRecordAdmin(id, empName, dateStr){
   const isAbs = r.inStatus === ATT_STATUS.ABSENT || r.inStatus === ATT_STATUS.ABSENT_EXCUSED;
   openSheet(`<h2>${esc(r.emp)}</h2><p>${esc(shortDate(r.date))} — ${catPill(r)}</p>
     <div class="att-box" style="margin-bottom:12px;font-size:13px;line-height:1.9">
-      ${isAbs ? `الحالة: ${esc(r.inStatus)}` : `حضور: <b>${esc(attFmt12(r.inTime))}</b> ${r.inReal && r.inReal !== r.inTime ? `(الفعلي ${esc(attFmt12(r.inReal))})` : ""} · ${esc(r.inStatus)}${r.inDist !== "" && r.inDist !== undefined ? ` · ${esc(r.inDist)} م` : ""}<br>
-      انصراف: <b>${esc(attFmt12(r.outTime))}</b>${r.outTime ? ` · ${esc(r.outStatus)}${r.outDist !== "" && r.outDist !== undefined ? ` · ${esc(r.outDist)} م` : ""}` : ""}<br>
+      ${isAbs ? `الحالة: ${esc(r.inStatus)}` : `<b>${esc(timePair("حضور", r.inTime, r.inReal))}</b> · ${esc(r.inStatus)}${r.inDist !== "" && r.inDist !== undefined ? ` · ${esc(r.inDist)} م` : ""}<br>
+      ${r.outTime ? `<b>${esc(timePair("انصراف", r.outTime, r.outReal))}</b> · ${esc(r.outStatus)}${r.outDist !== "" && r.outDist !== undefined ? ` · ${esc(r.outDist)} م` : ""}` : "انصراف: —"}<br>
       التأخير: ${r.lateMin || 0} دقيقة · الخصم: ${fmtDays(r.deduct)} يوم`}
       ${r.flags && r.flags.length ? `<br><span style="color:#FFC94D">${esc(r.flags.join("، "))}</span>` : ""}
       ${r.pending ? `<br><span style="color:#9DB8FF">${esc(r.pending)}</span>` : ""}
@@ -609,6 +623,10 @@ function renderRules(){
     </div>
     <div class="att-box"><div class="att-sec">السماح الشهري والنقاط</div>
       <div class="att-grid2">${num("allowance_max")}${num("allowance_per_month")}</div>${num("points_per_stay")}
+    </div>
+    <div class="att-box"><div class="att-sec">تنبيه فرق الوقت</div>
+      <div class="att-grid2">${num("diff_min")}${num("diff_count")}</div>
+      <div class="att-hint">إذا اختار الموظف وقتًا يختلف عن وقت التسجيل الفعلي بهذا الفرق أو أكثر، وتكرر ذلك بالعدد المحدد في الشهر، تظهر ملاحظة للإدارة لتفحصها.</div>
     </div>
     <div class="att-box"><div class="att-sec">مسؤول فتح المحل</div>
       ${[6, 0, 1, 2, 3, 4].map(i => `<div class="att-field"><label for="r_opener_${i}">${ATT_DAY_NAMES[i]}</label><select id="r_opener_${i}"><option value="">— لا أحد —</option>${emps.map(n => `<option ${r["opener_" + i] === n ? "selected" : ""}>${esc(n)}</option>`).join("")}</select></div>`).join("")}
@@ -730,6 +748,10 @@ const Mock = (function(){
       });
       idx++;
     }
+    // حكيم: مرتان اختار فيهما وقتًا أبكر من وقت تسجيله الفعلي (وافقت عليهما الإدارة سابقًا)
+    db.records.filter(r => r.emp === "حكيم سحيم" && r.inTime).slice(1, 3).forEach((r, i) => {
+      r.inReal = r.inTime; r.inTime = attFromMin(attToMin(r.inTime) - (i ? 20 : 15)); r.note = "عدّل الوقت — وافقت الإدارة";
+    });
     // آخر يوم عمل قبل اليوم: طلب نقاط بقاء معلّق من إسلام + طلب تعديل من حكيم
     const prev = db.records.filter(r => r.date < t && r.inTime).map(r => r.date).sort().pop();
     if (prev) {
@@ -739,8 +761,8 @@ const Mock = (function(){
       if (h) { h.pending = "تعديل الحضور إلى 10:05 — السبب: وصلت مبكرًا ونسيت التسجيل"; h.inStatus = S.PENDING; }
     }
     // اليوم: إسلام سجّل حضوره من خارج النطاق
-    if (attIsWorkday(t, db.rules)) db.records.push({ id: nid(), date: t, day: attDayName(t), emp: "إسلام الجهاني", inTime: "10:02", inReal: "10:02", inDist: 340,
-      inStatus: S.PENDING, opener: attOpenerFor(t, db.rules) === "إسلام الجهاني", pending: "حضور: خارج النطاق (340 م)", points: 0 });
+    if (attIsWorkday(t, db.rules)) db.records.push({ id: nid(), date: t, day: attDayName(t), emp: "إسلام الجهاني", inTime: "10:02", inReal: "10:20", inDist: 340,
+      inStatus: S.PENDING, opener: attOpenerFor(t, db.rules) === "إسلام الجهاني", pending: "حضور: خارج النطاق (340 م)، وقت معدّل يدويًا", points: 0 });
     const ago = h => { const d = new Date(Date.now() - h * 3600000); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes()); };
     db.log.push({ at: ago(120), by: "abdofakroun20@gmail.com", type: "تعديل قاعدة", old: "خصم الفئة الثالثة (يوم): 1", val: "0.5", note: "حسب اللائحة الجديدة" });
     db.log.push({ at: ago(70), by: "no3y.fakroun20@gmail.com", type: "غياب بعذر", old: "أنس الترهوني — حضور — (غائب بدون عذر)", val: "غائب بعذر", note: "" });
@@ -760,7 +782,8 @@ const Mock = (function(){
     radius_m: db.rules.radius_m, shop_lat: db.rules.shop_lat, shop_lng: db.rules.shop_lng, allowance_max: db.rules.allowance_max, grace_min: db.rules.grace_min,
     opener_6: db.rules.opener_6, opener_0: db.rules.opener_0, opener_1: db.rules.opener_1, opener_2: db.rules.opener_2, opener_3: db.rules.opener_3, opener_4: db.rules.opener_4 });
   const months = () => [...new Set(db.records.map(r => r.date.slice(0, 7)))].sort().reverse();
-  const desc = r => "حضور " + (r.inTime || "—") + " (" + (r.inStatus || "—") + ")" + (r.outTime ? "، انصراف " + r.outTime + " (" + r.outStatus + ")" : "");
+  const tt = (v, real) => (v || "—") + (real && real !== v ? " [سُجّل فعليًا " + real + "]" : "");
+  const desc = r => "حضور " + tt(r.inTime, r.inReal) + " (" + (r.inStatus || "—") + ")" + (r.outTime ? "، انصراف " + tt(r.outTime, r.outReal) + " (" + r.outStatus + ")" : "");
 
   return {
     config: () => ({ employees: db.employees.filter(e => e.active).map(e => ({ id: e.id, name: e.name })), rules: pub(), now: now() }),

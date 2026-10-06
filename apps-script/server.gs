@@ -14,8 +14,8 @@ var ADMIN_EMAILS = ["abdofakroun20@gmail.com", "no3y.fakroun20@gmail.com", "isla
 var SH_EMP = "الموظفون", SH_RULES = "القواعد", SH_LOG = "سجل التعديلات";
 
 // أعمدة ورقة الشهر — الترتيب ثابت
-var COLS = ["id","التاريخ","اليوم","الموظف","وقت الحضور","الحضور الفعلي","مسافة الحضور (م)","حالة الحضور",
-            "وقت الانصراف","الانصراف الفعلي","مسافة الانصراف (م)","حالة الانصراف","مسؤول الفتح","سماح شهري",
+var COLS = ["id","التاريخ","اليوم","الموظف","وقت الحضور (اختاره الموظف)","وقت تسجيل الحضور الفعلي","مسافة الحضور (م)","حالة الحضور",
+            "وقت الانصراف (اختاره الموظف)","وقت تسجيل الانصراف الفعلي","مسافة الانصراف (م)","حالة الانصراف","مسؤول الفتح","سماح شهري",
             "عذر طارئ","دقائق التأخير","الفئة","الخصم (يوم)","نقاط","بقاء بعد الإغلاق","طلب معلّق","ملاحظات"];
 var KEYS = ["id","date","day","emp","inTime","inReal","inDist","inStatus","outTime","outReal","outDist","outStatus",
             "opener","allowance","excuse","lateMin","cat","deduct","points","stay","pending","note"];
@@ -333,10 +333,10 @@ function recalcMonth_(mk){
     sh.getRange(2, 1, last - 1, COLS.length).sort([{ column: 2, ascending: true }, { column: 4, ascending: true }]);
   }
   // ملخص الشهر
-  var head = ["الموظف","أيام الحضور","منتظم","تأخير 16–30","تأخير 31–60","أكثر من ساعة","سماح شهري","عذر طارئ","غياب","غياب بعذر","بانتظار الموافقة","مجموع الخصم (يوم)","النقاط","التقييم"];
+  var head = ["الموظف","أيام الحضور","منتظم","تأخير 16–30","تأخير 31–60","أكثر من ساعة","سماح شهري","عذر طارئ","غياب","غياب بعذر","بانتظار الموافقة","مجموع الخصم (يوم)","النقاط","التقييم","فروق الوقت","ملاحظة للإدارة"];
   var rows = Object.keys(res.summary).map(function(k){
     var s = res.summary[k];
-    return [s.emp, s.present, s.onTime, s.t2, s.t3, s.t4, s.allowance, s.excuse, s.absent, s.absentExcused, s.pending, s.deduct, s.points, s.rating];
+    return [s.emp, s.present, s.onTime, s.t2, s.t3, s.t4, s.allowance, s.excuse, s.absent, s.absentExcused, s.pending, s.deduct, s.points, s.rating, s.diffCount, s.diffAlert];
   });
   sh.getRange(1, SUMMARY_COL, Math.max(sh.getMaxRows(), 2), head.length).clearContent();
   sh.getRange(1, SUMMARY_COL, 1, head.length).setValues([head]).setFontWeight("bold").setBackground("#E10A1E").setFontColor("#FFFFFF");
@@ -425,7 +425,8 @@ function joinNote_(a, b){ b = String(b || "").trim().slice(0, 200); return !b ? 
 function yn_(v){ return v ? "نعم" : "لا"; }
 function fieldLabel_(k){ return { opener: "مسؤول الفتح", excuse: "عذر طارئ", allowance: "سماح شهري" }[k] || k; }
 function describe_(r){
-  return "حضور " + (r.inTime || "—") + " (" + (r.inStatus || "—") + ")" + (r.outTime ? "، انصراف " + r.outTime + " (" + r.outStatus + ")" : "");
+  var t = function(v, real){ return (v || "—") + (real && real !== v ? " [سُجّل فعليًا " + real + "]" : ""); };
+  return "حضور " + t(r.inTime, r.inReal) + " (" + (r.inStatus || "—") + ")" + (r.outTime ? "، انصراف " + t(r.outTime, r.outReal) + " (" + r.outStatus + ")" : "");
 }
 function decisionLabel_(d){
   return { approve: "موافقة", reject: "رفض", excuse: "موافقة كعذر طارئ", absent_excused: "غياب بعذر",

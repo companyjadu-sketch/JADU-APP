@@ -26,6 +26,8 @@ var ATT_DEFAULT_RULES = {
   allowance_per_month: 1,     // عدد مرات السماح في الشهر
   absence_deduct: 1,          // خصم الغياب بدون عذر (يوم)
   points_per_stay: 1,         // نقاط البقاء بعد الإغلاق لخدمة زبون
+  diff_min: 10,               // فرق بين الوقت المختار ووقت التسجيل الفعلي يُعتبر ملحوظًا (دقيقة)
+  diff_count: 2,              // عدد المرات في الشهر التي تُظهر ملاحظة للإدارة لتفحصها
   opener_6: "", opener_0: "", opener_1: "", opener_2: "", opener_3: "", opener_4: "" // مسؤول الفتح حسب اليوم
 };
 
@@ -39,6 +41,7 @@ var ATT_RULE_LABELS = {
   t4_deduct: "خصم التأخير أكثر من ساعة (يوم)", opener_extra: "خصم إضافي لمسؤول الفتح (يوم)",
   allowance_max: "السماح الشهري حتى (دقيقة)", allowance_per_month: "مرات السماح في الشهر",
   absence_deduct: "خصم الغياب بدون عذر (يوم)", points_per_stay: "نقاط البقاء بعد الإغلاق",
+  diff_min: "فرق الوقت الملحوظ (دقيقة)", diff_count: "عدد الفروق في الشهر لإظهار ملاحظة",
   opener_6: "مسؤول الفتح — السبت", opener_0: "مسؤول الفتح — الأحد", opener_1: "مسؤول الفتح — الاثنين",
   opener_2: "مسؤول الفتح — الثلاثاء", opener_3: "مسؤول الفتح — الأربعاء", opener_4: "مسؤول الفتح — الخميس"
 };
@@ -56,7 +59,7 @@ function attMergeRules(r){
   for (k in ATT_DEFAULT_RULES) out[k] = ATT_DEFAULT_RULES[k];
   if (r) for (k in r) if (r[k] !== "" && r[k] !== null && r[k] !== undefined) out[k] = r[k];
   ["shop_lat","shop_lng","radius_m","grace_min","t2_max","t2_free","t2_deduct","t3_max","t3_deduct",
-   "t4_deduct","opener_extra","allowance_max","allowance_per_month","absence_deduct","points_per_stay"]
+   "t4_deduct","opener_extra","allowance_max","allowance_per_month","absence_deduct","points_per_stay","diff_min","diff_count"]
     .forEach(function(n){ out[n] = Number(out[n]); });
   return out;
 }
@@ -77,6 +80,12 @@ function attFmt12(t){
   var h = Math.floor(n / 60), m = n % 60, ap = h >= 12 ? "م" : "ص";
   h = h % 12; if (h === 0) h = 12;
   return h + ":" + (m < 10 ? "0" : "") + m + " " + ap;
+}
+
+// الفرق بالدقائق بين الوقت الذي اختاره الموظف ووقت التسجيل الفعلي (0 إذا لا يوجد)
+function attTimeDiff(chosen, real){
+  var a = attToMin(chosen), b = attToMin(real);
+  return a === null || b === null ? 0 : Math.abs(a - b);
 }
 
 // المسافة بالمتر بين نقطتين (Haversine)
@@ -117,6 +126,9 @@ function attComputeMonth(records, rulesIn){
   sorted.forEach(function(r){
     var emp = r.emp;
     r.lateMin = null; r.cat = ""; r.deduct = 0; r.flags = [];
+    r.inDiff = attTimeDiff(r.inTime, r.inReal);
+    r.outDiff = attTimeDiff(r.outTime, r.outReal);
+    r.bigDiff = Math.max(r.inDiff, r.outDiff) >= rules.diff_min;
     if (r.inStatus === ATT_STATUS.ABSENT || r.inStatus === ATT_STATUS.REJECTED) {
       r.cat = r.inStatus === ATT_STATUS.REJECTED ? "حضور مرفوض" : "غياب";
       r.deduct = rules.absence_deduct;
@@ -152,7 +164,8 @@ function attComputeMonth(records, rulesIn){
   var summary = {};
   sorted.forEach(function(r){
     var s = summary[r.emp] || (summary[r.emp] = { emp: r.emp, present: 0, onTime: 0, t2: 0, t3: 0, t4: 0,
-      allowance: 0, excuse: 0, absent: 0, absentExcused: 0, pending: 0, deduct: 0, points: 0, lateMin: 0 });
+      allowance: 0, excuse: 0, absent: 0, absentExcused: 0, pending: 0, deduct: 0, points: 0, lateMin: 0, diffs: [] });
+    if (r.bigDiff) s.diffs.push({ date: r.date, inTime: r.inTime, inReal: r.inReal, inDiff: r.inDiff, outTime: r.outTime, outReal: r.outReal, outDiff: r.outDiff });
     if (r.inStatus === ATT_STATUS.PENDING || r.outStatus === ATT_STATUS.PENDING || r.pending) s.pending++;
     s.deduct += r.deduct || 0;
     s.points += Number(r.points) || 0;
@@ -176,6 +189,10 @@ function attComputeMonth(records, rulesIn){
     else if (s.points > 0) s.rating = "له نقاط — مع ملاحظات";
     else if (violations || repeatedLate) s.rating = "عليه ملاحظات";
     else s.rating = "منتظم";
+    s.diffCount = s.diffs.length;
+    s.diffAlert = s.diffCount >= rules.diff_count
+      ? "اختار وقتًا يختلف عن وقت التسجيل الفعلي بـ " + rules.diff_min + " دقائق أو أكثر " + (s.diffCount === 2 ? "مرتين" : s.diffCount + " مرات") + " هذا الشهر — يحتاج تفحص"
+      : "";
   });
   return { records: sorted, summary: summary };
 }
@@ -187,11 +204,11 @@ function attDecideStatus(opts, rules){
   if (opts.distance === null || opts.distance === undefined) reasons.push("لم يُسمح بتحديد الموقع");
   else if (opts.distance > rules.radius_m) reasons.push("خارج النطاق (" + opts.distance + " م)");
   var diff = Math.abs((attToMin(opts.requested) || 0) - (attToMin(opts.real) || 0));
-  if (diff > 2) reasons.push("وقت معدّل يدويًا (الحقيقي " + opts.real + ")");
+  if (diff > 2) reasons.push("وقت معدّل يدويًا");
   return { status: reasons.length ? ATT_STATUS.PENDING : ATT_STATUS.OK, reasons: reasons };
 }
 
 if (typeof module !== "undefined") module.exports = {
   ATT_DEFAULT_RULES: ATT_DEFAULT_RULES, ATT_STATUS: ATT_STATUS, attComputeMonth: attComputeMonth,
-  attDecideStatus: attDecideStatus, attDistance: attDistance, attMergeRules: attMergeRules, attToMin: attToMin
+  attDecideStatus: attDecideStatus, attDistance: attDistance, attTimeDiff: attTimeDiff, attMergeRules: attMergeRules, attToMin: attToMin
 };
