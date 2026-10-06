@@ -7,6 +7,25 @@
 // =====================================================================
 const IS_CUSTOMER_PAGE = document.body.dataset.page === 'customer';
 
+/* مقدمة الشعار: تُعرض مرة واحدة فقط لكل جلسة متصفح (لتوفير البيانات على إنترنت ضعيف)،
+   وبعدها تظهر الصورة الثابتة مباشرة. إن تعذّر التشغيل أو كان الجهاز بوضع توفير البيانات تظهر الصورة الثابتة فورًا */
+(function(){
+  var v = document.getElementById('heroIntro'), img = document.getElementById('heroLogo');
+  if(!v || !img) return;
+  function showStill(){ v.pause(); v.hidden = true; if(!img.src) img.src = img.dataset.src; img.hidden = false; }
+  var alreadyPlayed = false;
+  try{ alreadyPlayed = sessionStorage.getItem('jaduIntroPlayed') === '1'; }catch(e){}
+  var saveData = (navigator.connection && navigator.connection.saveData) || false;
+  if (alreadyPlayed || saveData || (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)) { showStill(); return; }
+  v.addEventListener('error', showStill);
+  v.addEventListener('ended', function(){ try{ sessionStorage.setItem('jaduIntroPlayed', '1'); }catch(e){} });
+  v.preload = "metadata";
+  var p = v.play && v.play();
+  if (p && p.catch) p.catch(showStill);
+  // إنترنت ضعيف: لو الفيديو ما بدأ خلال 4 ثواني نعرض الشعار الثابت بدل ما يبقى المربع أحمر فاضي
+  setTimeout(function(){ if (!v.hidden && v.currentTime === 0) showStill(); }, 4000);
+})();
+
 // =====================================================================
 // نافذة تأكيد/تنبيه عامة بهوية التطبيق (بديل alert/confirm الافتراضية)
 // =====================================================================
@@ -1716,7 +1735,8 @@ let camScanning = false;
 // يمنع استدعاء handleScanResult مرتين لو حركين الكشف (ZXing + BarcodeDetector) لقوا نتيجة بنفس اللحظة تقريبًا
 let scanResultHandled = false;
 
-const CAM_FORMATS_ZXING = [
+// تُبنى عند فتح الكاميرا فقط — لو مكتبة ZXing ما تحمّلت، ما تتعطل باقي الصفحة
+function camFormatsZxing_(){ return [
   ZXing.BarcodeFormat.QR_CODE,
   ZXing.BarcodeFormat.CODE_128,
   ZXing.BarcodeFormat.CODE_39,
@@ -1725,13 +1745,13 @@ const CAM_FORMATS_ZXING = [
   ZXing.BarcodeFormat.UPC_A,
   ZXing.BarcodeFormat.UPC_E,
   ZXing.BarcodeFormat.ITF
-];
+];}
 const CAM_FORMATS_NATIVE = ['qr_code','code_128','code_39','ean_13','ean_8','upc_a','upc_e','itf'];
 
 function getZxingReader(){
   if(!zxingReader){
     const hints = new Map();
-    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, CAM_FORMATS_ZXING);
+    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, camFormatsZxing_());
     hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
     // فحص أسرع (كل 100 ملي ثانية بدل الافتراضي ~500) لزيادة فرصة التقاط باركود 1D أثناء تحريك الهاتف
     zxingReader = new ZXing.BrowserMultiFormatReader(hints, 100);
@@ -1870,6 +1890,10 @@ async function openCamera(){
       advanced: [{ focusMode: "continuous" }]
     }
   };
+  if(typeof ZXing === 'undefined'){
+    camHint.textContent = "تعذّر تحميل قارئ الباركود — تحقق من الإنترنت وأعد فتح الصفحة";
+    return;
+  }
   try {
     await openCameraWithZxing(constraints);
     // إضافيًا وبالتوازي: لو الجهاز يدعم BarcodeDetector المدمج، نشغّله كفرصة ثانية
@@ -1907,22 +1931,7 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-/* مقدمة الشعار: تُعرض مرة واحدة فقط لكل جلسة متصفح (لتوفير البيانات على إنترنت ضعيف)،
-   وبعدها تظهر الصورة الثابتة مباشرة. إن تعذّر التشغيل أو كان الجهاز بوضع توفير البيانات تظهر الصورة الثابتة فورًا */
-(function(){
-  var v = document.getElementById('heroIntro'), img = document.getElementById('heroLogo');
-  if(!v || !img) return;
-  function showStill(){ v.pause(); v.hidden = true; if(!img.src) img.src = img.dataset.src; img.hidden = false; }
-  var alreadyPlayed = false;
-  try{ alreadyPlayed = sessionStorage.getItem('jaduIntroPlayed') === '1'; }catch(e){}
-  var saveData = (navigator.connection && navigator.connection.saveData) || false;
-  if (alreadyPlayed || saveData || (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)) { showStill(); return; }
-  v.addEventListener('error', showStill);
-  v.addEventListener('ended', function(){ try{ sessionStorage.setItem('jaduIntroPlayed', '1'); }catch(e){} });
-  v.preload = "metadata";
-  var p = v.play && v.play();
-  if (p && p.catch) p.catch(showStill);
-})();
+
 
 // عارض الصورة بملء الشاشة: تكبير/تصغير بالأزرار، ضغطتين للتكبير، إصبعين للتكبير، وسحب للتحريك
 (function(){
