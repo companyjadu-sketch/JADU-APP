@@ -3,7 +3,7 @@
 // مباشرة من كود الصفحة نفسها (مع نسخة احتياطية محليًا عبر localStorage)،
 // هذا الملف مسؤول فقط عن تخزين "هيكل" التطبيق (الصفحة، الصور، المكتبات) عشان يفتح بدون إنترنت.
 
-const CACHE_NAME = 'jadu-app-v2';
+const CACHE_NAME = 'jadu-app-v3';
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -15,7 +15,7 @@ const CORE_ASSETS = [
   './manifest-staff.json',
   './icon-192.png',
   './icon-512.png',
-  './jadu-logo.png',
+  './jadu-logo.jpg',
   './jadu-intro-poster.jpg'
 ];
 

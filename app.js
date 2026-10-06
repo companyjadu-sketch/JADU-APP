@@ -1249,6 +1249,13 @@ function openItemDetail(number){
 
   // زر المشاركة يظهر للموظف فقط (يُلغى للإدارة العامة وللزبون)
   document.getElementById('employeeShareRow').style.display = currentViewerRole === "employee" ? "flex" : "none";
+  // صفحة الزبون: زر "اطلب عبر واتساب" يفتح محادثة مع رقم الشركة ومعه بيانات الصنف جاهزة
+  const orderRow = document.getElementById('customerOrderRow');
+  if (orderRow) {
+    orderRow.style.display = currentViewerRole === "customer" ? "flex" : "none";
+    const msg = "السلام عليكم، أريد الاستفسار عن هذا الصنف:\n" + buildShareText(item);
+    document.getElementById('customerOrderBtn').href = "https://wa.me/" + ORDER_WHATSAPP + "?text=" + encodeURIComponent(msg);
+  }
   afterItemDetailRender_(item);
 
   const purchaseInfo = document.getElementById('adminPurchaseInfo');
@@ -1434,6 +1441,9 @@ function renderCapitalReport(){
     ${missingPriceCount ? `<div class="empty-note" style="margin-top:10px;">تنبيه: ${missingPriceCount} صنف بدون سعر شراء مسجّل — غير محسوبين ضمن رأس المال أعلاه</div>` : ''}
   `;
 }
+
+// رقم واتساب الشركة اللي توصله طلبات الزبائن من صفحة الصنف (0914575500)
+const ORDER_WHATSAPP = "218914575500";
 
 function buildShareText(item){
   const lines = [
