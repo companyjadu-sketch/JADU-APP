@@ -49,7 +49,7 @@ async function call(action, data){
   }
   if (action.indexOf("emp_") === 0) {
     const me = getMe();
-    if (data.empId === undefined) { data.empId = me && me.id; data.pin = me && me.pin; }
+    if (data.empId === undefined) data.empId = me && me.id;
   }
   if (DEMO) {
     await new Promise(r => setTimeout(r, 180));
@@ -100,7 +100,7 @@ addView("att-emp", "الحضور والانصراف", "attEmpBody");
 addView("att-admin", "الحضور والانصراف", "attAdminBody");
 addView("att-rules", "قواعد الدوام والخصم", "attRulesBody");
 addView("att-log", "سجل التعديلات", "attLogBody");
-addView("att-staff", "الموظفون ورموز الحضور", "attStaffBody");
+addView("att-staff", "الموظفون", "attStaffBody");
 
 const overlay = document.createElement("div");
 overlay.className = "att-overlay"; overlay.id = "attOverlay";
@@ -159,20 +159,17 @@ function askIdentity(){
   return new Promise(async resolve => {
     let cfg;
     try { cfg = await loadConfig(); } catch (e) { alertMsg(e.message); return resolve(null); }
-    openSheet(`<h2>من أنت؟</h2><p>اختر اسمك وأدخل رمز الحضور الخاص بك. يُحفظ على هذا الجهاز فلا تحتاج إدخاله كل مرة.</p>
+    openSheet(`<h2>من أنت؟</h2><p>اختر اسمك مرة واحدة على هذا الهاتف، وبعدها يعرفك الموقع تلقائيًا كل يوم.</p>
       <div class="att-field"><label for="attWho">الاسم</label><select id="attWho">${cfg.employees.map(e => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join("")}</select></div>
-      <div class="att-field"><label for="attPin">رمز الحضور (4 أرقام)</label><input type="text" id="attPin" inputmode="numeric" maxlength="4" autocomplete="off" style="font-family:'IBM Plex Mono',monospace;text-align:center;direction:ltr;letter-spacing:6px;"></div>
       <div class="msg" id="attWhoMsg"></div>
       <div class="att-btns"><button class="att-btn main" id="attWhoOk">متابعة</button><button class="att-btn" id="attWhoCancel">لاحقًا</button></div>`);
-    $("#attPin").focus();
     $("#attWhoCancel").onclick = () => { closeSheet(); resolve(null); };
     $("#attWhoOk").onclick = async () => {
-      const id = $("#attWho").value, pin = $("#attPin").value.trim(), msg = $("#attWhoMsg");
-      if (!/^\d{4}$/.test(pin)) { msg.textContent = "الرمز لازم يكون 4 أرقام"; msg.className = "msg err"; return; }
-      msg.innerHTML = '<span class="spinner"></span> جارِ التحقق…'; msg.className = "msg";
+      const id = $("#attWho").value, msg = $("#attWhoMsg");
+      msg.innerHTML = '<span class="spinner"></span> جارِ التحميل…'; msg.className = "msg";
       try {
-        const st = await call("emp_status", { empId: id, pin });
-        setMe({ id, pin, name: st.emp.name });
+        const st = await call("emp_status", { empId: id });
+        setMe({ id, name: st.emp.name });
         MY = st; updateEmpCard(); closeSheet(); resolve(st);
       } catch (e) { msg.textContent = e.message; msg.className = "msg err"; }
     };
@@ -184,7 +181,7 @@ async function refreshMe(){
   if (!me) return null;
   try { MY = await call("emp_status"); updateEmpCard(); return MY; }
   catch (e) {
-    if (/رمز|غير صحيح/.test(e.message)) setMe(null);
+    if (/غير موجود|موقوف/.test(e.message)) setMe(null);
     throw e;
   }
 }
@@ -459,7 +456,7 @@ function renderAdmin(){
     <div class="att-box"><h3>ملخص الشهر</h3>${sumHtml || '<div class="att-empty">لا توجد سجلات لهذا الشهر</div>'}</div>
     <div class="list">
       <button class="list-btn" id="attGoRules"><div class="list-icon">${ICON.rules}</div><div class="list-text"><strong>قواعد الدوام والخصم</strong><span>أوقات الدوام، النطاق، الخصومات، مسؤول الفتح</span></div>${ICON.chev}</button>
-      <button class="list-btn" id="attGoStaff"><div class="list-icon">${ICON.users}</div><div class="list-text"><strong>الموظفون ورموز الحضور</strong><span>إضافة موظف أو تغيير رمزه</span></div>${ICON.chev}</button>
+      <button class="list-btn" id="attGoStaff"><div class="list-icon">${ICON.users}</div><div class="list-text"><strong>الموظفون</strong><span>إضافة موظف أو إيقافه</span></div>${ICON.chev}</button>
       <button class="list-btn" id="attGoLog"><div class="list-icon">${ICON.log}</div><div class="list-text"><strong>سجل التعديلات <span class="list-badge" id="attLogBadge" style="display:none">0</span></strong><span>من عدّل ماذا ومتى من حسابات الإدارة</span></div>${ICON.chev}</button>
       ${ATT_SHEET_URL ? `<a class="list-btn" href="${esc(ATT_SHEET_URL)}" target="_blank" rel="noopener" style="text-decoration:none"><div class="list-icon">${ICON.sheet}</div><div class="list-text"><strong>فتح ملف جوجل شيت</strong><span>كل الأشهر في ملف واحد</span></div>${ICON.chev}</a>` : ""}
     </div>`;
@@ -674,19 +671,16 @@ function renderStaff(){
   const body = $("#attStaffBody");
   if (!ADM) { body.innerHTML = '<div class="att-empty">افتح الحضور والانصراف أولًا</div>'; return; }
   const row = e => `<div class="att-emp-row" data-id="${esc(e.id || "")}"><input type="text" class="nm" value="${esc(e.name || "")}" placeholder="اسم الموظف">
-    <input type="text" class="pin" inputmode="numeric" maxlength="4" placeholder="${e.id ? "رمز جديد" : "الرمز"}">
     <label><input type="checkbox" class="ac" ${e.active !== false ? "checked" : ""}>نشط</label></div>`;
-  body.innerHTML = `<div class="att-box"><div class="att-hint" style="margin:0 0 12px">كل موظف له رمز حضور خاص من 4 أرقام يدخله مرة واحدة على هاتفه. اترك خانة الرمز فارغة إذا لا تريد تغييره.</div>
+  body.innerHTML = `<div class="att-box"><div class="att-hint" style="margin:0 0 12px">الأسماء تظهر للموظفين في قائمة "من أنت؟". الموظف الموقوف لا يظهر ولا يقدر يسجّل.</div>
       <div id="attEmpRows">${ADM.employees.map(row).join("")}</div>
       <button class="att-btn" id="attEmpAdd" style="width:100%">+ إضافة موظف</button></div>
     <div class="msg" id="attStaffMsg"></div><button class="primary-btn" id="attStaffSave">حفظ</button>`;
   $("#attEmpAdd").onclick = () => $("#attEmpRows").insertAdjacentHTML("beforeend", row({}));
   $("#attStaffSave").onclick = async () => {
     const list = [...body.querySelectorAll(".att-emp-row")].map(el => ({ id: el.dataset.id, name: el.querySelector(".nm").value.trim(),
-      pin: el.querySelector(".pin").value.trim(), active: el.querySelector(".ac").checked })).filter(x => x.name);
+      active: el.querySelector(".ac").checked })).filter(x => x.name);
     const msg = $("#attStaffMsg");
-    const bad = list.find(x => x.pin && !/^\d{4}$/.test(x.pin));
-    if (bad) { msg.textContent = "رمز " + bad.name + " لازم يكون 4 أرقام"; msg.className = "msg err"; return; }
     try { await call("admin_employees_save", { employees: list }); CONFIG = null; await loadAdmin(); showView("att-staff"); renderStaff();
       $("#attStaffMsg").textContent = "تم الحفظ"; $("#attStaffMsg").className = "msg ok"; }
     catch (e) { msg.textContent = e.message; msg.className = "msg err"; }
@@ -700,7 +694,7 @@ const Mock = (function(){
   if (!DEMO) return {};
   const S = ATT_STATUS;
   const db = {
-    employees: [{ id: 1, name: "إسلام الجهاني", pin: "1001", active: true }, { id: 2, name: "حكيم سحيم", pin: "1002", active: true }, { id: 3, name: "أنس الترهوني", pin: "1003", active: true }],
+    employees: [{ id: 1, name: "إسلام الجهاني", active: true }, { id: 2, name: "حكيم سحيم", active: true }, { id: 3, name: "أنس الترهوني", active: true }],
     rules: attMergeRules({ opener_6: "أنس الترهوني", opener_0: "حكيم سحيم", opener_1: "إسلام الجهاني", opener_2: "إسلام الجهاني", opener_3: "حكيم سحيم", opener_4: "أنس الترهوني" }),
     records: [], log: []
   };
@@ -756,7 +750,7 @@ const Mock = (function(){
 
   const emp = req => {
     const e = db.employees.find(x => String(x.id) === String(req.empId) && x.active);
-    if (!e || e.pin !== String(req.pin)) throw new Error("الاسم أو رمز الحضور غير صحيح (في الوضع التجريبي الرموز: 1001، 1002، 1003)");
+    if (!e) throw new Error("الموظف غير موجود أو موقوف — اختر اسمك من جديد");
     return e;
   };
   const month = mk => db.records.filter(r => r.date.slice(0, 7) === mk);
@@ -854,11 +848,9 @@ const Mock = (function(){
         const ex = db.employees.find(x => String(x.id) === String(e.id));
         if (ex) {
           if (ex.name !== e.name) { log(req.adminEmail, "تعديل موظف", ex.name, e.name); ex.name = e.name; }
-          if (e.pin) { ex.pin = e.pin; log(req.adminEmail, "تغيير رمز حضور", e.name, "رمز جديد"); }
           if (ex.active !== e.active) { ex.active = e.active; log(req.adminEmail, e.active ? "تفعيل موظف" : "إيقاف موظف", e.name, ""); }
         } else {
-          if (!e.pin) throw new Error("أدخل رمز حضور للموظف الجديد " + e.name);
-          db.employees.push({ id: db.employees.length + 1, name: e.name, pin: e.pin, active: true });
+          db.employees.push({ id: db.employees.length + 1, name: e.name, active: true });
           log(req.adminEmail, "إضافة موظف", "", e.name);
         }
       });

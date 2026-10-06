@@ -217,17 +217,14 @@ var API = {
     var list = req.employees || [], sh = sheet_(SH_EMP), cur = getEmployees_();
     list.forEach(function(e){
       var name = String(e.name || "").trim(); if (!name) return;
-      if (e.pin && !/^\d{4}$/.test(String(e.pin))) throw new Error("رمز " + name + " لازم يكون 4 أرقام");
       var ex = cur.filter(function(c){ return String(c.id) === String(e.id); })[0];
       if (ex) {
         var row = ex.row;
         if (ex.name !== name) { log_(who, "تعديل موظف", ex.name, name, ""); sh.getRange(row, 2).setValue(name); }
-        if (e.pin) { sh.getRange(row, 3).setValue("'" + e.pin); log_(who, "تغيير رمز حضور", name, "رمز جديد", ""); }
         if (!!e.active !== ex.active) { sh.getRange(row, 4).setValue(e.active ? "نشط" : "موقوف"); log_(who, e.active ? "تفعيل موظف" : "إيقاف موظف", name, "", ""); }
       } else {
-        if (!e.pin) throw new Error("أدخل رمز حضور للموظف الجديد " + name);
         var id = cur.reduce(function(m, c){ return Math.max(m, Number(c.id) || 0); }, 0) + 1;
-        sh.appendRow([id, name, "'" + e.pin, "نشط"]);
+        sh.appendRow([id, name, "", "نشط"]);
         log_(who, "إضافة موظف", "", name, "");
       }
     });
@@ -239,15 +236,8 @@ var API = {
 // التحقق من الهوية
 // ---------------------------------------------------------------------
 function authEmployee_(req){
-  var cache = CacheService.getScriptCache(), key = "fail_" + req.empId;
-  var fails = Number(cache.get(key) || 0);
-  if (fails >= 5) throw new Error("محاولات كثيرة خاطئة — انتظر 15 دقيقة أو تواصل مع الإدارة");
   var emp = getEmployees_().filter(function(x){ return String(x.id) === String(req.empId) && x.active; })[0];
-  if (!emp || String(emp.pin) !== String(req.pin)) {
-    cache.put(key, String(fails + 1), 900);
-    throw new Error("الاسم أو رمز الحضور غير صحيح");
-  }
-  cache.remove(key);
+  if (!emp) throw new Error("الموظف غير موجود أو موقوف — اختر اسمك من جديد");
   return emp;
 }
 
@@ -397,9 +387,8 @@ function setup(){
   var ss = ss_();
   if (!ss.getSheetByName(SH_EMP)) {
     var e = ss.insertSheet(SH_EMP); e.setRightToLeft(true);
-    e.getRange(1, 1, 1, 4).setValues([["رقم","اسم الموظف","رمز الحضور (4 أرقام)","الحالة"]]).setFontWeight("bold");
-    e.getRange(2, 1, 3, 4).setValues([[1,"إسلام الجهاني","'1001","نشط"],[2,"حكيم سحيم","'1002","نشط"],[3,"أنس الترهوني","'1003","نشط"]]);
-    e.getRange("C:C").setNumberFormat("@");
+    e.getRange(1, 1, 1, 4).setValues([["رقم","اسم الموظف","(غير مستخدم)","الحالة"]]).setFontWeight("bold");
+    e.getRange(2, 1, 3, 4).setValues([[1,"إسلام الجهاني","","نشط"],[2,"حكيم سحيم","","نشط"],[3,"أنس الترهوني","","نشط"]]);
   }
   if (!ss.getSheetByName(SH_RULES)) {
     var r = ss.insertSheet(SH_RULES); r.setRightToLeft(true);
