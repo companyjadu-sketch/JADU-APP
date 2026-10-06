@@ -72,11 +72,61 @@ async function call(action, data){
   let res;
   try {
     res = await fetch(ATT_API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(data) });
-  } catch (e) { throw new Error("لا يوجد اتصال بالإنترنت"); }
-  const body = await res.json().catch(() => ({ ok: false, error: "رد غير مفهوم من الخادم" }));
+  } catch (e) { const err = new Error("لا يوجد اتصال بالإنترنت"); err.network = true; throw err; }
+  const body = await res.json().catch(() => null);
+  if (!body) { const err = new Error("تعذّر الوصول للخادم، حاول مرة أخرى"); err.network = true; throw err; }
   if (!body.ok) throw new Error(body.error || "حدث خطأ");
   return body.data;
 }
+
+// توحيد صيغة الوقت "HH:MM" (بعض الهواتف ترجع الثواني أو أرقامًا عربية)
+function normTime(v){
+  const t = String(v || "").trim().replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d)).replace(/[۰-۹]/g, d => "۰۱۲۳۴۵۶۷۸۹".indexOf(d));
+  const m = t.match(/^(\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?\s*(AM|PM|ص|م)?$/i);
+  if (!m) return "";
+  let h = +m[1]; const mi = +m[2], ap = (m[3] || "").toUpperCase();
+  if (ap === "PM" || ap === "م") { if (h < 12) h += 12; } else if ((ap === "AM" || ap === "ص") && h === 12) h = 0;
+  return h > 23 || mi > 59 ? "" : pad(h) + ":" + pad(mi);
+}
+
+// =====================================================================
+// قائمة انتظار الإرسال: التسجيل يظهر فورًا للموظف ويُرسل للخادم في الخلفية،
+// وإذا انقطع الإنترنت يبقى محفوظًا على الهاتف ويُرسل تلقائيًا لاحقًا
+// =====================================================================
+const LS_Q = "jadu_att_queue";
+function qGet(){ return lsGet(LS_Q) || []; }
+function qSet(q){ lsSet(LS_Q, q.length ? q : null); }
+let Q_BUSY = false;
+async function qFlush(){
+  if (Q_BUSY || DEMO && !Mock.emp_checkin) return;
+  Q_BUSY = true;
+  try {
+    let q = qGet();
+    while (q.length) {
+      const job = q[0];
+      if (job.waitLoc && Date.now() - job.at < 20000) break; // ننتظر تحديد الموقع
+      try {
+        const r = await call(job.action, Object.assign({}, job.payload, { clientDate: job.date, clientTime: job.real }));
+        q = qGet().filter(x => x.id !== job.id); qSet(q);
+        onQueuedResult(job, r, null);
+      } catch (e) {
+        if (e.network) break; // نعيد المحاولة لاحقًا
+        q = qGet().filter(x => x.id !== job.id); qSet(q);
+        onQueuedResult(job, null, e);
+      }
+    }
+  } finally { Q_BUSY = false; updateEmpCard(); }
+  if (qGet().length) setTimeout(qFlush, 15000);
+  else refreshMe().then(() => { if ($("#view-att-emp").classList.contains("active")) renderEmployee(); }).catch(() => {});
+}
+function onQueuedResult(job, r, err){
+  const word = job.action === "emp_checkin" ? "الحضور" : "الانصراف";
+  if (err) { alertMsg(`لم يُقبل تسجيل ${word}: ${err.message}`, "تنبيه"); return; }
+  // إذا تبيّن من الخادم أن التسجيل بانتظار الموافقة ولم يعرفه الهاتف مسبقًا، ننبّه الموظف
+  if (r && r.status === ATT_STATUS.PENDING && !job.knownPending) showPunchResult(job.action === "emp_checkin" ? "in" : "out", r);
+}
+window.addEventListener("online", () => setTimeout(qFlush, 1000));
+setInterval(() => { if (qGet().length) qFlush(); }, 30000);
 
 function lsGet(k){ try { return JSON.parse(localStorage.getItem(k) || "null"); } catch (e) { return null; } }
 function lsSet(k, v){ try { v ? localStorage.setItem(k, JSON.stringify(v)) : localStorage.removeItem(k); } catch (e) {} }
@@ -180,7 +230,7 @@ if (adminList) {
 // =====================================================================
 // الموظف
 // =====================================================================
-setTimeout(() => { try { loadConfig().catch(() => {}); updateEmpCard(); } catch (e) {} }, 0);
+setTimeout(() => { try { loadConfig().catch(() => {}); updateEmpCard(); if (qGet().length) qFlush(); } catch (e) {} }, 0);
 let CONFIG = null;     // { employees, rules, now }
 let MY = null;         // آخر رد emp_status
 // القواعد وأسماء الموظفين: نستخدم النسخة المحفوظة فورًا ونحدّثها بالخلفية
@@ -272,6 +322,7 @@ function updateEmpCard(){
     empCard.classList.add("att-card-alert"); return;
   }
   empCard.classList.remove("att-card-alert");
+  if (qGet().length) { sub.textContent = firstName(me.name) + " — ⏳ تسجيلك محفوظ وبانتظار الإرسال"; return; }
   if (!MY) { sub.textContent = firstName(me.name) + " — سجّل حضورك وشاهد سجلك"; return; }
   const t = MY.today;
   if (!t || (!t.inTime && !t.inStatus)) sub.textContent = firstName(MY.emp.name) + " — لم تسجّل حضورك اليوم";
@@ -336,7 +387,7 @@ function openPunch(kind){
   openSheet(`<h2>${esc(greet)}</h2>
     <p>${isIn ? "هل تريد تسجيل حضورك الآن؟" : "هل تريد تسجيل انصرافك الآن؟"}</p>
     <div class="att-field"><label for="attTime">${isIn ? "وقت الحضور" : "وقت الانصراف"}</label>
-      <input type="time" id="attTime" value="${nowHM()}">
+      <input type="time" id="attTime" value="${nowHM()}" step="60">
       <div class="att-hint">الوقت الحالي مكتوب تلقائيًا، ويمكنك تعديله. وقت التسجيل الفعلي يُحفظ معه ويظهر للإدارة.</div></div>
     ${isIn ? `<label class="att-check att-key"><input type="checkbox" id="attOpener"><span><b>أنا من فتح المحل اليوم</b>
       <small>إذا فتحت المحل يُحسب تأخيرك من الساعة ${esc(attFmt12(rules.work_start))}. وإذا لم تفتحه لا يُحسب تأخير، بل تُحسب ساعات عملك (${hours} ساعات).</small>
@@ -372,27 +423,45 @@ function openPunch(kind){
     $("#attAllowHint").textContent = on ? "لا يُطبَّق على من فتح المحل" : "بشرط أنك أبلغت المسؤول مسبقًا، ومرة واحدة في الشهر";
   };
   $("#attPunchLater").onclick = () => { sessionStorage.setItem(SNOOZE_KEY, String(Date.now() + 30 * 60000)); closeSheet(); };
-  $("#attPunchOk").onclick = async () => {
-    const btn = $("#attPunchOk"), msg = $("#attPunchMsg");
-    const time = $("#attTime").value;
-    if (!/^\d{2}:\d{2}$/.test(time)) { msg.textContent = "اختر الوقت"; msg.className = "msg err"; return; }
-    btn.disabled = true;
-    msg.innerHTML = '<span class="spinner"></span> ' + (locDone ? "جارِ التسجيل…" : "ننتظر تحديد الموقع…"); msg.className = "msg";
-    await locPromise;
+  $("#attPunchOk").onclick = () => {
+    const msg = $("#attPunchMsg");
+    const time = normTime($("#attTime").value);
+    if (!time) { msg.textContent = "اختر الوقت"; msg.className = "msg err"; return; }
     const payload = { time, note: $("#attNote").value };
-    if (loc) { payload.lat = loc.lat; payload.lng = loc.lng; payload.acc = loc.acc; }
     if (isIn) { payload.allowance = !!$("#attAllow").checked; payload.opener = !!$("#attOpener").checked; }
     else { payload.stay = !!($("#attStay") && $("#attStay").checked); payload.closer = !!$("#attCloser").checked; }
-    try {
-      const r = await call(isIn ? "emp_checkin" : "emp_checkout", payload);
-      LOC_CACHE = null;
-      showPunchResult(kind, r);
-      refreshMe().then(() => { if ($("#view-att-emp").classList.contains("active")) renderEmployee(); }).catch(() => {});
-    } catch (e) { msg.textContent = e.message; msg.className = "msg err"; btn.disabled = false; }
+    const job = { id: "q" + Date.now(), action: isIn ? "emp_checkin" : "emp_checkout", payload, at: Date.now(),
+                  date: todayStr(), real: nowHM(), waitLoc: !locDone };
+    let dist = null;
+    const fillLoc = l => {
+      if (l) { job.payload.lat = l.lat; job.payload.lng = l.lng; job.payload.acc = l.acc; dist = attDistance(l.lat, l.lng, rules.shop_lat, rules.shop_lng); }
+      job.knownPending = !l || dist > rules.radius_m;
+    };
+    if (locDone) fillLoc(loc);
+    qSet(qGet().concat([job]));
+    // تحديث فوري لما يراه الموظف
+    if (MY) {
+      const t = MY.today || (MY.today = { date: todayStr(), emp: MY.emp.name });
+      if (isIn) Object.assign(t, { inTime: time, inReal: job.real, inStatus: ATT_STATUS.OK, opener: payload.opener });
+      else Object.assign(t, { outTime: time, outReal: job.real, outStatus: ATT_STATUS.OK, closer: payload.closer,
+                              workedMin: Math.max(0, attToMin(time) - attToMin(t.inTime)) });
+      lsSet(LS_MY, MY); updateEmpCard();
+      if ($("#view-att-emp").classList.contains("active")) renderEmployee();
+    }
+    LOC_CACHE = null;
+    const res = { time, distance: dist, reasons: [], status: ATT_STATUS.OK };
+    if (locDone && job.knownPending) { res.status = ATT_STATUS.PENDING; res.reasons = [loc ? "خارج النطاق (" + dist + " م)" : "لم يُسمح بتحديد الموقع"]; }
+    showPunchResult(kind, res, true);
+    if (!locDone) locPromise.then(l => {
+      fillLoc(l);
+      const q = qGet().map(x => x.id === job.id ? Object.assign(x, { payload: job.payload, waitLoc: false, knownPending: false }) : x);
+      qSet(q); qFlush();
+    });
+    else qFlush();
   };
 }
 
-function showPunchResult(kind, r){
+function showPunchResult(kind, r, sending){
   const word = kind === "in" ? "حضورك" : "انصرافك";
   let html;
   if (r.status === ATT_STATUS.PENDING) {
@@ -402,7 +471,8 @@ function showPunchResult(kind, r){
       يجب التواصل مع الإدارة فورًا للموافقة عليه في نفس اليوم.</div>
       <p style="font-size:12px;color:var(--steel-500);margin:0 0 14px;">السبب: ${esc(r.reasons.join("، "))}</p>`;
   } else {
-    html = `<div class="att-alert ok"><b>تم تسجيل ${word}</b>الساعة ${esc(attFmt12(r.time))} — داخل نطاق المحل.</div>`;
+    html = `<div class="att-alert ok"><b>تم تسجيل ${word}</b>الساعة ${esc(attFmt12(r.time))}${r.distance !== null && r.distance !== undefined ? " — داخل نطاق المحل" : ""}.
+      ${sending ? '<br><small style="opacity:.8">يُرسل للإدارة في الخلفية، ولو انقطع الإنترنت يُرسل تلقائيًا عند عودته.</small>' : ""}</div>`;
   }
   openSheet(html + '<div class="att-btns"><button class="att-btn main" id="attResOk">حسنًا</button></div>');
   $("#attResOk").onclick = closeSheet;
@@ -511,20 +581,23 @@ function renderEmployee(syncing){
 function openEditRequest(r){
   openSheet(`<h2>طلب تعديل الوقت</h2><p>${esc(shortDate(r.date))} — يبقى الوقت الحالي حتى توافق الإدارة على التعديل.</p>
     <div class="att-field"><label for="attEdField">ماذا تريد أن تعدّل؟</label><select id="attEdField"><option value="in">وقت الحضور (${esc(attFmt12(r.inTime))})</option>${r.outTime ? `<option value="out">وقت الانصراف (${esc(attFmt12(r.outTime))})</option>` : ""}</select></div>
-    <div class="att-field"><label for="attEdTime">الوقت الصحيح</label><input type="time" id="attEdTime" value="${esc(r.inTime)}"></div>
+    <div class="att-field"><label for="attEdTime">الوقت الصحيح</label><input type="time" id="attEdTime" value="${esc(normTime(r.inTime))}"></div>
     <div class="att-field"><label for="attEdWhy">السبب</label><input type="text" id="attEdWhy" maxlength="200" placeholder="مثال: نسيت التسجيل عند وصولي"></div>
     <div class="msg" id="attEdMsg"></div>
     <div class="att-btns"><button class="att-btn main" id="attEdOk">إرسال للإدارة</button><button class="att-btn" id="attEdCancel">إلغاء</button></div>`);
-  $("#attEdField").onchange = () => { $("#attEdTime").value = $("#attEdField").value === "in" ? r.inTime : r.outTime; };
+  $("#attEdField").onchange = () => { $("#attEdTime").value = normTime($("#attEdField").value === "in" ? r.inTime : r.outTime); };
   $("#attEdCancel").onclick = closeSheet;
   $("#attEdOk").onclick = async () => {
     const msg = $("#attEdMsg");
     if (!$("#attEdWhy").value.trim()) { msg.textContent = "اكتب سبب التعديل"; msg.className = "msg err"; return; }
     try {
-      await call("emp_edit", { id: r.id, date: r.date, field: $("#attEdField").value, time: $("#attEdTime").value, reason: $("#attEdWhy").value });
+      const et = normTime($("#attEdTime").value);
+      if (!et) { msg.textContent = "اختر الوقت الصحيح"; msg.className = "msg err"; return; }
+      $("#attEdOk").disabled = true; msg.innerHTML = '<span class="spinner"></span> جارِ الإرسال…'; msg.className = "msg";
+      await call("emp_edit", { id: r.id, date: r.date, field: $("#attEdField").value, time: et, reason: $("#attEdWhy").value });
       closeSheet(); await refreshMe(); renderEmployee();
       alertMsg("تم إرسال طلب التعديل للإدارة. تواصل معهم للموافقة عليه.", "تم الإرسال");
-    } catch (e) { msg.textContent = e.message; msg.className = "msg err"; }
+    } catch (e) { msg.textContent = e.message; msg.className = "msg err"; if ($("#attEdOk")) $("#attEdOk").disabled = false; }
   };
 }
 
