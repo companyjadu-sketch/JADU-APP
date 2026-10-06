@@ -145,3 +145,6 @@
 .att-check.att-key{ background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:10px; }
 .att-check.att-key b{ font-size:14px; }
 .att-emp-row input.hr{ font-family:'IBM Plex Mono', monospace; text-align:center; direction:ltr; }
+.att-card.att-card-alert{ border-color:rgba(255,184,0,.6); }
+.att-card.att-card-alert .tx span{ color:#FFC94D; }
+.att-emp-dev{ grid-column:1 / -1; font-size:12px; color:var(--steel-500); margin-top:-4px; display:flex; gap:10px; align-items:center; }

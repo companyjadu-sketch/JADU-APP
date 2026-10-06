@@ -48,7 +48,9 @@ function json_(o){ return ContentService.createTextOutput(JSON.stringify(o)).set
 var API = {
   config: function(){
     var rules = getRules_();
-    return { employees: getEmployees_().filter(function(x){ return x.active; }).map(function(x){ return { id: x.id, name: x.name }; }),
+    var taken = getDevices_().filter(function(d){ return d.status === DEV_OK; }).map(function(d){ return String(d.empId); });
+    return { employees: getEmployees_().filter(function(x){ return x.active; }).map(function(x){
+               return { id: x.id, name: x.name, taken: taken.indexOf(String(x.id)) !== -1 }; }),
              rules: publicRules_(rules), now: nowParts_() };
   },
 
@@ -67,6 +69,8 @@ var API = {
       addDevice_(deviceId, emp, DEV_OK, "تسجيل أول مرة");
       return { status: "approved", status_data: API.emp_status({ deviceId: deviceId }) };
     }
+    // هاتف جديد واسم مسجّل على هاتف آخر: لا يُسمح — تُلغي الإدارة ربط الهاتف القديم أولًا
+    if (!mine) throw new Error("هذا الاسم مسجّل على هاتف آخر. لا يمكن تسجيل هاتف جديد — راجع الإدارة.");
     // طلب معلّق: إلغاء أي طلب معلّق سابق لنفس الهاتف ثم إضافة الجديد
     devs.filter(function(d){ return d.deviceId === deviceId && d.status === DEV_PENDING; })
         .forEach(function(d){ setDeviceStatus_(d.row, DEV_OLD, ""); });
@@ -158,7 +162,9 @@ var API = {
     var res = attComputeMonth(readMonth_(mk), rules);
     var devs = getDevices_();
     return { month: mk, records: res.records, summary: res.summary, rules: rules,
-             employees: getEmployees_().map(function(x){ return { id: x.id, name: x.name, hours: x.hours, active: x.active }; }),
+             employees: getEmployees_().map(function(x){
+               return { id: x.id, name: x.name, hours: x.hours, active: x.active,
+                        device: devs.some(function(d){ return String(d.empId) === String(x.id) && d.status === DEV_OK; }) }; }),
              dayFlags: res.dayFlags,
              months: listMonths_(), now: nowParts_(),
              deviceRequests: devs.filter(function(d){ return d.status === DEV_PENDING; }).map(function(d){
@@ -166,6 +172,18 @@ var API = {
                return { deviceId: d.deviceId, empId: d.empId, name: d.name, current: cur ? cur.name : "", reason: d.reason, at: d.at };
              }),
              log: readLog_(60) };
+  },
+
+  // إلغاء ربط هاتف الموظف (عند تغيير هاتفه) — بعدها يسجّل من هاتفه الجديد مباشرة
+  admin_device_reset: function(req){
+    var who = authAdmin_(req);
+    var emp = getEmployees_().filter(function(x){ return String(x.id) === String(req.empId); })[0];
+    if (!emp) throw new Error("الموظف غير موجود");
+    var n = 0;
+    getDevices_().filter(function(d){ return String(d.empId) === String(emp.id) && (d.status === DEV_OK || d.status === DEV_PENDING); })
+      .forEach(function(d){ setDeviceStatus_(d.row, DEV_OLD, who); n++; });
+    log_(who, "إلغاء ربط هاتف", emp.name, n ? "يمكنه التسجيل من هاتف جديد" : "لم يكن له هاتف مسجّل", "");
+    return { ok: true };
   },
 
   admin_device_decide: function(req){
