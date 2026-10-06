@@ -1,0 +1,142 @@
+/* =====================================================================
+   الحضور والانصراف — نفس هوية جادو الداكنة
+   ===================================================================== */
+.att-demo{ background:rgba(255,184,0,.12); border:1px solid rgba(255,184,0,.35); color:#FFC94D;
+  font-size:12px; border-radius:9px; padding:8px 10px; margin-bottom:14px; text-align:center; }
+
+/* بطاقة الحضور أعلى شاشة الموظف */
+.att-card{ display:flex; align-items:center; gap:12px; width:100%; padding:14px; margin-bottom:16px;
+  background:var(--surface); border:1.5px solid var(--line); border-radius:12px; cursor:pointer;
+  font-family:'Tajawal', sans-serif; text-align:right; color:var(--steel-900); }
+.att-card:active{ background:var(--steel-200); }
+.att-card .ic{ width:38px; height:38px; flex-shrink:0; border-radius:10px; background:rgba(225,10,30,.16);
+  display:flex; align-items:center; justify-content:center; }
+.att-card .ic svg{ width:19px; height:19px; color:#FF4E4E; }
+.att-card .tx{ flex:1; min-width:0; }
+.att-card strong{ display:block; font-size:14.5px; font-weight:700; color:var(--steel-900); }
+.att-card .tx span{ display:block; font-size:12.5px; color:var(--steel-500); margin-top:2px; }
+
+/* حالات */
+.att-pill{ display:inline-block; font-size:11.5px; font-weight:700; border-radius:20px; padding:2px 9px; line-height:1.6; white-space:nowrap; }
+.att-pill.ok{ background:rgba(111,207,142,.15); color:var(--ok); }
+.att-pill.warn{ background:rgba(255,184,0,.15); color:#FFC94D; }
+.att-pill.bad{ background:rgba(255,107,94,.15); color:var(--warn); }
+.att-pill.info{ background:rgba(120,160,255,.15); color:#9DB8FF; }
+.att-pill.mute{ background:var(--steel-200); color:var(--steel-500); }
+
+/* مربعات الأرقام */
+.att-stats{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-bottom:16px; }
+.att-stat{ background:var(--surface); border:1px solid var(--line); border-radius:11px; padding:12px; }
+.att-stat .k{ display:block; font-size:12px; color:var(--steel-500); }
+.att-stat .v{ display:block; font-family:'IBM Plex Mono', monospace; font-size:22px; font-weight:700; margin-top:2px; }
+.att-stat .v small{ font-family:'Tajawal', sans-serif; font-size:12.5px; font-weight:500; color:var(--steel-500); }
+
+.att-box{ background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:14px; }
+.att-box h3{ margin:0 0 10px; font-size:14px; font-weight:700; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.att-box h3 .sub{ font-size:12px; font-weight:500; color:var(--steel-500); }
+
+/* صفوف السجل */
+.att-row{ display:flex; align-items:flex-start; justify-content:space-between; gap:10px; padding:10px 0; border-bottom:1px solid var(--line); }
+.att-row:last-child{ border-bottom:none; }
+.att-row .l{ min-width:0; }
+.att-row .l b{ display:block; font-size:13.5px; }
+.att-row .l small{ display:block; font-size:12px; color:var(--steel-500); margin-top:2px; line-height:1.5; }
+.att-row .r{ text-align:left; flex-shrink:0; display:flex; flex-direction:column; align-items:flex-end; gap:4px; }
+.att-row .times{ font-size:12.5px; unicode-bidi:isolate; }
+.att-link{ background:none; border:none; color:#FF6B5E; font-family:'Tajawal', sans-serif; font-size:12px; cursor:pointer; padding:0; text-decoration:underline; }
+
+/* أزرار صغيرة */
+.att-btns{ display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+.att-btn{ flex:1; min-width:84px; padding:10px 8px; border-radius:9px; border:1.5px solid var(--line); background:var(--steel-200);
+  color:var(--steel-900); font-family:'Tajawal', sans-serif; font-size:13px; font-weight:700; cursor:pointer; }
+.att-btn:active{ opacity:.85; }
+.att-btn.ok{ border-color:rgba(111,207,142,.5); color:var(--ok); }
+.att-btn.bad{ border-color:rgba(255,107,94,.5); color:var(--warn); }
+.att-btn.main{ background:var(--amber); border-color:var(--amber); color:#fff; }
+
+/* نافذة الحضور/الانصراف */
+.att-overlay{ position:fixed; inset:0; background:rgba(23,22,15,.6); display:none; align-items:center; justify-content:center; padding:20px; z-index:25; }
+.att-overlay.open{ display:flex; }
+.att-sheet{ width:100%; max-width:360px; max-height:calc(100vh - 40px); overflow:auto; background:var(--surface);
+  border:1px solid var(--line); border-radius:14px; padding:22px 20px; text-align:right; }
+.att-sheet h2{ margin:0 0 4px; font-size:17px; font-weight:700; }
+.att-sheet > p{ margin:0 0 16px; font-size:13px; color:var(--steel-500); line-height:1.6; }
+.att-field{ margin-bottom:14px; }
+.att-field label{ display:block; font-size:12.5px; color:var(--steel-500); margin-bottom:6px; font-weight:500; }
+.att-field input[type=time], .att-field input[type=text], .att-field input[type=number], .att-field select, .att-field textarea{
+  width:100%; padding:12px; font-size:16px; border:1.5px solid var(--line); border-radius:9px; background:var(--bg);
+  color:var(--steel-900); font-family:'Tajawal', sans-serif; outline:none; }
+.att-field input[type=time]{ font-family:'IBM Plex Mono', monospace; direction:ltr; text-align:center; font-size:20px; color-scheme:dark; }
+.att-field input:focus, .att-field select:focus, .att-field textarea:focus{ border-color:var(--amber); }
+.att-field textarea{ min-height:64px; resize:vertical; }
+.att-hint{ font-size:12px; color:var(--steel-500); margin-top:6px; line-height:1.5; }
+.att-check{ display:flex; align-items:flex-start; gap:10px; font-size:13px; line-height:1.5; margin:4px 0 14px; cursor:pointer; }
+.att-check input{ width:18px; height:18px; margin-top:2px; accent-color:var(--amber); flex-shrink:0; }
+.att-check small{ display:block; color:var(--steel-500); font-size:12px; }
+.att-loc{ font-size:12.5px; margin:0 0 14px; display:flex; align-items:center; gap:6px; }
+.att-loc.ok{ color:var(--ok); } .att-loc.bad{ color:var(--warn); } .att-loc.wait{ color:var(--steel-500); }
+.att-loc svg{ width:15px; height:15px; flex-shrink:0; }
+.att-alert{ border-radius:11px; padding:14px; font-size:13.5px; line-height:1.7; margin-bottom:14px; }
+.att-alert.warn{ background:rgba(255,184,0,.12); border:1px solid rgba(255,184,0,.35); color:#FFD27A; }
+.att-alert.ok{ background:rgba(111,207,142,.12); border:1px solid rgba(111,207,142,.35); color:#A6E8BC; }
+.att-alert b{ display:block; font-size:15px; margin-bottom:4px; }
+.att-sec{ font-size:12px; color:var(--steel-500); font-weight:600; margin:18px 0 8px; }
+.att-sec:first-child{ margin-top:0; }
+.att-grid2{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.att-days{ display:flex; flex-wrap:wrap; gap:6px; }
+.att-days label{ display:flex; align-items:center; gap:5px; font-size:12.5px; background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:6px 9px; cursor:pointer; }
+.att-days input{ accent-color:var(--amber); }
+
+/* جدول الأيام الملوّن */
+.att-heat-wrap{ overflow-x:auto; margin:0 -4px; padding:0 4px 6px; }
+.att-heat{ border-collapse:separate; border-spacing:3px; font-size:11.5px; }
+.att-heat th{ font-weight:500; color:var(--steel-500); font-family:'IBM Plex Mono', monospace; padding:0 0 2px; min-width:30px; }
+.att-heat th.name, .att-heat td.name{ position:sticky; right:0; background:var(--surface); text-align:right; padding-left:6px; white-space:nowrap; font-family:'Tajawal', sans-serif; color:var(--steel-900); font-weight:700; font-size:12px; z-index:1; }
+.att-heat td.c{ width:30px; height:30px; border-radius:6px; text-align:center; font-family:'IBM Plex Mono', monospace; font-size:10.5px; font-weight:700; cursor:pointer; }
+.att-heat td.c.ok{ background:rgba(111,207,142,.2); color:var(--ok); }
+.att-heat td.c.t2{ background:rgba(255,184,0,.22); color:#FFC94D; }
+.att-heat td.c.bad{ background:rgba(255,107,94,.25); color:#FF8A80; }
+.att-heat td.c.pend{ background:rgba(120,160,255,.22); color:#9DB8FF; }
+.att-heat td.c.ex{ background:var(--steel-200); color:var(--steel-500); }
+.att-heat td.c.off{ background:transparent; color:var(--line); cursor:default; }
+.att-heat td.c.none{ background:transparent; border:1px dashed var(--line); cursor:default; }
+.att-legend{ display:flex; flex-wrap:wrap; gap:6px 12px; font-size:11.5px; color:var(--steel-500); margin-top:8px; }
+.att-legend i{ display:inline-block; width:10px; height:10px; border-radius:3px; margin-left:4px; vertical-align:-1px; }
+
+/* المخطط */
+.att-chart svg{ display:block; width:100%; height:auto; }
+.att-chart .ax{ stroke:var(--line); }
+.att-chart .grid{ stroke:var(--line); stroke-dasharray:2 3; }
+.att-chart text{ fill:var(--steel-500); font-family:'Tajawal', sans-serif; font-size:10.5px; }
+.att-chart text.num{ font-family:'IBM Plex Mono', monospace; font-size:10px; }
+.att-chart text.title{ fill:var(--steel-900); font-size:11.5px; font-weight:700; }
+.att-chart text.lim{ fill:#FFC94D; font-size:10px; }
+
+.att-sum{ border:1px solid var(--line); border-radius:11px; padding:12px; margin-bottom:10px; }
+.att-sum .top{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
+.att-sum .top b{ font-size:14px; }
+.att-sum .nums{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; font-size:12px; color:var(--steel-500); }
+.att-sum .nums span b{ display:block; font-family:'IBM Plex Mono', monospace; font-size:16px; color:var(--steel-900); }
+.att-month{ width:100%; padding:11px; border-radius:9px; border:1.5px solid var(--line); background:var(--surface); color:var(--steel-900);
+  font-family:'Tajawal', sans-serif; font-size:15px; margin-bottom:14px; }
+.att-empty{ text-align:center; font-size:13px; color:var(--steel-500); padding:16px 6px; }
+.att-log-item{ padding:10px 0; border-bottom:1px solid var(--line); font-size:13px; }
+.att-log-item:last-child{ border-bottom:none; }
+.att-log-item .h{ display:flex; justify-content:space-between; gap:8px; }
+.att-log-item .h b{ font-size:13px; direction:ltr; }
+.att-log-item .h span{ font-size:11.5px; color:var(--steel-500); font-family:'IBM Plex Mono', monospace; white-space:nowrap; }
+.att-log-item .t{ color:#FF8A80; font-size:12px; font-weight:700; margin-top:3px; }
+.att-log-item .d{ color:var(--steel-500); font-size:12.5px; margin-top:2px; line-height:1.6; }
+.att-emp-row{ display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:center; margin-bottom:10px; }
+.att-emp-row input{ width:100%; padding:10px; border-radius:8px; border:1.5px solid var(--line); background:var(--bg); color:var(--steel-900); font-family:'Tajawal', sans-serif; font-size:15px; }
+.att-emp-row input.pin{ font-family:'IBM Plex Mono', monospace; text-align:center; direction:ltr; }
+.att-emp-row label{ font-size:12px; color:var(--steel-500); display:flex; align-items:center; gap:4px; }
+.att-heat td.c.diff{ box-shadow:inset 0 0 0 2px #FF8A80; }
+.att-sum[data-person]{ cursor:pointer; }
+.att-sum[data-person]:active{ background:var(--steel-200); }
+.att-more{ font-size:12px; color:#FF6B5E; margin-top:8px; text-align:left; }
+.att-kv{ display:grid; grid-template-columns:1fr auto; gap:8px 12px; font-size:13px; }
+.att-kv span{ color:var(--steel-500); }
+.att-kv b{ font-family:'IBM Plex Mono', monospace; text-align:left; }
+.att-kv b small{ font-family:'Tajawal', sans-serif; font-weight:500; color:var(--steel-500); font-size:11.5px; }
+.att-row-diff{ border-right:3px solid #FF8A80; padding-right:8px; border-radius:0; }
