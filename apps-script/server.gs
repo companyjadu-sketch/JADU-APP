@@ -94,7 +94,7 @@ var API = {
 
   emp_checkin: function(req){
     var emp = authEmployee_(req);
-    var now = nowParts_(), rules = getRules_();
+    var now = queuedNow_(req), rules = getRules_();
     var rows = readMonth_(now.date.slice(0, 7));
     var existing = rows.filter(function(r){ return r.emp === emp.name && r.date === now.date; })[0];
     if (existing && existing.inTime) throw new Error("تم تسجيل حضورك اليوم من قبل");
@@ -106,15 +106,15 @@ var API = {
     rec.opener = !!req.opener;
     rec.allowance = !!req.allowance;
     rec.pending = d.reasons.length ? "حضور: " + d.reasons.join("، ") : "";
-    rec.note = joinNote_(rec.note, req.note);
+    rec.note = joinNote_(joinNote_(rec.note, req.note), now.lateNote);
     writeRecord_(rec);
-    recalcMonth_(now.date.slice(0, 7));
+    markDirty_(now.date.slice(0, 7));
     return { status: d.status, reasons: d.reasons, distance: dist, time: requested };
   },
 
   emp_checkout: function(req){
     var emp = authEmployee_(req);
-    var now = nowParts_(), rules = getRules_();
+    var now = queuedNow_(req), rules = getRules_();
     var rows = readMonth_(now.date.slice(0, 7));
     var rec = rows.filter(function(r){ return r.emp === emp.name && r.date === now.date; })[0];
     if (!rec || !rec.inTime) throw new Error("لم يُسجَّل حضورك اليوم بعد");
@@ -129,9 +129,9 @@ var API = {
     var parts = []; if (rec.pending) parts.push(rec.pending);
     if (d.reasons.length) parts.push("انصراف: " + d.reasons.join("، "));
     rec.pending = parts.join(" | ");
-    rec.note = joinNote_(rec.note, req.note);
+    rec.note = joinNote_(joinNote_(rec.note, req.note), now.lateNote);
     writeRecord_(rec);
-    recalcMonth_(now.date.slice(0, 7));
+    markDirty_(now.date.slice(0, 7));
     return { status: d.status, reasons: d.reasons, distance: dist, time: requested };
   },
 
@@ -150,7 +150,7 @@ var API = {
     rec.pending = rec.pending ? rec.pending + " | " + tag : tag;
     rec[field + "Status"] = ATT_STATUS.PENDING;
     writeRecord_(rec);
-    recalcMonth_(mk);
+    markDirty_(mk);
     return { status: ATT_STATUS.PENDING };
   },
 
@@ -158,6 +158,7 @@ var API = {
   admin_month: function(req){
     authAdmin_(req);
     var mk = req.month || nowParts_().date.slice(0, 7);
+    if (isDirty_(mk)) recalcMonth_(mk);
     var rules = getRules_();
     var res = attComputeMonth(readMonth_(mk), rules);
     var devs = getDevices_();
@@ -429,14 +430,19 @@ function readMonth_(mk){
   var sh = monthSheet_(mk, false); if (!sh) return [];
   ensureCols_(sh);
   var last = sh.getLastRow(); if (last < 2) return [];
-  return sh.getRange(2, 1, last - 1, COLS.length).getValues().filter(function(r){ return r[0]; }).map(function(r){
+  var rng = sh.getRange(2, 1, last - 1, COLS.length);
+  var vals = rng.getValues(), disp = rng.getDisplayValues();
+  var TIME_KEYS = ["inTime","inReal","outTime","outReal"];
+  return vals.map(function(r, ri){
+    if (!r[0]) return null;
     var o = {}; KEYS.forEach(function(k, i){ o[k] = r[i]; });
     o.date = o.date instanceof Date ? Utilities.formatDate(o.date, TZ, "yyyy-MM-dd") : String(o.date);
-    ["inTime","inReal","outTime","outReal"].forEach(function(k){ o[k] = o[k] instanceof Date ? fmtTime_(o[k]) : String(o[k] || ""); });
+    // الأوقات تُقرأ كما تظهر في الخلية (حتى لو عدّلها أحد يدويًا في الشيت) لتجنب انحراف المنطقة الزمنية
+    TIME_KEYS.forEach(function(k){ o[k] = validTime_(disp[ri][KEYS.indexOf(k)]) || ""; });
     BOOL_KEYS.forEach(function(k){ o[k] = o[k] === true || o[k] === "نعم"; });
     o.points = Number(o.points) || 0;
     return o;
-  });
+  }).filter(function(o){ return o; });
 }
 function writeRecord_(rec){
   var mk = attMonthKey(rec.date), sh = monthSheet_(mk, true);
@@ -452,6 +458,7 @@ function writeRecord_(rec){
 
 // يعيد حساب التأخير والخصم لكل الشهر ويكتب الملخص بجانب الجدول
 function recalcMonth_(mk){
+  PropertiesService.getScriptProperties().deleteProperty("dirty_" + mk);
   var sh = monthSheet_(mk, false); if (!sh) return;
   var res = attComputeMonth(readMonth_(mk), getRules_());
   var byId = {}; res.records.forEach(function(r){ byId[r.id] = r; });
@@ -548,6 +555,9 @@ function setup(){
   // مشغّل يومي لتسجيل الغياب الساعة 9 مساءً بتوقيت ليبيا
   var has = ScriptApp.getProjectTriggers().some(function(t){ return t.getHandlerFunction() === "markAbsences"; });
   if (!has) ScriptApp.newTrigger("markAbsences").timeBased().atHour(21).everyDays(1).inTimezone(TZ).create();
+  // تحديث ملخص الشهر في الشيت كل 10 دقائق (بدل حسابه مع كل تسجيل — أسرع للموظف)
+  var has2 = ScriptApp.getProjectTriggers().some(function(t){ return t.getHandlerFunction() === "recalcDirty"; });
+  if (!has2) ScriptApp.newTrigger("recalcDirty").timeBased().everyMinutes(10).create();
 }
 
 // ---------------------------------------------------------------------
@@ -559,7 +569,40 @@ function nowParts_(){
 }
 function fmtTime_(d){ return Utilities.formatDate(d, TZ, "HH:mm"); }
 function fmtDateTime_(d){ return d instanceof Date ? Utilities.formatDate(d, TZ, "yyyy-MM-dd HH:mm") : String(d); }
-function validTime_(t){ var m = String(t || "").match(/^(\d{1,2}):(\d{2})$/); if (!m || +m[1] > 23 || +m[2] > 59) return null; return (m[1].length < 2 ? "0" : "") + m[1] + ":" + m[2]; }
+function validTime_(t){
+  var s = String(t || "").trim().replace(/[٠-٩]/g, function(d){ return "٠١٢٣٤٥٦٧٨٩".indexOf(d); })
+            .replace(/[۰-۹]/g, function(d){ return "۰۱۲۳۴۵۶۷۸۹".indexOf(d); });
+  var m = s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM|ص|م)?$/i);
+  if (!m) return null;
+  var h = +m[1], mi = +m[2], ap = (m[3] || "").toUpperCase();
+  if (ap === "PM" || ap === "م") { if (h < 12) h += 12; } else if ((ap === "AM" || ap === "ص") && h === 12) h = 0;
+  if (h > 23 || mi > 59) return null;
+  return (h < 10 ? "0" : "") + h + ":" + (mi < 10 ? "0" : "") + mi;
+}
+
+// حالة "تحتاج إعادة حساب" لكل شهر — الحساب الكامل يتم عند فتح الإدارة أو كل 10 دقائق
+function markDirty_(mk){ PropertiesService.getScriptProperties().setProperty("dirty_" + mk, "1"); }
+function isDirty_(mk){ return PropertiesService.getScriptProperties().getProperty("dirty_" + mk) === "1"; }
+function recalcDirty(){
+  var props = PropertiesService.getScriptProperties(), all = props.getProperties();
+  Object.keys(all).forEach(function(k){
+    if (k.indexOf("dirty_") !== 0 || all[k] !== "1") return;
+    recalcMonth_(k.slice(6));
+  });
+}
+
+// وقت التسجيل: وقت الخادم، إلا إذا أُرسل الطلب متأخرًا من هاتف بلا إنترنت (أكثر من 3 دقائق)
+function queuedNow_(req){
+  var now = nowParts_();
+  var cd = String(req.clientDate || ""), ct = validTime_(req.clientTime);
+  if (!ct || !/^\d{4}-\d{2}-\d{2}$/.test(cd)) return now;
+  var y = new Date(Date.now() - 86400000), yest = Utilities.formatDate(y, TZ, "yyyy-MM-dd");
+  if (cd !== now.date && cd !== yest) return now;
+  var late = (cd === now.date ? attToMin(now.time) : attToMin(now.time) + 1440) - attToMin(ct);
+  if (late < 3 || late > 1440) return now;
+  return { date: cd, time: ct, day: attDayName(cd),
+           lateNote: "سُجّل على الهاتف الساعة " + ct + " ووصل للخادم الساعة " + now.time + " (ضعف الإنترنت)" };
+}
 function locDistance_(req, rules){
   if (typeof req.lat !== "number" || typeof req.lng !== "number") return null;
   return attDistance(req.lat, req.lng, rules.shop_lat, rules.shop_lng);
