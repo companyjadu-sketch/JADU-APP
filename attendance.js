@@ -354,7 +354,9 @@ async function onEmployeeEnter(){
 function promptIfDue(st, rules){
   if (!st || overlay.classList.contains("open")) return;
   const t = st.today, now = attToMin(nowHM());
-  if (!t || (!t.inTime && !t.inStatus)) openCheckIn();
+  const queued = a => qGet().some(x => x.action === a && x.date === todayStr());
+  if ((!t || (!t.inTime && !t.inStatus)) && !queued("emp_checkin")) openCheckIn();
+  else if (queued("emp_checkout")) return;
   else if (t.inTime && !t.outTime && now >= attToMin(rules.work_end)) openCheckOut();
 }
 // أثناء فتح التطبيق: تذكير بالانصراف عند نهاية الدوام
@@ -425,6 +427,11 @@ function openPunch(kind){
   $("#attPunchLater").onclick = () => { sessionStorage.setItem(SNOOZE_KEY, String(Date.now() + 30 * 60000)); closeSheet(); };
   $("#attPunchOk").onclick = () => {
     const msg = $("#attPunchMsg");
+    // منع التسجيل المكرر: الضغطة الأولى فقط تُحتسب
+    if ($("#attPunchOk").dataset.done) return;
+    const act = isIn ? "emp_checkin" : "emp_checkout";
+    if (qGet().some(x => x.action === act && x.date === todayStr())) { closeSheet(); alertMsg("تسجيلك محفوظ ويُرسل الآن، لا داعي للضغط مرة أخرى.", "تم"); return; }
+    $("#attPunchOk").dataset.done = "1"; $("#attPunchOk").disabled = true;
     const time = normTime($("#attTime").value);
     if (!time) { msg.textContent = "اختر الوقت"; msg.className = "msg err"; return; }
     const payload = { time, note: $("#attNote").value };

@@ -418,6 +418,8 @@ var API = {
     var field = req.field === "out" ? "out" : "in";
     var label = field === "in" ? "الحضور" : "الانصراف";
     var tag = "تعديل " + label + " إلى " + t + " — السبب: " + reason;
+    // نفس الطلب مرسل من قبل (ضغطتين) — لا نكرره
+    if (String(rec.pending || "").indexOf("تعديل " + label + " إلى " + t) !== -1) return { status: ATT_STATUS.PENDING };
     rec.pending = rec.pending ? rec.pending + " | " + tag : tag;
     rec[field + "Status"] = ATT_STATUS.PENDING;
     writeRecord_(rec);
@@ -720,11 +722,15 @@ function writeRecord_(rec){
   var row = KEYS.map(function(k){
     var v = rec[k];
     if (BOOL_KEYS.indexOf(k) !== -1) return v ? "نعم" : "";
-    return v === undefined || v === null ? "" : v;
+    if (v === undefined || v === null || v === "") return "";
+    // التاريخ والأوقات تُكتب كنص (بعلامة ') حتى لا يحوّلها جوجل شيت إلى قيمة وقت تنحرف عند القراءة
+    if (k === "date" || k === "inTime" || k === "inReal" || k === "outTime" || k === "outReal") return "'" + v;
+    return v;
   });
   var ids = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues().map(function(r){ return r[0]; }) : [];
   var idx = ids.indexOf(rec.id);
-  if (idx === -1) sh.appendRow(row); else sh.getRange(idx + 2, 1, 1, KEYS.length).setValues([row]);
+  var rowNum = idx === -1 ? sh.getLastRow() + 1 : idx + 2;
+  sh.getRange(rowNum, 1, 1, KEYS.length).setValues([row]);
 }
 
 // يعيد حساب التأخير والخصم لكل الشهر ويكتب الملخص بجانب الجدول
