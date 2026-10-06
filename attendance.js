@@ -11,6 +11,8 @@
 const ATT_API_URL = "";   // رابط تطبيق الويب من Apps Script (ينتهي بـ /exec)
 const ATT_SHEET_URL = ""; // رابط ملف جوجل شيت (لزر "فتح الشيت" عند الإدارة)
 const DEMO = !ATT_API_URL;
+// قبل ربط الشيت: القسم مخفي عن الجميع، ويظهر للمعاينة فقط بفتح staff.html?att-demo
+if (DEMO && !/att-demo/.test(location.search)) return;
 const LS_EMP = "jadu_att_emp";
 const LS_LOG_SEEN = "jadu_att_log_seen";
 
