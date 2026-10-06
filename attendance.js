@@ -8,7 +8,7 @@
 (function(){
 "use strict";
 
-const ATT_API_URL = "https://script.google.com/macros/s/AKfycbz03l_hfTTXQshkT5zUGIVN8UIMFjeNiyAka-W9HOLd2bj8g9ENMhcQ3bhWtIOE3oYtqw/exec";   // رابط تطبيق الويب من Apps Script
+const ATT_API_URL = "https://script.google.com/macros/s/AKfycbwu4D9_kR2wWv7EVFQ7UA06IvILceQSRb-7q6wO1H521ErCtoRxfaXKjtD6GWfKm4lTdQ/exec";   // رابط تطبيق الويب من Apps Script
 const ATT_SHEET_URL = ""; // رابط ملف جوجل شيت (لزر "فتح الشيت" عند الإدارة)
 // ATT_LIVE = false: القسم مخفي عن الموظفين، ويظهر للتجربة فقط بفتح staff.html?att-test
 // (التجربة تحفظ في الشيت الحقيقي). بعد الموافقة يصير true فيظهر للجميع.
