@@ -141,6 +141,21 @@ body{
 .msg.ok{ color:var(--ok); }
 .msg.err{ color:var(--warn); }
 
+/* بيانات التواصل أسفل صفحة الزبون — أسطر نصية بسيطة بدون مربعات */
+.contact{ margin-top:30px; padding-top:20px; border-top:1px solid var(--line); text-align:right; }
+.contact h3{ margin:0 0 12px; font-size:14px; font-weight:700; color:var(--steel-900); }
+.contact-row{
+  display:flex; align-items:center; justify-content:flex-start; gap:8px; padding:5px 0;
+  text-decoration:none; color:var(--steel-500); font-size:13.5px; line-height:1.6;
+}
+.contact-item{ display:inline-flex; align-items:center; gap:6px; text-decoration:none; margin-left:18px; }
+.contact-row:hover, .contact-row:active{ color:var(--steel-900); }
+.contact-icon{ display:inline-flex; flex-shrink:0; }
+.contact-icon svg{ width:15px; height:15px; color:#FF4E4E; }
+.contact-text{ min-width:0; overflow-wrap:anywhere; }
+.contact-text .ltr{ direction:ltr; unicode-bidi:isolate; }
+.contact-link{ color:#FF6B5E; text-decoration:underline; text-underline-offset:3px; text-decoration-thickness:1px; }
+.contact-sep{ color:var(--steel-500); opacity:.5; margin:0 4px; }
 footer{ margin-top:30px; text-align:center; font-size:11.5px; color:var(--steel-500); }
 
 /* PIN overlay */
