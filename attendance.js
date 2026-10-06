@@ -151,7 +151,8 @@ function deviceId(){
 let LOC_CACHE = null; // { at, promise }
 function prefetchLocation(){
   if (LOC_CACHE && Date.now() - LOC_CACHE.at < 60000) return LOC_CACHE.promise;
-  LOC_CACHE = { at: Date.now(), promise: getLocation() };
+  const c = LOC_CACHE = { at: Date.now(), done: false, result: null };
+  c.promise = getLocation().then(l => { c.done = true; c.result = l; return l; });
   return LOC_CACHE.promise;
 }
 function getLocation(){
@@ -404,21 +405,55 @@ function openPunch(kind){
       <small>تُحتسب لك نقاط بعد موافقة الإدارة</small></span></label>` : ""}
     <div class="att-field"><label for="attNote">ملاحظة (اختياري)</label><input type="text" id="attNote" maxlength="200" placeholder="${isIn ? "مثال: أبلغت المسؤول بالتأخير" : "مثال: زبون حتى 8:20"}"></div>
     <div class="att-loc wait" id="attLoc">${ICON.pin}<span>جارِ تحديد موقعك…</span></div>
+    <div class="att-alert warn" id="attLocHelp" hidden style="font-size:13px"></div>
     <div class="msg" id="attPunchMsg"></div>
     <div class="att-btns"><button class="att-btn main" id="attPunchOk">${isIn ? "تسجيل الحضور" : "تسجيل الانصراف"}</button><button class="att-btn" id="attPunchLater">لاحقًا</button></div>`);
-  let loc, locDone = false;
-  const locPromise = prefetchLocation().then(l => {
+  // الموقع الجغرافي: يُطلب في كل تسجيل، وإذا رُفض تظهر طريقة السماح وزر لإعادة الطلب
+  let loc = null, locDone = false, locPromise;
+  const okBtnLabel = isIn ? "تسجيل الحضور" : "تسجيل الانصراف";
+  const showLoc = l => {
     loc = l; locDone = true;
     const el = $("#attLoc"); if (!el) return l;
-    if (!l) { el.className = "att-loc bad"; el.lastElementChild.textContent = "لم يُسمح بتحديد الموقع — سيُسجَّل بانتظار موافقة الإدارة"; }
-    else {
+    const help = $("#attLocHelp"), btn = $("#attPunchOk");
+    if (!l) {
+      el.className = "att-loc bad"; el.lastElementChild.textContent = "لم يُسمح بتحديد الموقع";
+      if (btn) btn.textContent = okBtnLabel + " بدون موقع";
+      if (help) {
+        help.hidden = false;
+        const fill = denied => {
+          help.innerHTML = `<b>يجب السماح بالموقع الجغرافي لتسجيل ${isIn ? "حضورك" : "انصرافك"}</b>
+            ${denied ? `المتصفح محظور من معرفة موقعك. للسماح:<br>
+              ١. اضغط على رمز القفل أو الإعدادات بجانب رابط الموقع في الأعلى.<br>
+              ٢. اختر <strong>الأذونات</strong> ثم <strong>الموقع الجغرافي</strong> ← <strong>سماح</strong>.<br>
+              ٣. تأكد أن الموقع (GPS) مفعّل في الهاتف، ثم اضغط "طلب الإذن مرة أخرى".`
+              : `اضغط "طلب الإذن مرة أخرى" ثم اختر <strong>سماح</strong> في النافذة التي تظهر. وتأكد أن الموقع (GPS) مفعّل في الهاتف.`}
+            <br><small>إذا سجّلت بدون موقع يبقى تسجيلك بانتظار موافقة الإدارة.</small>
+            <div class="att-btns"><button type="button" class="att-btn" id="attLocRetry">طلب الإذن مرة أخرى</button></div>`;
+          $("#attLocRetry").onclick = () => startLoc(true);
+        };
+        fill(false);
+        try { navigator.permissions && navigator.permissions.query({ name: "geolocation" }).then(p => fill(p.state === "denied")).catch(() => {}); } catch (e) {}
+      }
+    } else {
+      if (help) help.hidden = true;
+      if (btn) btn.textContent = okBtnLabel;
       const d = attDistance(l.lat, l.lng, rules.shop_lat, rules.shop_lng);
       const inside = d <= rules.radius_m;
       el.className = "att-loc " + (inside ? "ok" : "bad");
       el.lastElementChild.textContent = inside ? `أنت داخل نطاق المحل (${d} م)` : `أنت خارج نطاق المحل (${d} م) — سيُسجَّل بانتظار موافقة الإدارة`;
     }
     return l;
-  });
+  };
+  function startLoc(force){
+    locDone = false;
+    // نعيد الطلب إذا ضغط "طلب الإذن مرة أخرى" أو كان الموقع المحفوظ مرفوضًا
+    if (force === true || (LOC_CACHE && LOC_CACHE.done && !LOC_CACHE.result)) LOC_CACHE = null;
+    const el = $("#attLoc");
+    if (el) { el.className = "att-loc wait"; el.lastElementChild.textContent = "جارِ تحديد موقعك…"; }
+    if ($("#attLocHelp")) $("#attLocHelp").hidden = true;
+    locPromise = prefetchLocation().then(showLoc);
+  }
+  startLoc();
   if (isIn) $("#attOpener").onchange = () => {
     const on = $("#attOpener").checked, al = $("#attAllow");
     al.disabled = on; if (on) al.checked = false;
