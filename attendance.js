@@ -180,6 +180,7 @@ if (adminList) {
 // =====================================================================
 // الموظف
 // =====================================================================
+setTimeout(() => { try { loadConfig().catch(() => {}); updateEmpCard(); } catch (e) {} }, 0);
 let CONFIG = null;     // { employees, rules, now }
 let MY = null;         // آخر رد emp_status
 // القواعد وأسماء الموظفين: نستخدم النسخة المحفوظة فورًا ونحدّثها بالخلفية
@@ -194,18 +195,33 @@ async function loadConfig(fresh){
 
 // نافذة "من أنت؟" — أول مرة على الهاتف تُعتمد مباشرة، وأي تغيير بعدها يحتاج موافقة الإدارة
 function askIdentity(change){
-  return new Promise(async resolve => {
-    let cfg;
-    try { cfg = await loadConfig(); } catch (e) { alertMsg(e.message); return resolve(null); }
+  return new Promise(resolve => {
     const me = getMe();
-    const list = cfg.employees.filter(e => !change || !me || e.name !== me.name);
     openSheet(`<h2>${change ? "تغيير الاسم" : "من أنت؟"}</h2>
       <p>${change ? `هذا الهاتف مسجّل باسم <b>${esc(me.name)}</b>. تغيير الاسم يحتاج موافقة الإدارة، ويبقى الهاتف باسمك الحالي حتى يوافقوا.`
                   : "اختر اسمك مرة واحدة على هذا الهاتف، وبعدها يعرفك الموقع تلقائيًا كل يوم."}</p>
-      <div class="att-field"><label for="attWho">الاسم</label><select id="attWho">${list.map(e => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join("")}</select></div>
+      <div id="attWhoBody"><div class="att-empty" style="padding:10px"><span class="spinner"></span> جارِ تحميل الأسماء…</div></div>
       <div class="msg" id="attWhoMsg"></div>
-      <div class="att-btns"><button class="att-btn main" id="attWhoOk">${change ? "إرسال الطلب" : "متابعة"}</button><button class="att-btn" id="attWhoCancel">${change ? "إلغاء" : "لاحقًا"}</button></div>`);
+      <div class="att-btns"><button class="att-btn main" id="attWhoOk" disabled>${change ? "إرسال الطلب" : "متابعة"}</button><button class="att-btn" id="attWhoCancel">${change ? "إلغاء" : "لاحقًا"}</button></div>`);
     $("#attWhoCancel").onclick = () => { closeSheet(); resolve(null); };
+    const fill = cfg => {
+      if (!$("#attWhoBody")) return;
+      const list = cfg.employees.filter(e => !change || !me || e.name !== me.name);
+      // هاتف جديد: الأسماء المسجّلة على هواتف أخرى لا يمكن اختيارها
+      const free = change ? list : list.filter(e => !e.taken);
+      if (!free.length) {
+        $("#attWhoBody").innerHTML = `<div class="att-alert warn"><b>لا يمكن تسجيل هذا الهاتف</b>جميع الموظفين مسجّلون على هواتفهم. إذا غيّرت هاتفك، راجع الإدارة لإلغاء ربط هاتفك القديم.</div>`;
+        $("#attWhoOk").style.display = "none"; return;
+      }
+      $("#attWhoBody").innerHTML = `<div class="att-field"><label for="attWho">الاسم</label><select id="attWho">
+        ${list.map(e => `<option value="${esc(e.id)}" ${!change && e.taken ? "disabled" : ""}>${esc(e.name)}${!change && e.taken ? " — مسجّل على هاتف آخر" : ""}</option>`).join("")}</select></div>
+        ${!change && free.length < list.length ? '<div class="att-hint" style="margin:-6px 0 10px">الأسماء المسجّلة على هواتف أخرى لا يمكن اختيارها. إذا غيّرت هاتفك راجع الإدارة.</div>' : ""}`;
+      $("#attWho").value = String(free[0].id);
+      $("#attWhoOk").disabled = false;
+    };
+    const cached = CONFIG || lsGet(LS_CFG);
+    if (cached) fill(cached);
+    loadConfig(true).then(fill).catch(e => { if (!cached && $("#attWhoBody")) $("#attWhoBody").innerHTML = `<div class="att-empty">${esc(e.message)}</div>`; });
     $("#attWhoOk").onclick = async () => {
       const id = $("#attWho").value, msg = $("#attWhoMsg"), btn = $("#attWhoOk");
       btn.disabled = true;
@@ -214,12 +230,13 @@ function askIdentity(change){
         const r = await call("emp_register", { empId: id });
         if (r.status === "approved") {
           MY = r.status_data; setMe({ name: MY.emp.name }); lsSet(LS_MY, MY);
+          CONFIG_FRESH = null; loadConfig(true).catch(() => {});
           updateEmpCard(); closeSheet(); resolve(MY);
         } else {
           const cur = getMe();
           setMe(cur && cur.name ? Object.assign(cur, { pending: r.requested }) : { name: "", pending: r.requested });
           openSheet(`<div class="att-alert warn"><b>بانتظار موافقة الإدارة</b>طلبت تسجيل هذا الهاتف باسم ${esc(r.requested)}.
-            ${r.current ? `يبقى الهاتف باسم ${esc(r.current)} حتى توافق الإدارة.` : "لا يمكنك التسجيل حتى توافق الإدارة."}
+            ${r.current ? `يبقى الهاتف باسم ${esc(r.current)} حتى توافق الإدارة.` : ""}
             تواصل مع الإدارة للموافقة.</div><div class="att-btns"><button class="att-btn main" id="attResOk">حسنًا</button></div>`);
           $("#attResOk").onclick = closeSheet;
           resolve(null);
@@ -248,7 +265,14 @@ function cachedMy(){
 }
 
 function updateEmpCard(){
-  const sub = $("#attEmpCardSub"); if (!sub || !MY) return;
+  const sub = $("#attEmpCardSub"); if (!sub) return;
+  const me = getMe();
+  if (!me || !me.name) {
+    sub.textContent = me && me.pending ? "طلب تسجيل الهاتف بانتظار موافقة الإدارة" : "لم تسجّل هذا الهاتف بعد — اضغط لاختيار اسمك";
+    empCard.classList.add("att-card-alert"); return;
+  }
+  empCard.classList.remove("att-card-alert");
+  if (!MY) { sub.textContent = firstName(me.name) + " — سجّل حضورك وشاهد سجلك"; return; }
   const t = MY.today;
   if (!t || (!t.inTime && !t.inStatus)) sub.textContent = firstName(MY.emp.name) + " — لم تسجّل حضورك اليوم";
   else if (t.inStatus && !t.inTime) sub.textContent = firstName(MY.emp.name) + " — " + t.inStatus;
@@ -922,12 +946,19 @@ function renderStaff(){
   const def = attMergeRules(ADM.rules).shift_hours;
   const row = e => `<div class="att-emp-row" data-id="${esc(e.id || "")}"><input type="text" class="nm" value="${esc(e.name || "")}" placeholder="اسم الموظف">
     <input type="number" class="hr" min="1" max="16" step="0.5" value="${esc(e.hours || "")}" placeholder="${def}" aria-label="ساعات العمل اليومية">
-    <label><input type="checkbox" class="ac" ${e.active !== false ? "checked" : ""}>نشط</label></div>`;
+    <label><input type="checkbox" class="ac" ${e.active !== false ? "checked" : ""}>نشط</label>
+    ${e.id ? `<div class="att-emp-dev">${e.device ? `📱 هاتف مسجّل <button type="button" class="att-link" data-reset="${esc(e.id)}" data-name="${esc(e.name)}">إلغاء ربط الهاتف</button>` : "لم يسجّل هاتفه بعد"}</div>` : ""}</div>`;
   body.innerHTML = `<div class="att-box"><div class="att-hint" style="margin:0 0 12px">الأسماء تظهر للموظفين في قائمة "من أنت؟". الخانة الثانية = ساعات العمل اليومية (فارغة = ${def} ساعات). الموظف الموقوف لا يظهر ولا يقدر يسجّل.</div>
       <div id="attEmpRows">${ADM.employees.map(row).join("")}</div>
       <button class="att-btn" id="attEmpAdd" style="width:100%">+ إضافة موظف</button></div>
     <div class="msg" id="attStaffMsg"></div><button class="primary-btn" id="attStaffSave">حفظ</button>`;
   $("#attEmpAdd").onclick = () => $("#attEmpRows").insertAdjacentHTML("beforeend", row({}));
+  body.querySelectorAll("[data-reset]").forEach(b => b.onclick = async () => {
+    if (typeof showConfirm === "function" && !(await showConfirm(`إلغاء ربط هاتف ${b.dataset.name}؟\nبعدها يستطيع التسجيل من هاتف جديد باختيار اسمه.`, { title: "تأكيد", okText: "نعم، إلغاء الربط" }))) return;
+    try { await call("admin_device_reset", { empId: b.dataset.reset }); await loadAdmin(); showView("att-staff"); renderStaff();
+      $("#attStaffMsg").textContent = "تم إلغاء ربط الهاتف"; $("#attStaffMsg").className = "msg ok"; }
+    catch (e) { alertMsg(e.message); }
+  });
   $("#attStaffSave").onclick = async () => {
     const list = [...body.querySelectorAll(".att-emp-row")].map(el => ({ id: el.dataset.id, name: el.querySelector(".nm").value.trim(),
       hours: el.querySelector(".hr").value.trim(), active: el.querySelector(".ac").checked })).filter(x => x.name);
@@ -1025,7 +1056,14 @@ const Mock = (function(){
   const desc = r => "حضور " + tt(r.inTime, r.inReal) + " (" + (r.inStatus || "—") + ")" + (r.outTime ? "، انصراف " + tt(r.outTime, r.outReal) + " (" + r.outStatus + ")" : "");
 
   return {
-    config: () => ({ employees: db.employees.filter(e => e.active).map(e => ({ id: e.id, name: e.name })), rules: pub(), now: now() }),
+    config: () => ({ employees: db.employees.filter(e => e.active).map(e => ({ id: e.id, name: e.name,
+      taken: db.devices.some(d => String(d.empId) === String(e.id) && d.status === "معتمد") })), rules: pub(), now: now() }),
+    admin_device_reset: req => {
+      const e = db.employees.find(x => String(x.id) === String(req.empId));
+      db.devices.filter(d => String(d.empId) === String(req.empId) && (d.status === "معتمد" || d.status === "بانتظار الموافقة")).forEach(d => d.status = "ملغى");
+      log(req.adminEmail, "إلغاء ربط هاتف", e.name, "يمكنه التسجيل من هاتف جديد");
+      return { ok: true };
+    },
     emp_status: req => {
       const e = emp(req), n = now(), mk = req.month || n.date.slice(0, 7);
       const res = attComputeMonth(month(mk).filter(r => r.emp === e.name), rulesH());
@@ -1076,6 +1114,7 @@ const Mock = (function(){
         db.devices.push({ deviceId: req.deviceId, empId: e.id, name: e.name, status: "معتمد", reason: "تسجيل أول مرة", at: todayStr() + " " + nowHM() });
         return { status: "approved", status_data: Mock.emp_status(req) };
       }
+      if (!mine) throw new Error("هذا الاسم مسجّل على هاتف آخر. لا يمكن تسجيل هاتف جديد — راجع الإدارة.");
       db.devices.filter(d => d.deviceId === req.deviceId && d.status === "بانتظار الموافقة").forEach(d => d.status = "ملغى");
       db.devices.push({ deviceId: req.deviceId, empId: e.id, name: e.name, status: "بانتظار الموافقة", reason: mine ? "تغيير من " + mine.name : "الاسم مسجّل على هاتف آخر", at: todayStr() + " " + nowHM() });
       return { status: "pending", current: mine ? mine.name : "", requested: e.name };
@@ -1096,7 +1135,8 @@ const Mock = (function(){
                deviceRequests: db.devices.filter(d => d.status === "بانتظار الموافقة").map(d => {
                  const cur = db.devices.find(x => x.deviceId === d.deviceId && x.status === "معتمد");
                  return { deviceId: d.deviceId, empId: d.empId, name: d.name, current: cur ? cur.name : "", reason: d.reason, at: d.at }; }),
-               employees: db.employees.map(e => ({ id: e.id, name: e.name, hours: e.hours, active: e.active })) };
+               employees: db.employees.map(e => ({ id: e.id, name: e.name, hours: e.hours, active: e.active,
+                 device: db.devices.some(d => String(d.empId) === String(e.id) && d.status === "معتمد") })) };
     },
     admin_decide: req => {
       const rec = db.records.find(r => r.id === req.id); if (!rec) throw new Error("السجل غير موجود");
