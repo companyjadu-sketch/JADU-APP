@@ -17,6 +17,10 @@ const DEMO = !ATT_API_URL || /att-demo/.test(location.search);
 if (!ATT_LIVE && !/att-(demo|test)/.test(location.search)) return;
 const LS_EMP = "jadu_att_emp";
 const LS_LOG_SEEN = "jadu_att_log_seen";
+const LS_DEV = "jadu_att_device";   // معرّف ثابت لهذا الهاتف
+const LS_CFG = "jadu_att_cfg";      // نسخة محفوظة من القواعد وأسماء الموظفين (لفتح أسرع)
+const LS_MY = "jadu_att_my";        // آخر بيانات الموظف (لعرض فوري قبل وصول الرد)
+const LS_ADM = "jadu_att_adm";      // آخر بيانات الإدارة
 
 const $ = (s, r) => (r || document).querySelector(s);
 const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
@@ -58,10 +62,7 @@ async function call(action, data){
       data.idToken = await u.getIdToken();
     }
   }
-  if (action.indexOf("emp_") === 0) {
-    const me = getMe();
-    if (data.empId === undefined) data.empId = me && me.id;
-  }
+  if (action.indexOf("emp_") === 0) data.deviceId = deviceId();
   if (DEMO) {
     await new Promise(r => setTimeout(r, 180));
     const fn = Mock[action];
@@ -77,19 +78,39 @@ async function call(action, data){
   return body.data;
 }
 
-function getMe(){ try { return JSON.parse(localStorage.getItem(LS_EMP) || "null"); } catch (e) { return null; } }
-function setMe(v){ try { v ? localStorage.setItem(LS_EMP, JSON.stringify(v)) : localStorage.removeItem(LS_EMP); } catch (e) {} }
+function lsGet(k){ try { return JSON.parse(localStorage.getItem(k) || "null"); } catch (e) { return null; } }
+function lsSet(k, v){ try { v ? localStorage.setItem(k, JSON.stringify(v)) : localStorage.removeItem(k); } catch (e) {} }
+function getMe(){ return lsGet(LS_EMP); }
+function setMe(v){ lsSet(LS_EMP, v); if (!v) lsSet(LS_MY, null); }
+let DEVICE_ID = null;
+function deviceId(){
+  if (DEVICE_ID) return DEVICE_ID;
+  let id = null;
+  try { id = localStorage.getItem(LS_DEV); } catch (e) {}
+  if (!id) {
+    id = "d" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10);
+    try { localStorage.setItem(LS_DEV, id); } catch (e) {}
+  }
+  return (DEVICE_ID = id);
+}
 
 // =====================================================================
 // تحديد الموقع
 // =====================================================================
+// يبدأ تحديد الموقع مبكرًا عند دخول الموظف، فيكون جاهزًا عند الضغط على "تسجيل"
+let LOC_CACHE = null; // { at, promise }
+function prefetchLocation(){
+  if (LOC_CACHE && Date.now() - LOC_CACHE.at < 60000) return LOC_CACHE.promise;
+  LOC_CACHE = { at: Date.now(), promise: getLocation() };
+  return LOC_CACHE.promise;
+}
 function getLocation(){
   return new Promise(resolve => {
     if (!navigator.geolocation) return resolve(null);
     navigator.geolocation.getCurrentPosition(
       p => resolve({ lat: p.coords.latitude, lng: p.coords.longitude, acc: Math.round(p.coords.accuracy) }),
       () => resolve(null),
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 });
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
   });
 }
 
@@ -161,29 +182,49 @@ if (adminList) {
 // =====================================================================
 let CONFIG = null;     // { employees, rules, now }
 let MY = null;         // آخر رد emp_status
-async function loadConfig(){
-  if (!CONFIG) CONFIG = await call("config");
-  return CONFIG;
+// القواعد وأسماء الموظفين: نستخدم النسخة المحفوظة فورًا ونحدّثها بالخلفية
+let CONFIG_FRESH = null;
+async function loadConfig(fresh){
+  if (!CONFIG) CONFIG = lsGet(LS_CFG);
+  const get = () => CONFIG_FRESH || (CONFIG_FRESH = call("config").then(c => { CONFIG = c; lsSet(LS_CFG, c); return c; })
+    .catch(e => { CONFIG_FRESH = null; throw e; }));
+  if (CONFIG && !fresh) { get().catch(() => {}); return CONFIG; }
+  return get();
 }
 
-// نافذة "من أنت؟" — مرة واحدة على كل جهاز
-function askIdentity(){
+// نافذة "من أنت؟" — أول مرة على الهاتف تُعتمد مباشرة، وأي تغيير بعدها يحتاج موافقة الإدارة
+function askIdentity(change){
   return new Promise(async resolve => {
     let cfg;
     try { cfg = await loadConfig(); } catch (e) { alertMsg(e.message); return resolve(null); }
-    openSheet(`<h2>من أنت؟</h2><p>اختر اسمك مرة واحدة على هذا الهاتف، وبعدها يعرفك الموقع تلقائيًا كل يوم.</p>
-      <div class="att-field"><label for="attWho">الاسم</label><select id="attWho">${cfg.employees.map(e => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join("")}</select></div>
+    const me = getMe();
+    const list = cfg.employees.filter(e => !change || !me || e.name !== me.name);
+    openSheet(`<h2>${change ? "تغيير الاسم" : "من أنت؟"}</h2>
+      <p>${change ? `هذا الهاتف مسجّل باسم <b>${esc(me.name)}</b>. تغيير الاسم يحتاج موافقة الإدارة، ويبقى الهاتف باسمك الحالي حتى يوافقوا.`
+                  : "اختر اسمك مرة واحدة على هذا الهاتف، وبعدها يعرفك الموقع تلقائيًا كل يوم."}</p>
+      <div class="att-field"><label for="attWho">الاسم</label><select id="attWho">${list.map(e => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join("")}</select></div>
       <div class="msg" id="attWhoMsg"></div>
-      <div class="att-btns"><button class="att-btn main" id="attWhoOk">متابعة</button><button class="att-btn" id="attWhoCancel">لاحقًا</button></div>`);
+      <div class="att-btns"><button class="att-btn main" id="attWhoOk">${change ? "إرسال الطلب" : "متابعة"}</button><button class="att-btn" id="attWhoCancel">${change ? "إلغاء" : "لاحقًا"}</button></div>`);
     $("#attWhoCancel").onclick = () => { closeSheet(); resolve(null); };
     $("#attWhoOk").onclick = async () => {
-      const id = $("#attWho").value, msg = $("#attWhoMsg");
-      msg.innerHTML = '<span class="spinner"></span> جارِ التحميل…'; msg.className = "msg";
+      const id = $("#attWho").value, msg = $("#attWhoMsg"), btn = $("#attWhoOk");
+      btn.disabled = true;
+      msg.innerHTML = '<span class="spinner"></span> جارِ الإرسال…'; msg.className = "msg";
       try {
-        const st = await call("emp_status", { empId: id });
-        setMe({ id, name: st.emp.name });
-        MY = st; updateEmpCard(); closeSheet(); resolve(st);
-      } catch (e) { msg.textContent = e.message; msg.className = "msg err"; }
+        const r = await call("emp_register", { empId: id });
+        if (r.status === "approved") {
+          MY = r.status_data; setMe({ name: MY.emp.name }); lsSet(LS_MY, MY);
+          updateEmpCard(); closeSheet(); resolve(MY);
+        } else {
+          const cur = getMe();
+          setMe(cur && cur.name ? Object.assign(cur, { pending: r.requested }) : { name: "", pending: r.requested });
+          openSheet(`<div class="att-alert warn"><b>بانتظار موافقة الإدارة</b>طلبت تسجيل هذا الهاتف باسم ${esc(r.requested)}.
+            ${r.current ? `يبقى الهاتف باسم ${esc(r.current)} حتى توافق الإدارة.` : "لا يمكنك التسجيل حتى توافق الإدارة."}
+            تواصل مع الإدارة للموافقة.</div><div class="att-btns"><button class="att-btn main" id="attResOk">حسنًا</button></div>`);
+          $("#attResOk").onclick = closeSheet;
+          resolve(null);
+        }
+      } catch (e) { msg.textContent = e.message; msg.className = "msg err"; btn.disabled = false; }
     };
   });
 }
@@ -191,11 +232,19 @@ function askIdentity(){
 async function refreshMe(){
   const me = getMe();
   if (!me) return null;
-  try { MY = await call("emp_status"); updateEmpCard(); return MY; }
-  catch (e) {
-    if (/غير موجود|موقوف/.test(e.message)) setMe(null);
+  try {
+    MY = await call("emp_status"); lsSet(LS_MY, MY);
+    if (me.name !== MY.emp.name || (me.pending && me.pending === MY.emp.name)) setMe({ name: MY.emp.name });
+    updateEmpCard(); return MY;
+  } catch (e) {
+    if (/غير مسجّل/.test(e.message) && !me.pending) setMe(null);
     throw e;
   }
+}
+// آخر بيانات محفوظة لهذا اليوم (لعرض فوري)
+function cachedMy(){
+  const c = lsGet(LS_MY);
+  return c && c.now && c.now.date === todayStr() ? c : null;
 }
 
 function updateEmpCard(){
@@ -214,16 +263,24 @@ async function onEmployeeEnter(){
     const cfg = await loadConfig();
     const rules = attMergeRules(cfg.rules);
     const today = todayStr(), now = attToMin(nowHM());
-    if (!attIsWorkday(today, rules)) { if (getMe()) refreshMe().catch(() => {}); return; }
-    const snooze = Number(sessionStorage.getItem(SNOOZE_KEY) || 0);
-    if (Date.now() < snooze) { if (getMe()) refreshMe().catch(() => {}); return; }
-    if (now < attToMin(rules.prompt_from)) { if (getMe()) refreshMe().catch(() => {}); return; }
-    let st = getMe() ? await refreshMe() : await askIdentity();
-    if (!st) return;
-    const t = st.today;
-    if (!t || (!t.inTime && !t.inStatus)) openCheckIn();
-    else if (t.inTime && !t.outTime && now >= attToMin(rules.work_end)) openCheckOut();
+    const me = getMe();
+    if (me && me.name) { const c = cachedMy(); if (c) { MY = c; updateEmpCard(); } }
+    const quiet = !attIsWorkday(today, rules) || Date.now() < Number(sessionStorage.getItem(SNOOZE_KEY) || 0) || now < attToMin(rules.prompt_from);
+    if (quiet) { if (me && me.name) refreshMe().catch(() => {}); return; }
+    prefetchLocation();
+    if (!me || (!me.name && !me.pending)) { const st = await askIdentity(); if (st) promptIfDue(st, rules); return; }
+    if (!me.name) return; // ينتظر موافقة الإدارة على أول تسجيل
+    // نعرض الإشعار فورًا من آخر بيانات محفوظة، ونحدّث بالخلفية
+    const c = cachedMy();
+    if (c) { promptIfDue(c, rules); refreshMe().catch(() => {}); }
+    else promptIfDue(await refreshMe(), rules);
   } catch (e) { console.warn("الحضور:", e); }
+}
+function promptIfDue(st, rules){
+  if (!st || overlay.classList.contains("open")) return;
+  const t = st.today, now = attToMin(nowHM());
+  if (!t || (!t.inTime && !t.inStatus)) openCheckIn();
+  else if (t.inTime && !t.outTime && now >= attToMin(rules.work_end)) openCheckOut();
 }
 // أثناء فتح التطبيق: تذكير بالانصراف عند نهاية الدوام
 setInterval(() => {
@@ -262,7 +319,7 @@ function openPunch(kind){
     <div class="msg" id="attPunchMsg"></div>
     <div class="att-btns"><button class="att-btn main" id="attPunchOk">${isIn ? "تسجيل الحضور" : "تسجيل الانصراف"}</button><button class="att-btn" id="attPunchLater">لاحقًا</button></div>`);
   let loc, locDone = false;
-  const locPromise = getLocation().then(l => {
+  const locPromise = prefetchLocation().then(l => {
     loc = l; locDone = true;
     const el = $("#attLoc"); if (!el) return l;
     if (!l) { el.className = "att-loc bad"; el.lastElementChild.textContent = "لم يُسمح بتحديد الموقع — سيُسجَّل بانتظار موافقة الإدارة"; }
@@ -288,6 +345,7 @@ function openPunch(kind){
     else payload.stay = !!($("#attStay") && $("#attStay").checked);
     try {
       const r = await call(isIn ? "emp_checkin" : "emp_checkout", payload);
+      LOC_CACHE = null;
       showPunchResult(kind, r);
       refreshMe().then(() => { if ($("#view-att-emp").classList.contains("active")) renderEmployee(); }).catch(() => {});
     } catch (e) { msg.textContent = e.message; msg.className = "msg err"; btn.disabled = false; }
@@ -312,15 +370,30 @@ function showPunchResult(kind, r){
 
 async function openEmployeeView(){
   showView("att-emp");
-  const body = $("#attEmpBody");
-  if (!getMe()) {
+  const body = $("#attEmpBody"), me = getMe();
+  if (!me || (!me.name && !me.pending)) {
     body.innerHTML = '<div class="att-empty">اختر اسمك أولًا</div>';
     const st = await askIdentity();
-    if (!st) { body.innerHTML = '<div class="att-empty">لم يتم اختيار الموظف</div><div class="att-btns"><button class="att-btn main" id="attPickAgain">اختيار الموظف</button></div>';
-      $("#attPickAgain").onclick = openEmployeeView; return; }
-  } else body.innerHTML = '<div class="att-empty"><span class="spinner"></span> جارِ التحميل…</div>';
-  try { await loadConfig(); await refreshMe(); renderEmployee(); }
-  catch (e) { body.innerHTML = `<div class="att-empty">${esc(e.message)}</div>`; }
+    if (!st) { renderNoIdentity(); return; }
+  } else if (!me.name) { renderNoIdentity(); return; }
+  else {
+    const c = cachedMy();
+    if (c) { MY = c; renderEmployee(true); }
+    else body.innerHTML = '<div class="att-empty"><span class="spinner"></span> جارِ التحميل…</div>';
+  }
+  try { await refreshMe(); renderEmployee(); }
+  catch (e) { if (!MY) body.innerHTML = `<div class="att-empty">${esc(e.message)}</div>`; else renderEmployee(); }
+}
+function renderNoIdentity(){
+  const me = getMe();
+  $("#attEmpBody").innerHTML = me && me.pending
+    ? `<div class="att-alert warn"><b>بانتظار موافقة الإدارة</b>طلب تسجيل هذا الهاتف باسم ${esc(me.pending)} لم يُعتمد بعد. تواصل مع الإدارة.</div>
+       <div class="att-btns"><button class="att-btn" id="attPickAgain">تحديث</button></div>`
+    : '<div class="att-empty">لم يتم اختيار الموظف</div><div class="att-btns"><button class="att-btn main" id="attPickAgain">اختيار الموظف</button></div>';
+  $("#attPickAgain").onclick = async () => {
+    if (me && me.pending) { try { const r = await call("emp_status"); MY = r; lsSet(LS_MY, r); setMe({ name: r.emp.name }); renderEmployee(); updateEmpCard(); } catch (e) { alertMsg(e.message); } }
+    else openEmployeeView();
+  };
 }
 
 function catPill(r){
@@ -333,8 +406,9 @@ function catPill(r){
   return `<span class="att-pill ${r.deduct > 0 ? "bad" : "warn"}">${esc(r.cat)}</span>`;
 }
 
-function renderEmployee(){
+function renderEmployee(syncing){
   const body = $("#attEmpBody"); if (!MY) return;
+  const me = getMe() || {};
   const rules = attMergeRules(MY.rules);
   const s = MY.summary || { deduct: 0, points: 0, t2: 0, t3: 0, t4: 0, pending: 0 };
   const t = MY.today;
@@ -356,6 +430,8 @@ function renderEmployee(){
   body.innerHTML = `
     <div class="att-row" style="border:none;padding:0 0 12px"><div class="l"><b style="font-size:15px">${esc(MY.emp.name)}</b><small>${esc(attMonthTitle(MY.month))}</small></div>
       <div class="r"><button class="att-link" id="attNotMe">لست ${esc(firstName(MY.emp.name))}؟</button></div></div>
+    ${syncing ? '<div class="att-hint" style="margin:-6px 0 10px"><span class="spinner"></span> جارِ التحديث…</div>' : ""}
+    ${me.pending ? `<div class="att-alert warn" style="padding:10px;font-size:12.5px">طلب تغيير الاسم إلى ${esc(me.pending)} بانتظار موافقة الإدارة.</div>` : ""}
     <div class="att-box"><h3>اليوم <span class="sub">${esc(shortDate(todayStr()))}</span></h3>${todayHtml}</div>
     <div class="att-stats">
       <div class="att-stat"><span class="k">خصم الشهر</span><span class="v">${fmtDays(s.deduct)} <small>يوم</small></span></div>
@@ -366,10 +442,7 @@ function renderEmployee(){
     <div class="att-box"><h3>سجل الشهر</h3>${rows || '<div class="att-empty">لا توجد سجلات بعد</div>'}</div>`;
   $("#attDoIn") && ($("#attDoIn").onclick = openCheckIn);
   $("#attDoOut") && ($("#attDoOut").onclick = openCheckOut);
-  $("#attNotMe").onclick = async () => {
-    setMe(null); MY = null; $("#attEmpCardSub").textContent = "سجّل حضورك وشاهد سجلك";
-    openEmployeeView();
-  };
+  $("#attNotMe").onclick = async () => { await askIdentity(true); renderEmployee(); };
   body.querySelectorAll("[data-edit]").forEach(b => b.onclick = () => openEditRequest(MY.records.find(r => r.id === b.dataset.edit)));
 }
 
@@ -426,23 +499,32 @@ function pendingItems(records){
 async function refreshAdminBadge(){
   try {
     const d = await call("admin_month", {});
-    const n = pendingItems(d.records).length, b = $("#attPendingBadge");
+    ADM = d; lsSet(LS_ADM, d);
+    const n = pendingItems(d.records).length + (d.deviceRequests || []).length, b = $("#attPendingBadge");
     if (b) { b.textContent = n; b.style.display = n ? "" : "none"; }
   } catch (e) {}
 }
 
 async function loadAdmin(month){
   const body = $("#attAdminBody");
-  body.innerHTML = '<div class="att-empty"><span class="spinner"></span> جارِ تحميل البيانات…</div>';
-  try { ADM = await call("admin_month", { month: month || (ADM && ADM.month) }); renderAdmin(); }
-  catch (e) { body.innerHTML = `<div class="att-empty">${esc(e.message)}</div>`; }
+  const want = month || (ADM && ADM.month);
+  if (!ADM) { const c = lsGet(LS_ADM); if (c && (!want || c.month === want)) ADM = c; }
+  if (ADM && (!want || ADM.month === want)) { renderAdmin(true); }
+  else body.innerHTML = '<div class="att-empty"><span class="spinner"></span> جارِ تحميل البيانات…</div>';
+  try { ADM = await call("admin_month", { month: want }); lsSet(LS_ADM, ADM); renderAdmin(); }
+  catch (e) { if (ADM) renderAdmin(); else body.innerHTML = `<div class="att-empty">${esc(e.message)}</div>`; }
 }
 
-function renderAdmin(){
+function renderAdmin(syncing){
   const body = $("#attAdminBody"), d = ADM, rules = attMergeRules(d.rules);
   const months = d.months.indexOf(d.month) === -1 ? [d.month].concat(d.months) : d.months;
   const pend = pendingItems(d.records);
-  const b = $("#attPendingBadge"); if (b && d.month === d.now.date.slice(0, 7)) { b.textContent = pend.length; b.style.display = pend.length ? "" : "none"; }
+  const devReq = d.deviceRequests || [];
+  const pendCount = pend.length + devReq.length;
+  const b = $("#attPendingBadge"); if (b && d.month === d.now.date.slice(0, 7)) { b.textContent = pendCount; b.style.display = pendCount ? "" : "none"; }
+  const devHtml = devReq.map(x => `<div class="att-row" style="display:block"><div class="l"><b>${esc(x.current ? "تغيير اسم هاتف: " + x.current + " ← " + x.name : "هاتف جديد باسم " + x.name)}</b>
+    <small>${esc((x.reason || "") + (x.at ? " · " + x.at : ""))}</small></div>
+    <div class="att-btns"><button class="att-btn ok" data-dev="approve" data-devid="${esc(x.deviceId)}" data-emp="${esc(x.empId)}">موافقة</button><button class="att-btn bad" data-dev="reject" data-devid="${esc(x.deviceId)}" data-emp="${esc(x.empId)}">رفض</button></div></div>`).join("");
   const pendHtml = pend.map(({ r, kind }) => {
     let title, sub, btns;
     if (kind === "absent") { title = `${r.emp} — غائب`; sub = shortDate(r.date) + " · لم يسجّل حضوره"; btns = `<button class="att-btn" data-dec="absent_excused" data-id="${r.id}">بعذر</button><button class="att-btn bad" data-dec="absent" data-id="${r.id}">بدون عذر</button>`; }
@@ -468,9 +550,10 @@ function renderAdmin(){
   let unread = 0;
   try { unread = Number(localStorage.getItem(LS_LOG_SEEN + "_n") || 0); } catch (e) {}
   body.innerHTML = `
+    ${syncing ? '<div class="att-hint" style="margin:0 0 8px"><span class="spinner"></span> جارِ التحديث…</div>' : ""}
     <select class="att-month" id="attMonthSel" aria-label="الشهر">${months.map(m => `<option value="${m}" ${m === d.month ? "selected" : ""}>${esc(attMonthTitle(m))}</option>`).join("")}</select>
     ${alertHtml}
-    <div class="att-box"><h3>بانتظار الموافقة <span class="att-pill ${pend.length ? "info" : "mute"}">${pend.length}</span></h3>${pendHtml || '<div class="att-empty" style="padding:6px">لا توجد طلبات معلّقة</div>'}</div>
+    <div class="att-box"><h3>بانتظار الموافقة <span class="att-pill ${pendCount ? "info" : "mute"}">${pendCount}</span></h3>${devHtml + pendHtml || '<div class="att-empty" style="padding:6px">لا توجد طلبات معلّقة</div>'}</div>
     <div class="att-box"><h3>الحضور اليومي <span class="sub">اضغط على أي يوم للتفاصيل</span></h3>${heatGrid(d, rules)}</div>
     <div class="att-box att-chart"><h3>دقائق التأخير خلال الشهر</h3>${lateChart(d, rules)}</div>
     <div class="att-box"><h3>ملخص الشهر <span class="sub">اضغط على الموظف لكل التفاصيل</span></h3>${sumHtml || '<div class="att-empty">لا توجد سجلات لهذا الشهر</div>'}</div>
@@ -486,12 +569,19 @@ function renderAdmin(){
     el.onclick = go; el.onkeydown = e => { if (e.key === "Enter") go(); };
   });
   body.querySelectorAll("[data-dec]").forEach(btn => btn.onclick = () => decide(btn.dataset.id, btn.dataset.dec));
+  body.querySelectorAll("[data-dev]").forEach(btn => btn.onclick = async () => {
+    const x = devReq.find(v => v.deviceId === btn.dataset.devid && String(v.empId) === btn.dataset.emp);
+    const ok = btn.dataset.dev === "approve";
+    if (typeof showConfirm === "function" && !(await showConfirm(`${ok ? "الموافقة على" : "رفض"} تسجيل الهاتف باسم ${x.name}؟${x.current ? "\nالاسم الحالي: " + x.current : ""}`, { title: "تأكيد", okText: "نعم" }))) return;
+    try { await call("admin_device_decide", { deviceId: x.deviceId, empId: x.empId, decision: btn.dataset.dev }); loadAdmin(); }
+    catch (e) { alertMsg(e.message); }
+  });
   body.querySelectorAll("td.c[data-id]").forEach(td => td.onclick = () => openRecordAdmin(td.dataset.id));
   body.querySelectorAll("td.c[data-new]").forEach(td => td.onclick = () => openRecordAdmin(null, td.dataset.emp, td.dataset.new));
   $("#attGoRules").onclick = () => { showView("att-rules"); renderRules(); };
   $("#attGoStaff").onclick = () => { showView("att-staff"); renderStaff(); };
   $("#attGoLog").onclick = () => { showView("att-log"); renderLog(); };
-  refreshLogBadge();
+  refreshLogBadge(d.log);
 }
 
 async function reloadAfterChange(){
@@ -750,9 +840,9 @@ function renderRules(){
 }
 
 // ---------------- سجل التعديلات ----------------
-async function refreshLogBadge(){
+async function refreshLogBadge(given){
   try {
-    const log = await call("admin_log", {});
+    const log = given || await call("admin_log", {});
     const seen = localStorage.getItem(LS_LOG_SEEN) || "";
     const me = ((typeof auth !== "undefined" && auth && auth.currentUser && auth.currentUser.email) || "").toLowerCase();
     const n = log.filter(x => x.at > seen && String(x.by).toLowerCase() !== me).length;
@@ -804,7 +894,11 @@ const Mock = (function(){
   const db = {
     employees: [{ id: 1, name: "إسلام الجهاني", active: true }, { id: 2, name: "حكيم سحيم", active: true }, { id: 3, name: "أنس الترهوني", active: true }],
     rules: attMergeRules({ opener_6: "أنس الترهوني", opener_0: "حكيم سحيم", opener_1: "إسلام الجهاني", opener_2: "إسلام الجهاني", opener_3: "حكيم سحيم", opener_4: "أنس الترهوني" }),
-    records: [], log: []
+    records: [], log: [],
+    // هواتف وهمية: إسلام وأنس مسجّلان، وهاتف أنس الآخر يطلب التسجيل باسم حكيم
+    devices: [{ deviceId: "demo-islam", empId: 1, name: "إسلام الجهاني", status: "معتمد", reason: "تسجيل أول مرة", at: "" },
+              { deviceId: "demo-anas", empId: 3, name: "أنس الترهوني", status: "معتمد", reason: "تسجيل أول مرة", at: "" },
+              { deviceId: "demo-anas", empId: 2, name: "حكيم سحيم", status: "بانتظار الموافقة", reason: "تغيير من أنس الترهوني", at: todayStr() + " 10:41" }]
   };
   let seq = 1;
   const nid = () => "d" + (seq++);
@@ -861,8 +955,10 @@ const Mock = (function(){
   })();
 
   const emp = req => {
-    const e = db.employees.find(x => String(x.id) === String(req.empId) && x.active);
-    if (!e) throw new Error("الموظف غير موجود أو موقوف — اختر اسمك من جديد");
+    const d = db.devices.find(x => x.deviceId === req.deviceId && x.status === "معتمد");
+    if (!d) throw new Error("هذا الهاتف غير مسجّل — اختر اسمك");
+    const e = db.employees.find(x => String(x.id) === String(d.empId) && x.active);
+    if (!e) throw new Error("الموظف موقوف — تواصل مع الإدارة");
     return e;
   };
   const month = mk => db.records.filter(r => r.date.slice(0, 7) === mk);
@@ -915,9 +1011,36 @@ const Mock = (function(){
       rec[(req.field === "out" ? "out" : "in") + "Status"] = S.PENDING;
       return { status: S.PENDING };
     },
+    emp_register: req => {
+      const e = db.employees.find(x => String(x.id) === String(req.empId) && x.active);
+      if (!e) throw new Error("الموظف غير موجود أو موقوف");
+      const mine = db.devices.find(d => d.deviceId === req.deviceId && d.status === "معتمد");
+      if (mine && String(mine.empId) === String(e.id)) return { status: "approved", status_data: Mock.emp_status(req) };
+      const taken = db.devices.some(d => String(d.empId) === String(e.id) && d.status === "معتمد");
+      if (!mine && !taken) {
+        db.devices.push({ deviceId: req.deviceId, empId: e.id, name: e.name, status: "معتمد", reason: "تسجيل أول مرة", at: todayStr() + " " + nowHM() });
+        return { status: "approved", status_data: Mock.emp_status(req) };
+      }
+      db.devices.filter(d => d.deviceId === req.deviceId && d.status === "بانتظار الموافقة").forEach(d => d.status = "ملغى");
+      db.devices.push({ deviceId: req.deviceId, empId: e.id, name: e.name, status: "بانتظار الموافقة", reason: mine ? "تغيير من " + mine.name : "الاسم مسجّل على هاتف آخر", at: todayStr() + " " + nowHM() });
+      return { status: "pending", current: mine ? mine.name : "", requested: e.name };
+    },
+    admin_device_decide: req => {
+      const d = db.devices.find(x => x.deviceId === req.deviceId && String(x.empId) === String(req.empId) && x.status === "بانتظار الموافقة");
+      if (!d) throw new Error("الطلب غير موجود أو تمت معالجته");
+      const cur = db.devices.find(x => x.deviceId === d.deviceId && x.status === "معتمد");
+      if (req.decision === "approve") {
+        db.devices.filter(x => x.deviceId === d.deviceId && x.status === "معتمد").forEach(x => x.status = "ملغى");
+        d.status = "معتمد"; log(req.adminEmail, "موافقة على تغيير اسم الهاتف", cur ? cur.name : "هاتف جديد", d.name, d.reason);
+      } else { d.status = "مرفوض"; log(req.adminEmail, "رفض تغيير اسم الهاتف", cur ? cur.name : "هاتف جديد", d.name + " (مرفوض)", d.reason); }
+      return { ok: true };
+    },
     admin_month: req => {
       const n = now(), mk = req.month || n.date.slice(0, 7), res = attComputeMonth(month(mk), db.rules);
-      return { month: mk, records: res.records, summary: res.summary, rules: db.rules, now: n, months: months(),
+      return { month: mk, records: res.records, summary: res.summary, rules: db.rules, now: n, months: months(), log: db.log.slice().reverse().slice(0, 60),
+               deviceRequests: db.devices.filter(d => d.status === "بانتظار الموافقة").map(d => {
+                 const cur = db.devices.find(x => x.deviceId === d.deviceId && x.status === "معتمد");
+                 return { deviceId: d.deviceId, empId: d.empId, name: d.name, current: cur ? cur.name : "", reason: d.reason, at: d.at }; }),
                employees: db.employees.map(e => ({ id: e.id, name: e.name, active: e.active })) };
     },
     admin_decide: req => {

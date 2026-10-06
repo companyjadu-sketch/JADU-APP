@@ -11,7 +11,8 @@
 var TZ = "Africa/Tripoli";
 var FIREBASE_API_KEY = "AIzaSyBQ1xn1HKghA63Q4Qb0Yo40weBBi84l8Gk";
 var ADMIN_EMAILS = ["abdofakroun20@gmail.com", "no3y.fakroun20@gmail.com", "islam.aljhani@gmail.com"];
-var SH_EMP = "الموظفون", SH_RULES = "القواعد", SH_LOG = "سجل التعديلات";
+var SH_EMP = "الموظفون", SH_RULES = "القواعد", SH_LOG = "سجل التعديلات", SH_DEV = "الأجهزة";
+var DEV_OK = "معتمد", DEV_PENDING = "بانتظار الموافقة", DEV_REJECTED = "مرفوض", DEV_OLD = "ملغى";
 
 // أعمدة ورقة الشهر — الترتيب ثابت
 var COLS = ["id","التاريخ","اليوم","الموظف","وقت الحضور (اختاره الموظف)","وقت تسجيل الحضور الفعلي","مسافة الحضور (م)","حالة الحضور",
@@ -49,6 +50,27 @@ var API = {
   },
 
   // ---------------- الموظف ----------------
+  // ربط الهاتف باسم الموظف: أول مرة تُعتمد مباشرة، وأي تغيير بعدها يحتاج موافقة الإدارة
+  emp_register: function(req){
+    var deviceId = String(req.deviceId || "").slice(0, 64);
+    if (deviceId.length < 8) throw new Error("معرّف الجهاز غير صالح");
+    var emp = getEmployees_().filter(function(x){ return String(x.id) === String(req.empId) && x.active; })[0];
+    if (!emp) throw new Error("الموظف غير موجود أو موقوف");
+    var devs = getDevices_();
+    var mine = devs.filter(function(d){ return d.deviceId === deviceId && d.status === DEV_OK; })[0];
+    if (mine && String(mine.empId) === String(emp.id)) return { status: "approved", status_data: API.emp_status({ deviceId: deviceId }) };
+    var nameTaken = devs.some(function(d){ return String(d.empId) === String(emp.id) && d.status === DEV_OK; });
+    if (!mine && !nameTaken) {
+      addDevice_(deviceId, emp, DEV_OK, "تسجيل أول مرة");
+      return { status: "approved", status_data: API.emp_status({ deviceId: deviceId }) };
+    }
+    // طلب معلّق: إلغاء أي طلب معلّق سابق لنفس الهاتف ثم إضافة الجديد
+    devs.filter(function(d){ return d.deviceId === deviceId && d.status === DEV_PENDING; })
+        .forEach(function(d){ setDeviceStatus_(d.row, DEV_OLD, ""); });
+    addDevice_(deviceId, emp, DEV_PENDING, mine ? "تغيير من " + mine.name : "الاسم مسجّل على هاتف آخر");
+    return { status: "pending", current: mine ? mine.name : "", requested: emp.name };
+  },
+
   emp_status: function(req){
     var emp = authEmployee_(req);
     var now = nowParts_(), rules = getRules_();
@@ -126,9 +148,32 @@ var API = {
     var mk = req.month || nowParts_().date.slice(0, 7);
     var rules = getRules_();
     var res = attComputeMonth(readMonth_(mk), rules);
+    var devs = getDevices_();
     return { month: mk, records: res.records, summary: res.summary, rules: rules,
              employees: getEmployees_().map(function(x){ return { id: x.id, name: x.name, active: x.active }; }),
-             months: listMonths_(), now: nowParts_() };
+             months: listMonths_(), now: nowParts_(),
+             deviceRequests: devs.filter(function(d){ return d.status === DEV_PENDING; }).map(function(d){
+               var cur = devs.filter(function(x){ return x.deviceId === d.deviceId && x.status === DEV_OK; })[0];
+               return { deviceId: d.deviceId, empId: d.empId, name: d.name, current: cur ? cur.name : "", reason: d.reason, at: d.at };
+             }),
+             log: readLog_(60) };
+  },
+
+  admin_device_decide: function(req){
+    var who = authAdmin_(req);
+    var devs = getDevices_();
+    var d = devs.filter(function(x){ return x.deviceId === req.deviceId && String(x.empId) === String(req.empId) && x.status === DEV_PENDING; })[0];
+    if (!d) throw new Error("الطلب غير موجود أو تمت معالجته");
+    var cur = devs.filter(function(x){ return x.deviceId === d.deviceId && x.status === DEV_OK; })[0];
+    if (req.decision === "approve") {
+      devs.filter(function(x){ return x.deviceId === d.deviceId && x.status === DEV_OK; }).forEach(function(x){ setDeviceStatus_(x.row, DEV_OLD, who); });
+      setDeviceStatus_(d.row, DEV_OK, who);
+      log_(who, "موافقة على تغيير اسم الهاتف", cur ? cur.name : "هاتف جديد", d.name, d.reason);
+    } else {
+      setDeviceStatus_(d.row, DEV_REJECTED, who);
+      log_(who, "رفض تغيير اسم الهاتف", cur ? cur.name : "هاتف جديد", d.name + " (مرفوض)", d.reason);
+    }
+    return { ok: true };
   },
 
   // قرار الإدارة على سجل: approve | reject | excuse | absent_excused | absent | stay_points | stay_no
@@ -197,6 +242,7 @@ var API = {
       sh.appendRow([k, nv, ATT_RULE_LABELS[k] || ""]);
     });
     if (!changes.length) return { changed: 0 };
+    bust_();
     changes.forEach(function(c){ log_(who, "تعديل قاعدة", (ATT_RULE_LABELS[c.k] || c.k) + ": " + c.o, c.n, req.note || ""); });
     // كل الأشهر المفتوحة تُعاد حسبتها بالقواعد الجديدة؟ لا — فقط الشهر الحالي، حتى لا تتغير أشهر مقفلة
     recalcMonth_(nowParts_().date.slice(0, 7));
@@ -207,9 +253,7 @@ var API = {
 
   admin_log: function(req){
     authAdmin_(req);
-    var vals = sheet_(SH_LOG).getDataRange().getValues().slice(1);
-    return vals.reverse().slice(0, 200).map(function(r){
-      return { at: fmtDateTime_(r[0]), by: r[1], type: r[2], old: r[3], val: r[4], note: r[5] }; });
+    return readLog_(200);
   },
 
   admin_employees_save: function(req){
@@ -228,6 +272,7 @@ var API = {
         log_(who, "إضافة موظف", "", name, "");
       }
     });
+    bust_();
     return { ok: true };
   }
 };
@@ -236,8 +281,10 @@ var API = {
 // التحقق من الهوية
 // ---------------------------------------------------------------------
 function authEmployee_(req){
-  var emp = getEmployees_().filter(function(x){ return String(x.id) === String(req.empId) && x.active; })[0];
-  if (!emp) throw new Error("الموظف غير موجود أو موقوف — اختر اسمك من جديد");
+  var dev = getDevices_().filter(function(d){ return d.deviceId === String(req.deviceId || "") && d.status === DEV_OK; })[0];
+  if (!dev) throw new Error("هذا الهاتف غير مسجّل — اختر اسمك");
+  var emp = getEmployees_().filter(function(x){ return String(x.id) === String(dev.empId) && x.active; })[0];
+  if (!emp) throw new Error("الموظف موقوف — تواصل مع الإدارة");
   return emp;
 }
 
@@ -265,7 +312,20 @@ function authAdmin_(req){
 function ss_(){ return SpreadsheetApp.getActiveSpreadsheet(); }
 function sheet_(name){ var s = ss_().getSheetByName(name); if (!s) { setup(); s = ss_().getSheetByName(name); } return s; }
 
-function getEmployees_(){
+// ذاكرة مؤقتة لتسريع الرد: القراءة من الشيت مرة كل 5 دقائق أو عند أي تعديل
+var MEMO_ = {};
+function cached_(key, fn){
+  if (MEMO_[key]) return MEMO_[key];
+  var c = CacheService.getScriptCache(), hit = c.get(key);
+  if (hit) { MEMO_[key] = JSON.parse(hit); return MEMO_[key]; }
+  var v = fn(); MEMO_[key] = v;
+  try { c.put(key, JSON.stringify(v), 300); } catch (e) {}
+  return v;
+}
+function bust_(){ MEMO_ = {}; CacheService.getScriptCache().removeAll(["c_emp", "c_rules", "c_dev"]); }
+
+function getEmployees_(){ return cached_("c_emp", readEmployees_); }
+function readEmployees_(){
   var vals = sheet_(SH_EMP).getDataRange().getValues();
   var out = [];
   for (var i = 1; i < vals.length; i++) if (vals[i][1])
@@ -273,9 +333,38 @@ function getEmployees_(){
   return out;
 }
 function getRules_(){
-  var vals = sheet_(SH_RULES).getDataRange().getValues(), r = {};
-  for (var i = 1; i < vals.length; i++) if (vals[i][0]) r[vals[i][0]] = vals[i][1] instanceof Date ? fmtTime_(vals[i][1]) : vals[i][1];
-  return attMergeRules(r);
+  return attMergeRules(cached_("c_rules", function(){
+    var vals = sheet_(SH_RULES).getDataRange().getValues(), r = {};
+    for (var i = 1; i < vals.length; i++) if (vals[i][0]) r[vals[i][0]] = vals[i][1] instanceof Date ? fmtTime_(vals[i][1]) : vals[i][1];
+    return r;
+  }));
+}
+
+// الأجهزة: كل هاتف مربوط باسم موظف
+function getDevices_(){
+  return cached_("c_dev", function(){
+    var sh = sheet_(SH_DEV), last = sh.getLastRow();
+    if (last < 2) return [];
+    return sh.getRange(2, 1, last - 1, 7).getValues().map(function(r, i){
+      return { row: i + 2, deviceId: String(r[0]), empId: r[1], name: r[2], status: r[3], reason: r[4], at: fmtDateTime_(r[5]), by: r[6] };
+    }).filter(function(d){ return d.deviceId; });
+  });
+}
+function addDevice_(deviceId, emp, status, reason){
+  sheet_(SH_DEV).appendRow([deviceId, emp.id, emp.name, status, reason || "", new Date(), ""]);
+  bust_();
+}
+function setDeviceStatus_(row, status, who){
+  sheet_(SH_DEV).getRange(row, 4).setValue(status);
+  if (who) sheet_(SH_DEV).getRange(row, 7).setValue(who);
+  bust_();
+}
+function readLog_(n){
+  var sh = sheet_(SH_LOG), last = sh.getLastRow();
+  if (last < 2) return [];
+  var from = Math.max(2, last - n + 1);
+  return sh.getRange(from, 1, last - from + 1, 6).getValues().reverse().map(function(r){
+    return { at: fmtDateTime_(r[0]), by: r[1], type: r[2], old: r[3], val: r[4], note: r[5] }; });
 }
 function publicRules_(r){
   return { work_start: r.work_start, work_end: r.work_end, prompt_from: r.prompt_from, workdays: r.workdays,
@@ -397,6 +486,11 @@ function setup(){
     Object.keys(ATT_DEFAULT_RULES).forEach(function(k){ rows.push([k, String(ATT_DEFAULT_RULES[k]), ATT_RULE_LABELS[k] || ""]); });
     r.getRange(1, 1, rows.length, 3).setValues(rows);
     r.getRange(1, 1, 1, 3).setFontWeight("bold");
+  }
+  if (!ss.getSheetByName(SH_DEV)) {
+    var dv = ss.insertSheet(SH_DEV); dv.setRightToLeft(true);
+    dv.getRange(1, 1, 1, 7).setValues([["معرّف الهاتف","رقم الموظف","اسم الموظف","الحالة","السبب","التاريخ","قرار من"]]).setFontWeight("bold");
+    dv.getRange("A:A").setNumberFormat("@");
   }
   if (!ss.getSheetByName(SH_LOG)) {
     var l = ss.insertSheet(SH_LOG); l.setRightToLeft(true);
