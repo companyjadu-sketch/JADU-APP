@@ -247,7 +247,7 @@ function openPunch(kind){
     <p>${isIn ? "هل تريد تسجيل حضورك الآن؟" : "هل تريد تسجيل انصرافك الآن؟"}</p>
     <div class="att-field"><label for="attTime">${isIn ? "وقت الحضور" : "وقت الانصراف"}</label>
       <input type="time" id="attTime" value="${nowHM()}">
-      <div class="att-hint">الوقت الحالي مكتوب تلقائيًا. إذا عدّلته يُسجَّل بانتظار موافقة الإدارة، ويُحفظ الوقت الحقيقي معه.</div></div>
+      <div class="att-hint">الوقت الحالي مكتوب تلقائيًا، ويمكنك تعديله. وقت التسجيل الفعلي يُحفظ معه ويظهر للإدارة.</div></div>
     ${isIn ? `<label class="att-check"><input type="checkbox" id="attAllow" ${opener ? "disabled" : ""}><span>استخدام السماح الشهري (حتى ${rules.allowance_max} دقيقة)
       <small>${opener ? "لا يُطبَّق اليوم لأنك مسؤول فتح المحل" : "بشرط أنك أبلغت المسؤول مسبقًا، ومرة واحدة في الشهر"}</small></span></label>` : ""}
     ${afterClose ? `<label class="att-check"><input type="checkbox" id="attStay"><span>بقيت بعد الإغلاق لخدمة زبون أو عمل فعلي
@@ -295,7 +295,7 @@ function showPunchResult(kind, r){
   if (r.status === ATT_STATUS.PENDING) {
     const outside = r.reasons.some(x => /خارج النطاق|الموقع/.test(x));
     html = `<div class="att-alert warn"><b>بانتظار موافقة الإدارة</b>
-      ${outside ? `تم تسجيل ${word} خارج نطاق الشركة${r.distance !== null && r.distance !== undefined ? " (" + r.distance + " م)" : ""}.` : `تم تسجيل ${word} مع تعديل الوقت.`}
+      ${outside ? `تم تسجيل ${word} خارج نطاق الشركة${r.distance !== null && r.distance !== undefined ? " (" + r.distance + " م)" : ""}.` : `تم تسجيل ${word}.`}
       يجب التواصل مع الإدارة فورًا للموافقة عليه في نفس اليوم.</div>
       <p style="font-size:12px;color:var(--steel-500);margin:0 0 14px;">السبب: ${esc(r.reasons.join("، "))}</p>`;
   } else {
@@ -762,7 +762,7 @@ const Mock = (function(){
     }
     // اليوم: إسلام سجّل حضوره من خارج النطاق
     if (attIsWorkday(t, db.rules)) db.records.push({ id: nid(), date: t, day: attDayName(t), emp: "إسلام الجهاني", inTime: "10:02", inReal: "10:20", inDist: 340,
-      inStatus: S.PENDING, opener: attOpenerFor(t, db.rules) === "إسلام الجهاني", pending: "حضور: خارج النطاق (340 م)، وقت معدّل يدويًا", points: 0 });
+      inStatus: S.PENDING, opener: attOpenerFor(t, db.rules) === "إسلام الجهاني", pending: "حضور: خارج النطاق (340 م)", points: 0 });
     const ago = h => { const d = new Date(Date.now() - h * 3600000); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes()); };
     db.log.push({ at: ago(120), by: "abdofakroun20@gmail.com", type: "تعديل قاعدة", old: "خصم الفئة الثالثة (يوم): 1", val: "0.5", note: "حسب اللائحة الجديدة" });
     db.log.push({ at: ago(70), by: "no3y.fakroun20@gmail.com", type: "غياب بعذر", old: "أنس الترهوني — حضور — (غائب بدون عذر)", val: "غائب بعذر", note: "" });

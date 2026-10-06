@@ -197,15 +197,15 @@ function attComputeMonth(records, rulesIn){
   return { records: sorted, summary: summary };
 }
 
-// يحدد حالة التسجيل الجديدة حسب المسافة وتعديل الوقت
+// يحدد حالة التسجيل الجديدة حسب المسافة فقط.
+// تعديل الموظف للوقت لا يحتاج موافقة — يُحفظ الوقت الفعلي معه، وتكرار الفرق يظهر كملاحظة للإدارة
 function attDecideStatus(opts, rules){
   // opts: {distance (رقم أو null إذا رُفض الموقع), requested, real}
   var reasons = [];
   if (opts.distance === null || opts.distance === undefined) reasons.push("لم يُسمح بتحديد الموقع");
   else if (opts.distance > rules.radius_m) reasons.push("خارج النطاق (" + opts.distance + " م)");
-  var diff = Math.abs((attToMin(opts.requested) || 0) - (attToMin(opts.real) || 0));
-  if (diff > 2) reasons.push("وقت معدّل يدويًا");
-  return { status: reasons.length ? ATT_STATUS.PENDING : ATT_STATUS.OK, reasons: reasons };
+  return { status: reasons.length ? ATT_STATUS.PENDING : ATT_STATUS.OK, reasons: reasons,
+           edited: attTimeDiff(opts.requested, opts.real) > 0 };
 }
 
 if (typeof module !== "undefined") module.exports = {
