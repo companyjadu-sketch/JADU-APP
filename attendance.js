@@ -108,6 +108,7 @@ addView("att-admin", "الحضور والانصراف", "attAdminBody");
 addView("att-rules", "قواعد الدوام والخصم", "attRulesBody");
 addView("att-log", "سجل التعديلات", "attLogBody");
 addView("att-staff", "الموظفون", "attStaffBody");
+addView("att-person", "سجل الموظف", "attPersonBody");
 
 const overlay = document.createElement("div");
 overlay.className = "att-overlay"; overlay.id = "attOverlay";
@@ -450,10 +451,11 @@ function renderAdmin(){
   }).join("");
 
   const sums = Object.values(d.summary).sort((a, b) => b.points - a.points || a.deduct - b.deduct);
-  const sumHtml = sums.map(s => `<div class="att-sum"><div class="top"><b>${esc(s.emp)}</b><span class="att-pill ${/متميز/.test(s.rating) ? "ok" : /ملاحظات/.test(s.rating) ? "warn" : "mute"}">${esc(s.rating)}</span></div>
+  const sumHtml = sums.map(s => `<div class="att-sum" data-person="${esc(s.emp)}" role="button" tabindex="0"><div class="top"><b>${esc(s.emp)}</b><span class="att-pill ${/متميز/.test(s.rating) ? "ok" : /ملاحظات/.test(s.rating) ? "warn" : "mute"}">${esc(s.rating)}</span></div>
     <div class="nums"><span><b>${s.present}</b>أيام حضور</span><span><b>${fmtDays(s.deduct)}</b>أيام خصم</span><span><b>${s.points}</b>نقاط</span>
       <span><b>${s.t2 + s.t3 + s.t4}</b>تأخيرات</span><span><b>${s.absent}</b>غياب</span><span><b>${s.lateMin}</b>دقائق تأخير</span></div>
-    ${s.diffAlert ? `<div class="att-alert warn" style="margin:10px 0 0;padding:10px;font-size:12.5px">${esc(s.diffAlert)}</div>` : ""}</div>`).join("");
+    ${s.diffAlert ? `<div class="att-alert warn" style="margin:10px 0 0;padding:10px;font-size:12.5px">${esc(s.diffAlert)}</div>` : ""}
+    <div class="att-more">عرض السجل الكامل ‹</div></div>`).join("");
   const alerts = sums.filter(s => s.diffAlert);
   const alertHtml = alerts.length ? `<div class="att-box" style="border-color:rgba(255,184,0,.45)"><h3>ملاحظات للتفحص <span class="att-pill warn">${alerts.length}</span></h3>
     ${alerts.map(s => `<div class="att-row" style="display:block"><div class="l"><b>${esc(s.emp)}</b><small>${esc(s.diffAlert)}</small>
@@ -467,7 +469,7 @@ function renderAdmin(){
     <div class="att-box"><h3>بانتظار الموافقة <span class="att-pill ${pend.length ? "info" : "mute"}">${pend.length}</span></h3>${pendHtml || '<div class="att-empty" style="padding:6px">لا توجد طلبات معلّقة</div>'}</div>
     <div class="att-box"><h3>الحضور اليومي <span class="sub">اضغط على أي يوم للتفاصيل</span></h3>${heatGrid(d, rules)}</div>
     <div class="att-box att-chart"><h3>دقائق التأخير خلال الشهر</h3>${lateChart(d, rules)}</div>
-    <div class="att-box"><h3>ملخص الشهر</h3>${sumHtml || '<div class="att-empty">لا توجد سجلات لهذا الشهر</div>'}</div>
+    <div class="att-box"><h3>ملخص الشهر <span class="sub">اضغط على الموظف لكل التفاصيل</span></h3>${sumHtml || '<div class="att-empty">لا توجد سجلات لهذا الشهر</div>'}</div>
     <div class="list">
       <button class="list-btn" id="attGoRules"><div class="list-icon">${ICON.rules}</div><div class="list-text"><strong>قواعد الدوام والخصم</strong><span>أوقات الدوام، النطاق، الخصومات، مسؤول الفتح</span></div>${ICON.chev}</button>
       <button class="list-btn" id="attGoStaff"><div class="list-icon">${ICON.users}</div><div class="list-text"><strong>الموظفون</strong><span>إضافة موظف أو إيقافه</span></div>${ICON.chev}</button>
@@ -475,6 +477,10 @@ function renderAdmin(){
       ${ATT_SHEET_URL ? `<a class="list-btn" href="${esc(ATT_SHEET_URL)}" target="_blank" rel="noopener" style="text-decoration:none"><div class="list-icon">${ICON.sheet}</div><div class="list-text"><strong>فتح ملف جوجل شيت</strong><span>كل الأشهر في ملف واحد</span></div>${ICON.chev}</a>` : ""}
     </div>`;
   $("#attMonthSel").onchange = e => loadAdmin(e.target.value);
+  body.querySelectorAll("[data-person]").forEach(el => {
+    const go = () => openPerson(el.dataset.person);
+    el.onclick = go; el.onkeydown = e => { if (e.key === "Enter") go(); };
+  });
   body.querySelectorAll("[data-dec]").forEach(btn => btn.onclick = () => decide(btn.dataset.id, btn.dataset.dec));
   body.querySelectorAll("td.c[data-id]").forEach(td => td.onclick = () => openRecordAdmin(td.dataset.id));
   body.querySelectorAll("td.c[data-new]").forEach(td => td.onclick = () => openRecordAdmin(null, td.dataset.emp, td.dataset.new));
@@ -484,12 +490,16 @@ function renderAdmin(){
   refreshLogBadge();
 }
 
+async function reloadAfterChange(){
+  if ($("#view-att-person").classList.contains("active")) { ADM = await call("admin_month", { month: ADM.month }); renderPerson(); }
+  else loadAdmin();
+}
 async function decide(id, decision, note){
   const r = ADM.records.find(x => x.id === id);
   const labels = { approve: "الموافقة على", reject: "رفض", excuse: "اعتماد عذر طارئ لـ", absent_excused: "تسجيل غياب بعذر لـ",
                    absent: "تسجيل غياب بدون عذر لـ", stay_points: "منح نقاط البقاء لـ", stay_no: "رفض نقاط البقاء لـ" };
   if (typeof showConfirm === "function" && !(await showConfirm(`${labels[decision]} ${r.emp} — ${shortDate(r.date)}؟\nسيُسجَّل القرار باسمك في سجل التعديلات.`, { title: "تأكيد", okText: "نعم" }))) return;
-  try { await call("admin_decide", { month: ADM.month, id, decision, note }); closeSheet(); loadAdmin(); }
+  try { await call("admin_decide", { month: ADM.month, id, decision, note }); closeSheet(); await reloadAfterChange(); }
   catch (e) { alertMsg(e.message); }
 }
 
@@ -504,7 +514,7 @@ function heatGrid(d, rules){
   for (let i = 1; i <= days; i++) head += `<th>${i}</th>`;
   head += "</tr>";
   const rows = emps.map(name => {
-    let tr = `<tr><td class="name">${esc(firstName(name))}</td>`;
+    let tr = `<tr><td class="name" data-person="${esc(name)}" style="cursor:pointer;text-decoration:underline dotted">${esc(firstName(name))}</td>`;
     for (let i = 1; i <= days; i++) {
       const ds = d.month + "-" + pad(i), r = byKey[name + "|" + ds];
       if (!attIsWorkday(ds, rules)) { tr += `<td class="c off" title="عطلة">ع</td>`; continue; }
@@ -528,10 +538,10 @@ function heatGrid(d, rules){
 
 // مخطط دقائق التأخير: المحور الأفقي أيام الشهر، والعمودي دقائق التأخير
 const SERIES_COLORS = ["#4FC3F7", "#FFB74D", "#CE93D8", "#81C784", "#F06292", "#FFF176"];
-function lateChart(d, rules){
+function lateChart(d, rules, only){
   const [y, m] = d.month.split("-").map(Number);
   const days = new Date(y, m, 0).getDate();
-  const emps = [...new Set(d.records.map(r => r.emp))];
+  const emps = only ? [only] : [...new Set(d.records.map(r => r.emp))];
   if (!emps.length) return '<div class="att-empty">لا توجد بيانات</div>';
   const W = 340, H = 236, L = 44, R = 10, T = 14, B = 46;
   const maxLate = Math.max(30, ...d.records.map(r => r.lateMin || 0));
@@ -546,8 +556,9 @@ function lateChart(d, rules){
   g += `<line x1="${L}" x2="${W - R}" y1="${yy(rules.grace_min)}" y2="${yy(rules.grace_min)}" stroke="#FFC94D" stroke-dasharray="5 4" stroke-width="1.2"/>
         <text class="lim" x="${W - R - 2}" y="${yy(rules.grace_min) - 5}" text-anchor="end">حد التأخير المسموح: ${rules.grace_min} دقيقة</text>`;
   let lines = "", legend = "";
-  emps.forEach((name, i) => {
-    const col = SERIES_COLORS[i % SERIES_COLORS.length];
+  const allEmps = [...new Set(d.records.map(r => r.emp))];
+  emps.forEach(name => {
+    const col = SERIES_COLORS[Math.max(0, allEmps.indexOf(name)) % SERIES_COLORS.length];
     const pts = d.records.filter(r => r.emp === name && r.lateMin !== null && r.lateMin !== undefined)
       .map(r => ({ day: Number(r.date.slice(8)), v: r.lateMin })).sort((a, b) => a.day - b.day);
     if (pts.length > 1) lines += `<polyline fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round" points="${pts.map(p => x(p.day) + "," + yy(p.v)).join(" ")}"/>`;
@@ -560,6 +571,81 @@ function lateChart(d, rules){
   return `<svg viewBox="0 0 ${W} ${H}" direction="ltr" style="direction:ltr" role="img" aria-label="مخطط دقائق التأخير لكل موظف حسب أيام الشهر">${g}${axes}${lines}</svg>
     <div class="att-legend">${legend}</div>
     <div class="att-hint">كل نقطة = يوم حضر فيه الموظف، وارتفاعها = كم دقيقة تأخر بعد ${esc(attFmt12(rules.work_start))}. أيام الغياب والعطلة لا تظهر على الخط.</div>`;
+}
+
+// =====================================================================
+// سجل موظف واحد — كل التفاصيل للإدارة
+// =====================================================================
+let PERSON = null;
+function openPerson(name){
+  PERSON = name;
+  showView("att-person");
+  renderPerson();
+}
+function renderPerson(){
+  const body = $("#attPersonBody"), d = ADM, name = PERSON;
+  if (!d || !name) { body.innerHTML = '<div class="att-empty">افتح الحضور والانصراف أولًا</div>'; return; }
+  const rules = attMergeRules(d.rules);
+  const s = d.summary[name] || { present: 0, onTime: 0, t2: 0, t3: 0, t4: 0, allowance: 0, excuse: 0, absent: 0, absentExcused: 0, pending: 0, deduct: 0, points: 0, lateMin: 0, diffs: [], diffCount: 0, diffAlert: "", rating: "لا توجد سجلات" };
+  const recs = d.records.filter(r => r.emp === name).sort((a, b) => a.date < b.date ? 1 : -1);
+  const avgLate = s.present ? Math.round(s.lateMin / s.present) : 0;
+  const stays = recs.filter(r => r.stay || (r.outTime && attToMin(r.outTime) - attToMin(rules.work_end) >= 10));
+  const openerDays = recs.filter(r => r.opener);
+  const openerLate = openerDays.filter(r => (r.lateMin || 0) > rules.grace_min).length;
+  const outside = recs.filter(r => (r.inDist !== "" && r.inDist !== undefined && Number(r.inDist) > rules.radius_m) || (r.outDist !== "" && r.outDist !== undefined && Number(r.outDist) > rules.radius_m)).length;
+  const deductRows = recs.filter(r => r.deduct > 0);
+  const row = r => {
+    const isAbs = attIsAbsent(r) && !r.inTime;
+    const bits = [];
+    if (!isAbs) {
+      bits.push(timePair("حضور", r.inTime, r.inReal));
+      bits.push(r.outTime ? timePair("انصراف", r.outTime, r.outReal) : "لم يسجّل انصرافه");
+      if (r.inDist !== "" && r.inDist !== undefined) bits.push("المسافة " + r.inDist + " م");
+      if (r.lateMin) bits.push("تأخير " + r.lateMin + " د");
+    }
+    if (r.deduct) bits.push("خصم " + fmtDays(r.deduct) + " يوم");
+    if (r.points) bits.push("+" + r.points + " نقطة");
+    if (r.opener) bits.push("مسؤول الفتح");
+    return `<div class="att-row${r.bigDiff ? " att-row-diff" : ""}" data-id="${esc(r.id)}" style="cursor:pointer"><div class="l"><b>${esc(shortDate(r.date))}</b>
+      <small>${esc(bits.join(" · "))}</small>
+      ${r.flags && r.flags.length ? `<small style="color:#FFC94D">${esc(r.flags.join("، "))}</small>` : ""}
+      ${r.pending ? `<small style="color:#9DB8FF">${esc(r.pending)}</small>` : ""}
+      ${r.stay ? `<small style="color:#A6E8BC">${esc(r.stay)}</small>` : ""}
+      ${r.note ? `<small>ملاحظة: ${esc(r.note)}</small>` : ""}</div>
+      <div class="r">${catPill(r)}</div></div>`;
+  };
+  body.innerHTML = `
+    <div class="att-row" style="border:none;padding:0 0 12px"><div class="l"><b style="font-size:16px">${esc(name)}</b><small>${esc(attMonthTitle(d.month))}</small></div>
+      <div class="r"><span class="att-pill ${/متميز/.test(s.rating) ? "ok" : /ملاحظات/.test(s.rating) ? "warn" : "mute"}">${esc(s.rating)}</span></div></div>
+    ${s.diffAlert ? `<div class="att-alert warn"><b>ملاحظة للإدارة</b>${esc(s.diffAlert)}
+      ${s.diffs.map(x => `<br>• ${esc(shortDate(x.date))}: ${esc(x.inDiff >= x.outDiff ? timePair("حضور", x.inTime, x.inReal) : timePair("انصراف", x.outTime, x.outReal))}`).join("")}</div>` : ""}
+    <div class="att-stats">
+      <div class="att-stat"><span class="k">أيام الحضور</span><span class="v">${s.present}</span></div>
+      <div class="att-stat"><span class="k">مجموع الخصم</span><span class="v">${fmtDays(s.deduct)} <small>يوم</small></span></div>
+      <div class="att-stat"><span class="k">النقاط</span><span class="v">${s.points}</span></div>
+      <div class="att-stat"><span class="k">متوسط التأخير</span><span class="v">${avgLate} <small>دقيقة</small></span></div>
+    </div>
+    <div class="att-box"><h3>تفصيل الشهر</h3>
+      <div class="att-kv">
+        <span>منتظم (حتى ${rules.grace_min} د)</span><b>${s.onTime}</b>
+        <span>تأخير ${rules.grace_min + 1}–${rules.t2_max} د</span><b>${s.t2} <small>(المسموح ${rules.t2_free})</small></b>
+        <span>تأخير ${rules.t2_max + 1}–${rules.t3_max} د</span><b>${s.t3}</b>
+        <span>تأخير أكثر من ساعة</span><b>${s.t4}</b>
+        <span>سماح شهري مستخدم</span><b>${s.allowance} <small>من ${rules.allowance_per_month}</small></b>
+        <span>عذر طارئ</span><b>${s.excuse}</b>
+        <span>غياب بدون عذر</span><b>${s.absent}</b>
+        <span>غياب بعذر</span><b>${s.absentExcused}</b>
+        <span>أيام مسؤول الفتح</span><b>${openerDays.length}${openerLate ? ` <small style="color:var(--warn)">(تأخر ${openerLate})</small>` : ""}</b>
+        <span>بقاء بعد الإغلاق (10 د أو أكثر)</span><b>${stays.length}</b>
+        <span>تسجيل خارج النطاق</span><b>${outside}</b>
+        <span>فرق بين الوقت المختار والفعلي</span><b>${s.diffCount}</b>
+        <span>مجموع دقائق التأخير</span><b>${s.lateMin}</b>
+        <span>بانتظار الموافقة</span><b>${s.pending}</b>
+      </div></div>
+    ${deductRows.length ? `<div class="att-box"><h3>سبب الخصومات</h3>${deductRows.map(r => `<div class="att-row"><div class="l"><b>${esc(shortDate(r.date))}</b><small>${esc(r.cat)}${r.flags && r.flags.length ? " · " + esc(r.flags.join("، ")) : ""}</small></div><div class="r"><span class="att-pill bad">${fmtDays(r.deduct)} يوم</span></div></div>`).join("")}</div>` : ""}
+    <div class="att-box att-chart"><h3>دقائق التأخير خلال الشهر</h3>${lateChart(d, rules, name)}</div>
+    <div class="att-box"><h3>السجل الكامل <span class="sub">اضغط على أي يوم للتعديل</span></h3>${recs.map(row).join("") || '<div class="att-empty">لا توجد سجلات</div>'}</div>`;
+  body.querySelectorAll(".att-row[data-id]").forEach(el => el.onclick = () => openRecordAdmin(el.dataset.id));
 }
 
 // تفاصيل سجل واحد للإدارة (من الضغط على خانة اليوم)
@@ -595,7 +681,7 @@ function openRecordAdmin(id, empName, dateStr){
       await call("admin_update", { month: ADM.month, id: r.id, fields });
       if (isAbs && $("#attRecAbs").value !== (r.inStatus === ATT_STATUS.ABSENT ? "absent" : "absent_excused"))
         await call("admin_decide", { month: ADM.month, id: r.id, decision: $("#attRecAbs").value });
-      closeSheet(); loadAdmin();
+      closeSheet(); await reloadAfterChange();
     } catch (e) { $("#attRecMsg").textContent = e.message; $("#attRecMsg").className = "msg err"; }
   };
 }
@@ -883,5 +969,5 @@ const Mock = (function(){
 })();
 
 // للمعاينة والاختبار
-window.JaduAttendance = { openEmployeeView, openCheckIn, openCheckOut, loadAdmin, renderRules, renderLog, renderStaff, onEmployeeEnter, setMe, DEMO };
+window.JaduAttendance = { openPerson, openEmployeeView, openCheckIn, openCheckOut, loadAdmin, renderRules, renderLog, renderStaff, onEmployeeEnter, setMe, DEMO };
 })();

@@ -182,17 +182,17 @@ function attComputeMonth(records, rulesIn){
   });
   Object.keys(summary).forEach(function(k){
     var s = summary[k];
+    s.diffCount = s.diffs.length;
+    s.diffAlert = s.diffCount >= rules.diff_count
+      ? "اختار وقتًا يختلف عن وقت التسجيل الفعلي بـ " + rules.diff_min + " دقائق أو أكثر " + (s.diffCount === 2 ? "مرتين" : s.diffCount + " مرات") + " هذا الشهر — يحتاج تفحص"
+      : "";
     var repeatedLate = s.t2 > rules.t2_free || s.t3 > 0 || s.t4 > 0;
-    var violations = s.absent > 0 || s.deduct > 0;
+    var violations = s.absent > 0 || s.deduct > 0 || !!s.diffAlert;
     // تقييم حسب البند السادس من اللائحة
     if (s.points > 0 && !repeatedLate && !violations) s.rating = "متميز — أولوية في المكافآت";
     else if (s.points > 0) s.rating = "له نقاط — مع ملاحظات";
     else if (violations || repeatedLate) s.rating = "عليه ملاحظات";
     else s.rating = "منتظم";
-    s.diffCount = s.diffs.length;
-    s.diffAlert = s.diffCount >= rules.diff_count
-      ? "اختار وقتًا يختلف عن وقت التسجيل الفعلي بـ " + rules.diff_min + " دقائق أو أكثر " + (s.diffCount === 2 ? "مرتين" : s.diffCount + " مرات") + " هذا الشهر — يحتاج تفحص"
-      : "";
   });
   return { records: sorted, summary: summary };
 }
