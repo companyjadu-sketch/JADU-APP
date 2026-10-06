@@ -16,10 +16,13 @@ var DEV_OK = "معتمد", DEV_PENDING = "بانتظار الموافقة", DEV_
 
 // أعمدة ورقة الشهر — الترتيب ثابت
 var COLS = ["id","التاريخ","اليوم","الموظف","وقت الحضور (اختاره الموظف)","وقت تسجيل الحضور الفعلي","مسافة الحضور (م)","حالة الحضور",
-            "وقت الانصراف (اختاره الموظف)","وقت تسجيل الانصراف الفعلي","مسافة الانصراف (م)","حالة الانصراف","مسؤول الفتح","سماح شهري",
-            "عذر طارئ","دقائق التأخير","الفئة","الخصم (يوم)","نقاط","بقاء بعد الإغلاق","طلب معلّق","ملاحظات"];
+            "وقت الانصراف (اختاره الموظف)","وقت تسجيل الانصراف الفعلي","مسافة الانصراف (م)","حالة الانصراف","فتح المحل","سماح شهري",
+            "عذر طارئ","دقائق التأخير (لمن فتح)","الفئة","الخصم (يوم)","نقاط","بقاء بعد الإغلاق","طلب معلّق","ملاحظات",
+            "أغلق المحل","ساعات العمل","نقص الساعات (دقيقة)"];
 var KEYS = ["id","date","day","emp","inTime","inReal","inDist","inStatus","outTime","outReal","outDist","outStatus",
-            "opener","allowance","excuse","lateMin","cat","deduct","points","stay","pending","note"];
+            "opener","allowance","excuse","lateMin","cat","deduct","points","stay","pending","note",
+            "closer","worked","shortMin"];
+var BOOL_KEYS = ["opener","allowance","excuse","closer"];
 var SUMMARY_COL = COLS.length + 2; // ملخص الشهر يُكتب يسار الجدول بعمودين فاضيين
 
 // ---------------------------------------------------------------------
@@ -75,9 +78,13 @@ var API = {
     var emp = authEmployee_(req);
     var now = nowParts_(), rules = getRules_();
     var mk = req.month || now.date.slice(0, 7);
-    var res = attComputeMonth(readMonth_(mk).filter(function(r){ return r.emp === emp.name; }), rules);
+    var all = readMonth_(mk);
+    var res = attComputeMonth(all.filter(function(r){ return r.emp === emp.name; }), rules);
     var today = res.records.filter(function(r){ return r.date === now.date; })[0] || null;
-    return { emp: { id: emp.id, name: emp.name }, now: now, rules: publicRules_(rules), today: today,
+    var todays = all.filter(function(r){ return r.date === now.date; });
+    return { emp: { id: emp.id, name: emp.name, hours: attHoursFor(emp.name, rules) }, now: now, rules: publicRules_(rules), today: today,
+             openedBy: todays.filter(function(r){ return r.opener; }).map(function(r){ return r.emp; }),
+             closedBy: todays.filter(function(r){ return r.closer; }).map(function(r){ return r.emp; }),
              records: res.records, summary: res.summary[emp.name] || null, month: mk };
   },
 
@@ -92,7 +99,7 @@ var API = {
     var d = attDecideStatus({ distance: dist, requested: requested, real: now.time }, rules);
     var rec = existing || { id: Utilities.getUuid().slice(0, 8), date: now.date, day: attDayName(now.date), emp: emp.name };
     rec.inTime = requested; rec.inReal = now.time; rec.inDist = dist === null ? "" : dist; rec.inStatus = d.status;
-    rec.opener = attOpenerFor(now.date, rules) === emp.name;
+    rec.opener = !!req.opener;
     rec.allowance = !!req.allowance;
     rec.pending = d.reasons.length ? "حضور: " + d.reasons.join("، ") : "";
     rec.note = joinNote_(rec.note, req.note);
@@ -112,6 +119,7 @@ var API = {
     var dist = locDistance_(req, rules);
     var d = attDecideStatus({ distance: dist, requested: requested, real: now.time }, rules);
     rec.outTime = requested; rec.outReal = now.time; rec.outDist = dist === null ? "" : dist; rec.outStatus = d.status;
+    rec.closer = !!req.closer;
     var after = attToMin(requested) - attToMin(rules.work_end);
     rec.stay = req.stay && after > 0 ? "طلب نقاط: بقي " + after + " دقيقة لخدمة زبون" : "";
     var parts = []; if (rec.pending) parts.push(rec.pending);
@@ -150,7 +158,8 @@ var API = {
     var res = attComputeMonth(readMonth_(mk), rules);
     var devs = getDevices_();
     return { month: mk, records: res.records, summary: res.summary, rules: rules,
-             employees: getEmployees_().map(function(x){ return { id: x.id, name: x.name, active: x.active }; }),
+             employees: getEmployees_().map(function(x){ return { id: x.id, name: x.name, hours: x.hours, active: x.active }; }),
+             dayFlags: res.dayFlags,
              months: listMonths_(), now: nowParts_(),
              deviceRequests: devs.filter(function(d){ return d.status === DEV_PENDING; }).map(function(d){
                var cur = devs.filter(function(x){ return x.deviceId === d.deviceId && x.status === DEV_OK; })[0];
@@ -217,7 +226,7 @@ var API = {
     var rec = readMonth_(mk).filter(function(r){ return r.id === req.id; })[0];
     if (!rec) throw new Error("السجل غير موجود");
     var f = req.fields || {}, changes = [];
-    ["opener","excuse","allowance"].forEach(function(k){
+    ["opener","closer","excuse","allowance"].forEach(function(k){
       if (k in f && !!f[k] !== !!rec[k]) { changes.push(fieldLabel_(k) + ": " + yn_(rec[k]) + " ← " + yn_(f[k])); rec[k] = !!f[k]; }
     });
     if ("points" in f && Number(f.points) !== (Number(rec.points) || 0)) { changes.push("النقاط: " + (Number(rec.points) || 0) + " ← " + Number(f.points)); rec.points = Number(f.points); }
@@ -265,10 +274,12 @@ var API = {
       if (ex) {
         var row = ex.row;
         if (ex.name !== name) { log_(who, "تعديل موظف", ex.name, name, ""); sh.getRange(row, 2).setValue(name); }
+        var nh = Number(e.hours) > 0 ? Number(e.hours) : "";
+        if (String(nh) !== String(ex.hours)) { sh.getRange(row, 3).setValue(nh); log_(who, "تعديل ساعات العمل", name + ": " + (ex.hours || "الافتراضي"), nh || "الافتراضي", ""); }
         if (!!e.active !== ex.active) { sh.getRange(row, 4).setValue(e.active ? "نشط" : "موقوف"); log_(who, e.active ? "تفعيل موظف" : "إيقاف موظف", name, "", ""); }
       } else {
         var id = cur.reduce(function(m, c){ return Math.max(m, Number(c.id) || 0); }, 0) + 1;
-        sh.appendRow([id, name, "", "نشط"]);
+        sh.appendRow([id, name, Number(e.hours) > 0 ? Number(e.hours) : "", "نشط"]);
         log_(who, "إضافة موظف", "", name, "");
       }
     });
@@ -329,15 +340,19 @@ function readEmployees_(){
   var vals = sheet_(SH_EMP).getDataRange().getValues();
   var out = [];
   for (var i = 1; i < vals.length; i++) if (vals[i][1])
-    out.push({ row: i + 1, id: vals[i][0], name: String(vals[i][1]).trim(), pin: String(vals[i][2]).trim(), active: vals[i][3] !== "موقوف" });
+    out.push({ row: i + 1, id: vals[i][0], name: String(vals[i][1]).trim(), hours: Number(vals[i][2]) || "", active: vals[i][3] !== "موقوف" });
   return out;
 }
 function getRules_(){
-  return attMergeRules(cached_("c_rules", function(){
+  var hours = {};
+  getEmployees_().forEach(function(e){ if (Number(e.hours) > 0) hours[e.name] = Number(e.hours); });
+  var r = attMergeRules(cached_("c_rules", function(){
     var vals = sheet_(SH_RULES).getDataRange().getValues(), r = {};
     for (var i = 1; i < vals.length; i++) if (vals[i][0]) r[vals[i][0]] = vals[i][1] instanceof Date ? fmtTime_(vals[i][1]) : vals[i][1];
     return r;
   }));
+  r.emp_hours = hours;
+  return r;
 }
 
 // الأجهزة: كل هاتف مربوط باسم موظف
@@ -369,7 +384,7 @@ function readLog_(n){
 function publicRules_(r){
   return { work_start: r.work_start, work_end: r.work_end, prompt_from: r.prompt_from, workdays: r.workdays,
            radius_m: r.radius_m, shop_lat: r.shop_lat, shop_lng: r.shop_lng, allowance_max: r.allowance_max, grace_min: r.grace_min,
-           opener_6: r.opener_6, opener_0: r.opener_0, opener_1: r.opener_1, opener_2: r.opener_2, opener_3: r.opener_3, opener_4: r.opener_4 };
+           shift_hours: r.shift_hours, emp_hours: r.emp_hours };
 }
 
 function monthSheet_(mk, create){
@@ -385,14 +400,22 @@ function monthSheet_(mk, create){
   }
   return sh;
 }
+// ترقية ورقة شهر أُنشئت بالأعمدة القديمة (قبل إضافة ساعات العمل)
+function ensureCols_(sh){
+  var col = KEYS.indexOf("closer") + 1;
+  if (sh.getRange(1, col).getValue() === COLS[col - 1]) return;
+  sh.getRange(1, col, sh.getMaxRows(), 30).clearContent();
+  sh.getRange(1, 1, 1, COLS.length).setValues([COLS]).setFontWeight("bold").setBackground("#1F3A5F").setFontColor("#FFFFFF");
+}
 function readMonth_(mk){
   var sh = monthSheet_(mk, false); if (!sh) return [];
+  ensureCols_(sh);
   var last = sh.getLastRow(); if (last < 2) return [];
   return sh.getRange(2, 1, last - 1, COLS.length).getValues().filter(function(r){ return r[0]; }).map(function(r){
     var o = {}; KEYS.forEach(function(k, i){ o[k] = r[i]; });
     o.date = o.date instanceof Date ? Utilities.formatDate(o.date, TZ, "yyyy-MM-dd") : String(o.date);
     ["inTime","inReal","outTime","outReal"].forEach(function(k){ o[k] = o[k] instanceof Date ? fmtTime_(o[k]) : String(o[k] || ""); });
-    ["opener","allowance","excuse"].forEach(function(k){ o[k] = o[k] === true || o[k] === "نعم"; });
+    BOOL_KEYS.forEach(function(k){ o[k] = o[k] === true || o[k] === "نعم"; });
     o.points = Number(o.points) || 0;
     return o;
   });
@@ -401,7 +424,7 @@ function writeRecord_(rec){
   var mk = attMonthKey(rec.date), sh = monthSheet_(mk, true);
   var row = KEYS.map(function(k){
     var v = rec[k];
-    if (k === "opener" || k === "allowance" || k === "excuse") return v ? "نعم" : "";
+    if (BOOL_KEYS.indexOf(k) !== -1) return v ? "نعم" : "";
     return v === undefined || v === null ? "" : v;
   });
   var ids = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues().map(function(r){ return r[0]; }) : [];
@@ -417,19 +440,26 @@ function recalcMonth_(mk){
   var last = sh.getLastRow();
   if (last > 1) {
     var ids = sh.getRange(2, 1, last - 1, 1).getValues();
-    var out = ids.map(function(r){ var x = byId[r[0]]; return x ? [x.lateMin === null ? "" : x.lateMin, x.cat, x.deduct] : ["", "", ""]; });
+    var out = ids.map(function(r){ var x = byId[r[0]]; return x ? [x.opener && x.lateMin !== null ? x.lateMin : "", x.cat, x.deduct] : ["", "", ""]; });
     sh.getRange(2, KEYS.indexOf("lateMin") + 1, out.length, 3).setValues(out);
+    var hrs = ids.map(function(r){ var x = byId[r[0]]; return x ? [x.workedMin === null ? "" : attFmtDur(x.workedMin), x.shortMin === null ? "" : x.shortMin] : ["", ""]; });
+    sh.getRange(2, KEYS.indexOf("worked") + 1, hrs.length, 2).setNumberFormat("@").setValues(hrs);
     sh.getRange(2, 1, last - 1, COLS.length).sort([{ column: 2, ascending: true }, { column: 4, ascending: true }]);
   }
   // ملخص الشهر
-  var head = ["الموظف","أيام الحضور","منتظم","تأخير 16–30","تأخير 31–60","أكثر من ساعة","سماح شهري","عذر طارئ","غياب","غياب بعذر","بانتظار الموافقة","مجموع الخصم (يوم)","النقاط","التقييم","فروق الوقت","ملاحظة للإدارة"];
+  var head = ["الموظف","أيام الحضور","ساعات العمل","المطلوب","أيام فتح المحل","أيام الإغلاق","منتظم","16–30 د","31–60 د","أكثر من ساعة","سماح شهري","عذر طارئ","غياب","غياب بعذر","بانتظار الموافقة","مجموع الخصم (يوم)","النقاط","التقييم","فروق الوقت","ملاحظة للإدارة"];
   var rows = Object.keys(res.summary).map(function(k){
     var s = res.summary[k];
-    return [s.emp, s.present, s.onTime, s.t2, s.t3, s.t4, s.allowance, s.excuse, s.absent, s.absentExcused, s.pending, s.deduct, s.points, s.rating, s.diffCount, s.diffAlert];
+    return [s.emp, s.present, attFmtDur(s.workedMin), attFmtDur(s.reqMin), s.openDays, s.closeDays, s.onTime, s.t2, s.t3, s.t4, s.allowance, s.excuse, s.absent, s.absentExcused, s.pending, s.deduct, s.points, s.rating, s.diffCount, s.diffAlert];
   });
-  sh.getRange(1, SUMMARY_COL, Math.max(sh.getMaxRows(), 2), head.length).clearContent();
+  sh.getRange(1, SUMMARY_COL, Math.max(sh.getMaxRows(), 2), head.length + 4).clearContent();
   sh.getRange(1, SUMMARY_COL, 1, head.length).setValues([head]).setFontWeight("bold").setBackground("#E10A1E").setFontColor("#FFFFFF");
-  if (rows.length) sh.getRange(2, SUMMARY_COL, rows.length, head.length).setValues(rows);
+  if (rows.length) sh.getRange(2, SUMMARY_COL, rows.length, head.length).setNumberFormat("@").setValues(rows);
+  // ملاحظات الأيام: من فتح المحل ومن أغلقه
+  var fr = rows.length + 4;
+  sh.getRange(fr, SUMMARY_COL, 1, 2).setValues([["التاريخ","ملاحظات اليوم"]]).setFontWeight("bold");
+  if (res.dayFlags.length) sh.getRange(fr + 1, SUMMARY_COL, res.dayFlags.length, 2)
+    .setValues(res.dayFlags.map(function(d){ return [d.date, d.flags.join(" | ")]; }));
 }
 
 function listMonths_(){
@@ -464,7 +494,7 @@ function markAbsences(){
   getEmployees_().filter(function(e){ return e.active; }).forEach(function(e){
     if (rows.some(function(r){ return r.emp === e.name; })) return;
     writeRecord_({ id: Utilities.getUuid().slice(0, 8), date: now.date, day: attDayName(now.date), emp: e.name,
-                   inStatus: ATT_STATUS.ABSENT, opener: attOpenerFor(now.date, rules) === e.name, note: "سُجّل تلقائيًا" });
+                   inStatus: ATT_STATUS.ABSENT, note: "سُجّل تلقائيًا" });
   });
   recalcMonth_(mk);
 }
@@ -476,9 +506,10 @@ function setup(){
   var ss = ss_();
   if (!ss.getSheetByName(SH_EMP)) {
     var e = ss.insertSheet(SH_EMP); e.setRightToLeft(true);
-    e.getRange(1, 1, 1, 4).setValues([["رقم","اسم الموظف","(غير مستخدم)","الحالة"]]).setFontWeight("bold");
+    e.getRange(1, 1, 1, 4).setValues([["رقم","اسم الموظف","ساعات العمل اليومية (فارغ = 8)","الحالة"]]).setFontWeight("bold");
     e.getRange(2, 1, 3, 4).setValues([[1,"إسلام الجهاني","","نشط"],[2,"حكيم سحيم","","نشط"],[3,"أنس الترهوني","","نشط"]]);
   }
+  else ss.getSheetByName(SH_EMP).getRange(1, 3).setValue("ساعات العمل اليومية (فارغ = 8)");
   if (!ss.getSheetByName(SH_RULES)) {
     var r = ss.insertSheet(SH_RULES); r.setRightToLeft(true);
     r.getRange("B:B").setNumberFormat("@");
@@ -517,7 +548,7 @@ function locDistance_(req, rules){
 }
 function joinNote_(a, b){ b = String(b || "").trim().slice(0, 200); return !b ? (a || "") : (a ? a + " | " + b : b); }
 function yn_(v){ return v ? "نعم" : "لا"; }
-function fieldLabel_(k){ return { opener: "مسؤول الفتح", excuse: "عذر طارئ", allowance: "سماح شهري" }[k] || k; }
+function fieldLabel_(k){ return { opener: "فتح المحل", closer: "أغلق المحل", excuse: "عذر طارئ", allowance: "سماح شهري" }[k] || k; }
 function describe_(r){
   var t = function(v, real){ return (v || "—") + (real && real !== v ? " [سُجّل فعليًا " + real + "]" : ""); };
   return "حضور " + t(r.inTime, r.inReal) + " (" + (r.inStatus || "—") + ")" + (r.outTime ? "، انصراف " + t(r.outTime, r.outReal) + " (" + r.outStatus + ")" : "");

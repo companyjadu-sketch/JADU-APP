@@ -30,7 +30,8 @@ var ATT_DEFAULT_RULES = {
   points_per_stay: 1,         // نقاط البقاء بعد الإغلاق لخدمة زبون
   diff_min: 10,               // فرق بين الوقت المختار ووقت التسجيل الفعلي يُعتبر ملحوظًا (دقيقة)
   diff_count: 2,              // عدد المرات في الشهر التي تُظهر ملاحظة للإدارة لتفحصها
-  opener_6: "", opener_0: "", opener_1: "", opener_2: "", opener_3: "", opener_4: "" // مسؤول الفتح حسب اليوم
+  shift_hours: 8,             // ساعات العمل اليومية لكل موظف (يمكن تغييرها لكل موظف في ورقة الموظفين)
+  hours_tiers: 1              // 1 = نقص الساعات يُخصم بنفس فئات التأخير، 0 = ملاحظة فقط
 };
 
 // وصف كل قاعدة (يظهر في صفحة القواعد وفي سجل التعديلات)
@@ -44,8 +45,7 @@ var ATT_RULE_LABELS = {
   allowance_max: "السماح الشهري حتى (دقيقة)", allowance_per_month: "مرات السماح في الشهر",
   absence_deduct: "خصم الغياب بدون عذر (يوم)", points_per_stay: "نقاط البقاء بعد الإغلاق",
   diff_min: "فرق الوقت الملحوظ (دقيقة)", diff_count: "عدد الفروق في الشهر لإظهار ملاحظة",
-  opener_6: "مسؤول الفتح — السبت", opener_0: "مسؤول الفتح — الأحد", opener_1: "مسؤول الفتح — الاثنين",
-  opener_2: "مسؤول الفتح — الثلاثاء", opener_3: "مسؤول الفتح — الأربعاء", opener_4: "مسؤول الفتح — الخميس"
+  shift_hours: "ساعات العمل اليومية", hours_tiers: "خصم نقص الساعات (1 نعم، 0 ملاحظة فقط)"
 };
 
 var ATT_DAY_NAMES = ["الأحد","الاثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"];
@@ -61,7 +61,7 @@ function attMergeRules(r){
   for (k in ATT_DEFAULT_RULES) out[k] = ATT_DEFAULT_RULES[k];
   if (r) for (k in r) if (r[k] !== "" && r[k] !== null && r[k] !== undefined) out[k] = r[k];
   ["shop_lat","shop_lng","radius_m","grace_min","t2_max","t2_free","t2_deduct","t3_max","t3_deduct",
-   "t4_deduct","opener_extra","allowance_max","allowance_per_month","absence_deduct","points_per_stay","diff_min","diff_count"]
+   "t4_deduct","opener_extra","allowance_max","allowance_per_month","absence_deduct","points_per_stay","diff_min","diff_count","shift_hours","hours_tiers"]
     .forEach(function(n){ out[n] = Number(out[n]); });
   return out;
 }
@@ -108,26 +108,42 @@ function attParseDate(s){ var p = String(s).split("-"); return new Date(Number(p
 function attDayName(dateStr){ return ATT_DAY_NAMES[attParseDate(dateStr).getDay()]; }
 function attMonthKey(dateStr){ return String(dateStr).slice(0, 7); }               // "2026-10"
 function attMonthTitle(key){ var p = key.split("-"); return ATT_MONTH_NAMES[Number(p[1]) - 1] + " " + p[0]; }
-function attOpenerFor(dateStr, rules){ return rules["opener_" + attParseDate(dateStr).getDay()] || ""; }
+// ساعات العمل المطلوبة لموظف (من ورقة الموظفين إن وُجدت، وإلا القاعدة العامة)
+function attHoursFor(emp, rules){
+  var h = rules.emp_hours && Number(rules.emp_hours[emp]);
+  return h > 0 ? h : Number(rules.shift_hours) || 8;
+}
+function attFmtDur(min){
+  if (min === null || min === undefined) return "—";
+  var h = Math.floor(min / 60), m = min % 60;
+  return h + ":" + (m < 10 ? "0" : "") + m;
+}
 
 function attIsAbsent(r){
   return r.inStatus === ATT_STATUS.ABSENT || r.inStatus === ATT_STATUS.ABSENT_EXCUSED || r.inStatus === ATT_STATUS.REJECTED;
 }
 
 // ---------------------------------------------------------------------
-// حساب التأخير والخصم لكل سجلات شهر واحد + ملخص كل موظف
-// records: [{date, emp, inTime, inStatus, outTime, outStatus, opener, allowance, excuse, points, ...}]
+// حساب الخصم لكل سجلات شهر واحد + ملخص كل موظف
+// كل موظف يعمل عددًا محددًا من الساعات (8 افتراضيًا):
+//   • من فتح المحل (opener): يُحسب تأخيره من بداية الدوام (10:00) بفئات اللائحة
+//   • غيره: لا يُحسب عليه تأخير، بل يُحسب نقص ساعات عمله عن المطلوب بنفس الفئات
+//   • من أغلق المحل (closer): يُلاحَظ إن أغلق قبل نهاية الدوام
+// records: [{date, emp, inTime, inStatus, outTime, outStatus, opener, closer, allowance, excuse, points, ...}]
 // ---------------------------------------------------------------------
 function attComputeMonth(records, rulesIn){
   var rules = attMergeRules(rulesIn);
-  var start = attToMin(rules.work_start);
+  var start = attToMin(rules.work_start), end = attToMin(rules.work_end);
   var t2Count = {}, allowUsed = {};
   var sorted = records.slice().sort(function(a, b){
     return a.date < b.date ? -1 : a.date > b.date ? 1 : (attToMin(a.inTime) || 0) - (attToMin(b.inTime) || 0);
   });
   sorted.forEach(function(r){
     var emp = r.emp;
-    r.lateMin = null; r.cat = ""; r.deduct = 0; r.flags = [];
+    r.opener = !!r.opener; r.closer = !!r.closer;
+    r.lateMin = null; r.workedMin = null; r.shortMin = null; r.lostMin = null; r.lostKind = "";
+    r.reqMin = Math.round(attHoursFor(emp, rules) * 60);
+    r.cat = ""; r.deduct = 0; r.flags = [];
     r.inDiff = attTimeDiff(r.inTime, r.inReal);
     r.outDiff = attTimeDiff(r.outTime, r.outReal);
     r.bigDiff = Math.max(r.inDiff, r.outDiff) >= rules.diff_min;
@@ -137,50 +153,87 @@ function attComputeMonth(records, rulesIn){
       return;
     }
     if (r.inStatus === ATT_STATUS.ABSENT_EXCUSED) { r.cat = "غياب بعذر"; return; }
-    var inMin = attToMin(r.inTime);
+    var inMin = attToMin(r.inTime), outMin = attToMin(r.outTime);
     if (inMin === null) return;
-    var late = Math.max(0, inMin - start);
-    r.lateMin = late;
+    if (outMin !== null) { r.workedMin = Math.max(0, outMin - inMin); r.shortMin = Math.max(0, r.reqMin - r.workedMin); }
+    if (r.closer && outMin !== null && outMin < end) r.flags.push("أغلق المحل قبل الموعد بـ " + (end - outMin) + " دقيقة");
+    if (r.opener) {
+      r.lateMin = Math.max(0, inMin - start);
+      r.lostMin = r.lateMin; r.lostKind = "تأخير";
+      if (r.shortMin > rules.grace_min) r.flags.push("عمل " + attFmtDur(r.workedMin) + " من " + attFmtDur(r.reqMin) + " ساعات");
+    } else {
+      r.lateMin = 0;
+      if (r.shortMin === null) { r.cat = "لم يسجّل انصرافه"; return; }
+      r.lostMin = r.shortMin; r.lostKind = "نقص ساعات";
+    }
+    var lost = r.lostMin, kind = r.lostKind;
     if (r.excuse) { r.cat = "عذر طارئ"; return; }
-    if (r.allowance && late > 0) {
+    if (r.allowance && lost > 0) {
       var used = allowUsed[emp] || 0;
-      if (late <= rules.allowance_max && !r.opener && used < rules.allowance_per_month) {
+      if (lost <= rules.allowance_max && !r.opener && used < rules.allowance_per_month) {
         allowUsed[emp] = used + 1; r.cat = "سماح شهري"; return;
       }
-      r.flags.push(r.opener ? "السماح لا يُطبَّق على مسؤول الفتح"
+      r.flags.push(r.opener ? "السماح لا يُطبَّق على من فتح المحل"
                  : used >= rules.allowance_per_month ? "السماح الشهري مستخدم من قبل"
-                 : "التأخير أكثر من حد السماح");
+                 : kind + " أكثر من حد السماح");
     }
-    if (late <= rules.grace_min) { r.cat = "منتظم"; }
-    else if (late <= rules.t2_max) {
+    var apply = r.opener || Number(rules.hours_tiers) === 1;
+    if (lost <= rules.grace_min) { r.cat = "منتظم"; }
+    else if (lost <= rules.t2_max) {
       t2Count[emp] = (t2Count[emp] || 0) + 1;
-      r.cat = "تأخير " + (rules.grace_min + 1) + "–" + rules.t2_max;
+      r.cat = kind + " " + (rules.grace_min + 1) + "–" + rules.t2_max;
       r.t2Index = t2Count[emp];
-      if (t2Count[emp] > rules.t2_free) r.deduct += rules.t2_deduct;
+      if (apply && t2Count[emp] > rules.t2_free) r.deduct += rules.t2_deduct;
     }
-    else if (late <= rules.t3_max) { r.cat = "تأخير " + (rules.t2_max + 1) + "–" + rules.t3_max; r.deduct += rules.t3_deduct; }
-    else { r.cat = "تأخير أكثر من ساعة"; r.deduct += rules.t4_deduct; }
-    if (r.opener && late > rules.grace_min) { r.deduct += rules.opener_extra; r.flags.push("تأخر مسؤول فتح المحل"); }
+    else if (lost <= rules.t3_max) { r.cat = kind + " " + (rules.t2_max + 1) + "–" + rules.t3_max; if (apply) r.deduct += rules.t3_deduct; }
+    else { r.cat = kind + " أكثر من ساعة"; r.t4 = true; if (apply) r.deduct += rules.t4_deduct; }
+    if (r.opener && lost > rules.grace_min) { r.deduct += rules.opener_extra; r.flags.push("تأخر فتح المحل"); }
+  });
+
+  // ملاحظات على مستوى اليوم: من فتح المحل ومن أغلقه
+  var days = {};
+  sorted.forEach(function(r){
+    if (attIsAbsent(r) || !r.inTime) return;
+    var d = days[r.date] || (days[r.date] = { date: r.date, openers: [], closers: [], present: 0, allOut: true });
+    d.present++;
+    if (r.opener) d.openers.push(r.emp);
+    if (r.closer) d.closers.push(r.emp);
+    if (!r.outTime) d.allOut = false;
+  });
+  var dayFlags = [];
+  Object.keys(days).sort().forEach(function(k){
+    var d = days[k], f = [];
+    if (!d.openers.length) f.push("لم يسجّل أحد أنه فتح المحل");
+    if (d.openers.length > 1) f.push("أكثر من موظف سجّل أنه فتح المحل: " + d.openers.join("، "));
+    if (d.allOut && !d.closers.length) f.push("لم يسجّل أحد أنه أغلق المحل");
+    if (d.closers.length > 1) f.push("أكثر من موظف سجّل أنه أغلق المحل: " + d.closers.join("، "));
+    if (f.length) dayFlags.push({ date: k, flags: f });
   });
 
   var summary = {};
   sorted.forEach(function(r){
     var s = summary[r.emp] || (summary[r.emp] = { emp: r.emp, present: 0, onTime: 0, t2: 0, t3: 0, t4: 0,
-      allowance: 0, excuse: 0, absent: 0, absentExcused: 0, pending: 0, deduct: 0, points: 0, lateMin: 0, diffs: [] });
+      allowance: 0, excuse: 0, absent: 0, absentExcused: 0, pending: 0, deduct: 0, points: 0, lateMin: 0, lostMin: 0,
+      workedMin: 0, reqMin: 0, shortDays: 0, openDays: 0, closeDays: 0, diffs: [] });
     if (r.bigDiff) s.diffs.push({ date: r.date, inTime: r.inTime, inReal: r.inReal, inDiff: r.inDiff, outTime: r.outTime, outReal: r.outReal, outDiff: r.outDiff });
     if (r.inStatus === ATT_STATUS.PENDING || r.outStatus === ATT_STATUS.PENDING || r.pending) s.pending++;
     s.deduct += r.deduct || 0;
     s.points += Number(r.points) || 0;
     if (r.inStatus === ATT_STATUS.ABSENT || r.inStatus === ATT_STATUS.REJECTED) { s.absent++; return; }
     if (r.inStatus === ATT_STATUS.ABSENT_EXCUSED) { s.absentExcused++; return; }
-    if (r.lateMin === null) return;
-    s.present++; s.lateMin += r.lateMin;
+    if (!r.inTime) return;
+    s.present++;
+    if (r.opener) s.openDays++;
+    if (r.closer) s.closeDays++;
+    if (r.workedMin !== null) { s.workedMin += r.workedMin; s.reqMin += r.reqMin; if (r.shortMin > rules.grace_min) s.shortDays++; }
+    if (r.opener) s.lateMin += r.lateMin || 0;
+    s.lostMin += r.lostMin || 0;
     if (r.cat === "منتظم") s.onTime++;
     else if (r.cat === "سماح شهري") s.allowance++;
     else if (r.cat === "عذر طارئ") s.excuse++;
-    else if (r.cat.indexOf("أكثر من ساعة") !== -1) s.t4++;
+    else if (r.t4) s.t4++;
     else if (r.t2Index) s.t2++;
-    else s.t3++;
+    else if (r.lostMin > rules.grace_min) s.t3++;
   });
   Object.keys(summary).forEach(function(k){
     var s = summary[k];
@@ -196,7 +249,7 @@ function attComputeMonth(records, rulesIn){
     else if (violations || repeatedLate) s.rating = "عليه ملاحظات";
     else s.rating = "منتظم";
   });
-  return { records: sorted, summary: summary };
+  return { records: sorted, summary: summary, dayFlags: dayFlags };
 }
 
 // يحدد حالة التسجيل الجديدة حسب المسافة فقط.
@@ -212,7 +265,7 @@ function attDecideStatus(opts, rules){
 
 if (typeof module !== "undefined") module.exports = {
   ATT_DEFAULT_RULES: ATT_DEFAULT_RULES, ATT_STATUS: ATT_STATUS, attComputeMonth: attComputeMonth,
-  attDecideStatus: attDecideStatus, attDistance: attDistance, attTimeDiff: attTimeDiff, attMergeRules: attMergeRules, attToMin: attToMin
+  attDecideStatus: attDecideStatus, attDistance: attDistance, attHoursFor: attHoursFor, attTimeDiff: attTimeDiff, attMergeRules: attMergeRules, attToMin: attToMin
 };
 
 
@@ -234,10 +287,13 @@ var DEV_OK = "معتمد", DEV_PENDING = "بانتظار الموافقة", DEV_
 
 // أعمدة ورقة الشهر — الترتيب ثابت
 var COLS = ["id","التاريخ","اليوم","الموظف","وقت الحضور (اختاره الموظف)","وقت تسجيل الحضور الفعلي","مسافة الحضور (م)","حالة الحضور",
-            "وقت الانصراف (اختاره الموظف)","وقت تسجيل الانصراف الفعلي","مسافة الانصراف (م)","حالة الانصراف","مسؤول الفتح","سماح شهري",
-            "عذر طارئ","دقائق التأخير","الفئة","الخصم (يوم)","نقاط","بقاء بعد الإغلاق","طلب معلّق","ملاحظات"];
+            "وقت الانصراف (اختاره الموظف)","وقت تسجيل الانصراف الفعلي","مسافة الانصراف (م)","حالة الانصراف","فتح المحل","سماح شهري",
+            "عذر طارئ","دقائق التأخير (لمن فتح)","الفئة","الخصم (يوم)","نقاط","بقاء بعد الإغلاق","طلب معلّق","ملاحظات",
+            "أغلق المحل","ساعات العمل","نقص الساعات (دقيقة)"];
 var KEYS = ["id","date","day","emp","inTime","inReal","inDist","inStatus","outTime","outReal","outDist","outStatus",
-            "opener","allowance","excuse","lateMin","cat","deduct","points","stay","pending","note"];
+            "opener","allowance","excuse","lateMin","cat","deduct","points","stay","pending","note",
+            "closer","worked","shortMin"];
+var BOOL_KEYS = ["opener","allowance","excuse","closer"];
 var SUMMARY_COL = COLS.length + 2; // ملخص الشهر يُكتب يسار الجدول بعمودين فاضيين
 
 // ---------------------------------------------------------------------
@@ -293,9 +349,13 @@ var API = {
     var emp = authEmployee_(req);
     var now = nowParts_(), rules = getRules_();
     var mk = req.month || now.date.slice(0, 7);
-    var res = attComputeMonth(readMonth_(mk).filter(function(r){ return r.emp === emp.name; }), rules);
+    var all = readMonth_(mk);
+    var res = attComputeMonth(all.filter(function(r){ return r.emp === emp.name; }), rules);
     var today = res.records.filter(function(r){ return r.date === now.date; })[0] || null;
-    return { emp: { id: emp.id, name: emp.name }, now: now, rules: publicRules_(rules), today: today,
+    var todays = all.filter(function(r){ return r.date === now.date; });
+    return { emp: { id: emp.id, name: emp.name, hours: attHoursFor(emp.name, rules) }, now: now, rules: publicRules_(rules), today: today,
+             openedBy: todays.filter(function(r){ return r.opener; }).map(function(r){ return r.emp; }),
+             closedBy: todays.filter(function(r){ return r.closer; }).map(function(r){ return r.emp; }),
              records: res.records, summary: res.summary[emp.name] || null, month: mk };
   },
 
@@ -310,7 +370,7 @@ var API = {
     var d = attDecideStatus({ distance: dist, requested: requested, real: now.time }, rules);
     var rec = existing || { id: Utilities.getUuid().slice(0, 8), date: now.date, day: attDayName(now.date), emp: emp.name };
     rec.inTime = requested; rec.inReal = now.time; rec.inDist = dist === null ? "" : dist; rec.inStatus = d.status;
-    rec.opener = attOpenerFor(now.date, rules) === emp.name;
+    rec.opener = !!req.opener;
     rec.allowance = !!req.allowance;
     rec.pending = d.reasons.length ? "حضور: " + d.reasons.join("، ") : "";
     rec.note = joinNote_(rec.note, req.note);
@@ -330,6 +390,7 @@ var API = {
     var dist = locDistance_(req, rules);
     var d = attDecideStatus({ distance: dist, requested: requested, real: now.time }, rules);
     rec.outTime = requested; rec.outReal = now.time; rec.outDist = dist === null ? "" : dist; rec.outStatus = d.status;
+    rec.closer = !!req.closer;
     var after = attToMin(requested) - attToMin(rules.work_end);
     rec.stay = req.stay && after > 0 ? "طلب نقاط: بقي " + after + " دقيقة لخدمة زبون" : "";
     var parts = []; if (rec.pending) parts.push(rec.pending);
@@ -368,7 +429,8 @@ var API = {
     var res = attComputeMonth(readMonth_(mk), rules);
     var devs = getDevices_();
     return { month: mk, records: res.records, summary: res.summary, rules: rules,
-             employees: getEmployees_().map(function(x){ return { id: x.id, name: x.name, active: x.active }; }),
+             employees: getEmployees_().map(function(x){ return { id: x.id, name: x.name, hours: x.hours, active: x.active }; }),
+             dayFlags: res.dayFlags,
              months: listMonths_(), now: nowParts_(),
              deviceRequests: devs.filter(function(d){ return d.status === DEV_PENDING; }).map(function(d){
                var cur = devs.filter(function(x){ return x.deviceId === d.deviceId && x.status === DEV_OK; })[0];
@@ -435,7 +497,7 @@ var API = {
     var rec = readMonth_(mk).filter(function(r){ return r.id === req.id; })[0];
     if (!rec) throw new Error("السجل غير موجود");
     var f = req.fields || {}, changes = [];
-    ["opener","excuse","allowance"].forEach(function(k){
+    ["opener","closer","excuse","allowance"].forEach(function(k){
       if (k in f && !!f[k] !== !!rec[k]) { changes.push(fieldLabel_(k) + ": " + yn_(rec[k]) + " ← " + yn_(f[k])); rec[k] = !!f[k]; }
     });
     if ("points" in f && Number(f.points) !== (Number(rec.points) || 0)) { changes.push("النقاط: " + (Number(rec.points) || 0) + " ← " + Number(f.points)); rec.points = Number(f.points); }
@@ -483,10 +545,12 @@ var API = {
       if (ex) {
         var row = ex.row;
         if (ex.name !== name) { log_(who, "تعديل موظف", ex.name, name, ""); sh.getRange(row, 2).setValue(name); }
+        var nh = Number(e.hours) > 0 ? Number(e.hours) : "";
+        if (String(nh) !== String(ex.hours)) { sh.getRange(row, 3).setValue(nh); log_(who, "تعديل ساعات العمل", name + ": " + (ex.hours || "الافتراضي"), nh || "الافتراضي", ""); }
         if (!!e.active !== ex.active) { sh.getRange(row, 4).setValue(e.active ? "نشط" : "موقوف"); log_(who, e.active ? "تفعيل موظف" : "إيقاف موظف", name, "", ""); }
       } else {
         var id = cur.reduce(function(m, c){ return Math.max(m, Number(c.id) || 0); }, 0) + 1;
-        sh.appendRow([id, name, "", "نشط"]);
+        sh.appendRow([id, name, Number(e.hours) > 0 ? Number(e.hours) : "", "نشط"]);
         log_(who, "إضافة موظف", "", name, "");
       }
     });
@@ -547,15 +611,19 @@ function readEmployees_(){
   var vals = sheet_(SH_EMP).getDataRange().getValues();
   var out = [];
   for (var i = 1; i < vals.length; i++) if (vals[i][1])
-    out.push({ row: i + 1, id: vals[i][0], name: String(vals[i][1]).trim(), pin: String(vals[i][2]).trim(), active: vals[i][3] !== "موقوف" });
+    out.push({ row: i + 1, id: vals[i][0], name: String(vals[i][1]).trim(), hours: Number(vals[i][2]) || "", active: vals[i][3] !== "موقوف" });
   return out;
 }
 function getRules_(){
-  return attMergeRules(cached_("c_rules", function(){
+  var hours = {};
+  getEmployees_().forEach(function(e){ if (Number(e.hours) > 0) hours[e.name] = Number(e.hours); });
+  var r = attMergeRules(cached_("c_rules", function(){
     var vals = sheet_(SH_RULES).getDataRange().getValues(), r = {};
     for (var i = 1; i < vals.length; i++) if (vals[i][0]) r[vals[i][0]] = vals[i][1] instanceof Date ? fmtTime_(vals[i][1]) : vals[i][1];
     return r;
   }));
+  r.emp_hours = hours;
+  return r;
 }
 
 // الأجهزة: كل هاتف مربوط باسم موظف
@@ -587,7 +655,7 @@ function readLog_(n){
 function publicRules_(r){
   return { work_start: r.work_start, work_end: r.work_end, prompt_from: r.prompt_from, workdays: r.workdays,
            radius_m: r.radius_m, shop_lat: r.shop_lat, shop_lng: r.shop_lng, allowance_max: r.allowance_max, grace_min: r.grace_min,
-           opener_6: r.opener_6, opener_0: r.opener_0, opener_1: r.opener_1, opener_2: r.opener_2, opener_3: r.opener_3, opener_4: r.opener_4 };
+           shift_hours: r.shift_hours, emp_hours: r.emp_hours };
 }
 
 function monthSheet_(mk, create){
@@ -603,14 +671,22 @@ function monthSheet_(mk, create){
   }
   return sh;
 }
+// ترقية ورقة شهر أُنشئت بالأعمدة القديمة (قبل إضافة ساعات العمل)
+function ensureCols_(sh){
+  var col = KEYS.indexOf("closer") + 1;
+  if (sh.getRange(1, col).getValue() === COLS[col - 1]) return;
+  sh.getRange(1, col, sh.getMaxRows(), 30).clearContent();
+  sh.getRange(1, 1, 1, COLS.length).setValues([COLS]).setFontWeight("bold").setBackground("#1F3A5F").setFontColor("#FFFFFF");
+}
 function readMonth_(mk){
   var sh = monthSheet_(mk, false); if (!sh) return [];
+  ensureCols_(sh);
   var last = sh.getLastRow(); if (last < 2) return [];
   return sh.getRange(2, 1, last - 1, COLS.length).getValues().filter(function(r){ return r[0]; }).map(function(r){
     var o = {}; KEYS.forEach(function(k, i){ o[k] = r[i]; });
     o.date = o.date instanceof Date ? Utilities.formatDate(o.date, TZ, "yyyy-MM-dd") : String(o.date);
     ["inTime","inReal","outTime","outReal"].forEach(function(k){ o[k] = o[k] instanceof Date ? fmtTime_(o[k]) : String(o[k] || ""); });
-    ["opener","allowance","excuse"].forEach(function(k){ o[k] = o[k] === true || o[k] === "نعم"; });
+    BOOL_KEYS.forEach(function(k){ o[k] = o[k] === true || o[k] === "نعم"; });
     o.points = Number(o.points) || 0;
     return o;
   });
@@ -619,7 +695,7 @@ function writeRecord_(rec){
   var mk = attMonthKey(rec.date), sh = monthSheet_(mk, true);
   var row = KEYS.map(function(k){
     var v = rec[k];
-    if (k === "opener" || k === "allowance" || k === "excuse") return v ? "نعم" : "";
+    if (BOOL_KEYS.indexOf(k) !== -1) return v ? "نعم" : "";
     return v === undefined || v === null ? "" : v;
   });
   var ids = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues().map(function(r){ return r[0]; }) : [];
@@ -635,19 +711,26 @@ function recalcMonth_(mk){
   var last = sh.getLastRow();
   if (last > 1) {
     var ids = sh.getRange(2, 1, last - 1, 1).getValues();
-    var out = ids.map(function(r){ var x = byId[r[0]]; return x ? [x.lateMin === null ? "" : x.lateMin, x.cat, x.deduct] : ["", "", ""]; });
+    var out = ids.map(function(r){ var x = byId[r[0]]; return x ? [x.opener && x.lateMin !== null ? x.lateMin : "", x.cat, x.deduct] : ["", "", ""]; });
     sh.getRange(2, KEYS.indexOf("lateMin") + 1, out.length, 3).setValues(out);
+    var hrs = ids.map(function(r){ var x = byId[r[0]]; return x ? [x.workedMin === null ? "" : attFmtDur(x.workedMin), x.shortMin === null ? "" : x.shortMin] : ["", ""]; });
+    sh.getRange(2, KEYS.indexOf("worked") + 1, hrs.length, 2).setNumberFormat("@").setValues(hrs);
     sh.getRange(2, 1, last - 1, COLS.length).sort([{ column: 2, ascending: true }, { column: 4, ascending: true }]);
   }
   // ملخص الشهر
-  var head = ["الموظف","أيام الحضور","منتظم","تأخير 16–30","تأخير 31–60","أكثر من ساعة","سماح شهري","عذر طارئ","غياب","غياب بعذر","بانتظار الموافقة","مجموع الخصم (يوم)","النقاط","التقييم","فروق الوقت","ملاحظة للإدارة"];
+  var head = ["الموظف","أيام الحضور","ساعات العمل","المطلوب","أيام فتح المحل","أيام الإغلاق","منتظم","16–30 د","31–60 د","أكثر من ساعة","سماح شهري","عذر طارئ","غياب","غياب بعذر","بانتظار الموافقة","مجموع الخصم (يوم)","النقاط","التقييم","فروق الوقت","ملاحظة للإدارة"];
   var rows = Object.keys(res.summary).map(function(k){
     var s = res.summary[k];
-    return [s.emp, s.present, s.onTime, s.t2, s.t3, s.t4, s.allowance, s.excuse, s.absent, s.absentExcused, s.pending, s.deduct, s.points, s.rating, s.diffCount, s.diffAlert];
+    return [s.emp, s.present, attFmtDur(s.workedMin), attFmtDur(s.reqMin), s.openDays, s.closeDays, s.onTime, s.t2, s.t3, s.t4, s.allowance, s.excuse, s.absent, s.absentExcused, s.pending, s.deduct, s.points, s.rating, s.diffCount, s.diffAlert];
   });
-  sh.getRange(1, SUMMARY_COL, Math.max(sh.getMaxRows(), 2), head.length).clearContent();
+  sh.getRange(1, SUMMARY_COL, Math.max(sh.getMaxRows(), 2), head.length + 4).clearContent();
   sh.getRange(1, SUMMARY_COL, 1, head.length).setValues([head]).setFontWeight("bold").setBackground("#E10A1E").setFontColor("#FFFFFF");
-  if (rows.length) sh.getRange(2, SUMMARY_COL, rows.length, head.length).setValues(rows);
+  if (rows.length) sh.getRange(2, SUMMARY_COL, rows.length, head.length).setNumberFormat("@").setValues(rows);
+  // ملاحظات الأيام: من فتح المحل ومن أغلقه
+  var fr = rows.length + 4;
+  sh.getRange(fr, SUMMARY_COL, 1, 2).setValues([["التاريخ","ملاحظات اليوم"]]).setFontWeight("bold");
+  if (res.dayFlags.length) sh.getRange(fr + 1, SUMMARY_COL, res.dayFlags.length, 2)
+    .setValues(res.dayFlags.map(function(d){ return [d.date, d.flags.join(" | ")]; }));
 }
 
 function listMonths_(){
@@ -682,7 +765,7 @@ function markAbsences(){
   getEmployees_().filter(function(e){ return e.active; }).forEach(function(e){
     if (rows.some(function(r){ return r.emp === e.name; })) return;
     writeRecord_({ id: Utilities.getUuid().slice(0, 8), date: now.date, day: attDayName(now.date), emp: e.name,
-                   inStatus: ATT_STATUS.ABSENT, opener: attOpenerFor(now.date, rules) === e.name, note: "سُجّل تلقائيًا" });
+                   inStatus: ATT_STATUS.ABSENT, note: "سُجّل تلقائيًا" });
   });
   recalcMonth_(mk);
 }
@@ -694,9 +777,10 @@ function setup(){
   var ss = ss_();
   if (!ss.getSheetByName(SH_EMP)) {
     var e = ss.insertSheet(SH_EMP); e.setRightToLeft(true);
-    e.getRange(1, 1, 1, 4).setValues([["رقم","اسم الموظف","(غير مستخدم)","الحالة"]]).setFontWeight("bold");
+    e.getRange(1, 1, 1, 4).setValues([["رقم","اسم الموظف","ساعات العمل اليومية (فارغ = 8)","الحالة"]]).setFontWeight("bold");
     e.getRange(2, 1, 3, 4).setValues([[1,"إسلام الجهاني","","نشط"],[2,"حكيم سحيم","","نشط"],[3,"أنس الترهوني","","نشط"]]);
   }
+  else ss.getSheetByName(SH_EMP).getRange(1, 3).setValue("ساعات العمل اليومية (فارغ = 8)");
   if (!ss.getSheetByName(SH_RULES)) {
     var r = ss.insertSheet(SH_RULES); r.setRightToLeft(true);
     r.getRange("B:B").setNumberFormat("@");
@@ -735,7 +819,7 @@ function locDistance_(req, rules){
 }
 function joinNote_(a, b){ b = String(b || "").trim().slice(0, 200); return !b ? (a || "") : (a ? a + " | " + b : b); }
 function yn_(v){ return v ? "نعم" : "لا"; }
-function fieldLabel_(k){ return { opener: "مسؤول الفتح", excuse: "عذر طارئ", allowance: "سماح شهري" }[k] || k; }
+function fieldLabel_(k){ return { opener: "فتح المحل", closer: "أغلق المحل", excuse: "عذر طارئ", allowance: "سماح شهري" }[k] || k; }
 function describe_(r){
   var t = function(v, real){ return (v || "—") + (real && real !== v ? " [سُجّل فعليًا " + real + "]" : ""); };
   return "حضور " + t(r.inTime, r.inReal) + " (" + (r.inStatus || "—") + ")" + (r.outTime ? "، انصراف " + t(r.outTime, r.outReal) + " (" + r.outStatus + ")" : "");
