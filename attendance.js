@@ -12,7 +12,7 @@ const ATT_API_URL = "https://script.google.com/macros/s/AKfycbz03l_hfTTXQshkT5zU
 const ATT_SHEET_URL = ""; // رابط ملف جوجل شيت (لزر "فتح الشيت" عند الإدارة)
 // ATT_LIVE = false: القسم مخفي عن الموظفين، ويظهر للتجربة فقط بفتح staff.html?att-test
 // (التجربة تحفظ في الشيت الحقيقي). بعد الموافقة يصير true فيظهر للجميع.
-const ATT_LIVE = false;
+const ATT_LIVE = true;
 const DEMO = !ATT_API_URL || /att-demo/.test(location.search);
 if (!ATT_LIVE && !/att-(demo|test)/.test(location.search)) return;
 const LS_EMP = "jadu_att_emp";
