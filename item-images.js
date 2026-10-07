@@ -85,3 +85,21 @@ const ITEM_IMAGES = {
   "2531": "https://static.ticimax.cloud/cdn-cgi/image/width=800,quality=85,format=webp/53979/uploads/urunresimleri/buyuk/net-celik-helvane-tencere-kapakli-1103-a1-e71.jpg",
   "2533": "https://static.ticimax.cloud/cdn-cgi/image/width=800,quality=85,format=webp/53979/uploads/urunresimleri/buyuk/net-celik-helvane-tencere-kapakli-1103-a1-e71.jpg"
 };
+
+// صور حسب الموديل المكتوب في اسم الصنف (مثل "مريول 236")
+// أي صنف اسمه فيه كلمة المريول + رقم الموديل يأخذ صورة الموديل تلقائيًا
+const MODEL_IMAGES = [
+  {
+    word: /مري[وا]?ل|مريلة/,
+    images: {
+      "236": "images/aprons/236.jpg",
+      "502": "images/aprons/502.jpg",
+      "512": "images/aprons/512.jpg",
+      "602": "images/aprons/602.jpg",
+      "608": "images/aprons/608.jpg",
+      "609": "images/aprons/609.jpg",
+      "613": "images/aprons/613.jpg",
+      "1020": "images/aprons/1020.jpg"
+    }
+  }
+];

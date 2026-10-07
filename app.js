@@ -938,7 +938,27 @@ function categoryIcon(category){
 function itemImage(number){
   const n = String(number).trim();
   if(UPLOADED_PHOTOS[n] && UPLOADED_PHOTOS[n].t) return UPLOADED_PHOTOS[n].t; // صورة أضافها موظف/إدارة (مصغّرة)
-  return (typeof ITEM_IMAGES !== 'undefined' && ITEM_IMAGES[n]) || '';
+  return (typeof ITEM_IMAGES !== 'undefined' && ITEM_IMAGES[n]) || modelImage(n);
+}
+
+// صورة حسب رقم الموديل المكتوب في اسم الصنف (MODEL_IMAGES في item-images.js)
+let modelImageCache = null, modelImageCacheFor = null;
+function modelImage(n){
+  if(typeof MODEL_IMAGES === 'undefined' || !ITEMS.length) return '';
+  if(modelImageCacheFor !== ITEMS){
+    modelImageCache = {};
+    for(const it of ITEMS){
+      const name = String(it.name || '');
+      for(const g of MODEL_IMAGES){
+        if(!g.word.test(name)) continue;
+        const nums = name.match(/\d+/g) || [];
+        const hit = nums.find(x => g.images[x]);
+        if(hit){ modelImageCache[String(it.number).trim()] = g.images[hit]; break; }
+      }
+    }
+    modelImageCacheFor = ITEMS;
+  }
+  return modelImageCache[n] || '';
 }
 
 // ===== صور الأصناف من الهاتف (Firestore) =====
