@@ -53,8 +53,10 @@ var ATT_MONTH_NAMES = ["يناير","فبراير","مارس","أبريل","ما
 
 var ATT_STATUS = {
   OK: "معتمد", PENDING: "بانتظار الموافقة", REJECTED: "مرفوض",
-  ABSENT: "غائب بدون عذر", ABSENT_EXCUSED: "غائب بعذر"
+  ABSENT: "غائب بدون عذر", ABSENT_EXCUSED: "غائب بعذر", LEAVE: "عطلة"
 };
+// طلب عطلة بانتظار الموافقة: حالة "بانتظار الموافقة" بدون وقت حضور، ونص الطلب يبدأ بـ "طلب عطلة"
+function attIsLeaveRequest(r){ return r.inStatus === ATT_STATUS.PENDING && !r.inTime && /^طلب عطلة/.test(String(r.pending || "")); }
 
 function attMergeRules(r){
   var out = {}, k;
@@ -153,6 +155,8 @@ function attComputeMonth(records, rulesIn){
       return;
     }
     if (r.inStatus === ATT_STATUS.ABSENT_EXCUSED) { r.cat = "غياب بعذر"; return; }
+    if (r.inStatus === ATT_STATUS.LEAVE) { r.cat = "عطلة"; return; }
+    if (attIsLeaveRequest(r)) { r.cat = "طلب عطلة"; return; }
     var inMin = attToMin(r.inTime), outMin = attToMin(r.outTime);
     if (inMin === null) return;
     if (outMin !== null) { r.workedMin = Math.max(0, outMin - inMin); r.shortMin = Math.max(0, r.reqMin - r.workedMin); }
@@ -213,7 +217,7 @@ function attComputeMonth(records, rulesIn){
   var summary = {};
   sorted.forEach(function(r){
     var s = summary[r.emp] || (summary[r.emp] = { emp: r.emp, present: 0, onTime: 0, t2: 0, t3: 0, t4: 0,
-      allowance: 0, excuse: 0, absent: 0, absentExcused: 0, pending: 0, deduct: 0, points: 0, lateMin: 0, lostMin: 0,
+      allowance: 0, excuse: 0, absent: 0, absentExcused: 0, leave: 0, leaveDates: [], leavePending: 0, pending: 0, deduct: 0, points: 0, lateMin: 0, lostMin: 0,
       workedMin: 0, reqMin: 0, shortDays: 0, openDays: 0, closeDays: 0, diffs: [] });
     if (r.bigDiff) s.diffs.push({ date: r.date, inTime: r.inTime, inReal: r.inReal, inDiff: r.inDiff, outTime: r.outTime, outReal: r.outReal, outDiff: r.outDiff });
     if (r.inStatus === ATT_STATUS.PENDING || r.outStatus === ATT_STATUS.PENDING || r.pending) s.pending++;
@@ -221,6 +225,8 @@ function attComputeMonth(records, rulesIn){
     s.points += Number(r.points) || 0;
     if (r.inStatus === ATT_STATUS.ABSENT || r.inStatus === ATT_STATUS.REJECTED) { s.absent++; return; }
     if (r.inStatus === ATT_STATUS.ABSENT_EXCUSED) { s.absentExcused++; return; }
+    if (r.inStatus === ATT_STATUS.LEAVE) { s.leave++; s.leaveDates.push(r.date); return; }
+    if (attIsLeaveRequest(r)) { s.leavePending++; return; }
     if (!r.inTime) return;
     s.present++;
     if (r.opener) s.openDays++;
@@ -265,9 +271,8 @@ function attDecideStatus(opts, rules){
 
 if (typeof module !== "undefined") module.exports = {
   ATT_DEFAULT_RULES: ATT_DEFAULT_RULES, ATT_STATUS: ATT_STATUS, attComputeMonth: attComputeMonth,
-  attDecideStatus: attDecideStatus, attDistance: attDistance, attHoursFor: attHoursFor, attTimeDiff: attTimeDiff, attMergeRules: attMergeRules, attToMin: attToMin
+  attDecideStatus: attDecideStatus, attDistance: attDistance, attIsLeaveRequest: attIsLeaveRequest, attHoursFor: attHoursFor, attTimeDiff: attTimeDiff, attMergeRules: attMergeRules, attToMin: attToMin
 };
-
 
 // =====================================================================
 // خادم الحضور والانصراف — Google Apps Script مربوط بملف جوجل شيت
@@ -406,6 +411,41 @@ var API = {
     return { status: d.status, reasons: d.reasons, distance: dist, time: requested };
   },
 
+  // إضافة يوم سابق نسي الموظف تسجيله، أو طلب عطلة — كلاهما بانتظار موافقة الإدارة
+  emp_add_day: function(req){
+    var emp = authEmployee_(req), rules = getRules_(), now = nowParts_();
+    var date = String(req.date || "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("اختر التاريخ");
+    var diffDays = Math.round((attParseDate(date) - attParseDate(now.date)) / 86400000);
+    var kind = req.kind === "leave" ? "leave" : "work";
+    if (kind === "work" && diffDays > 0) throw new Error("لا يمكن تسجيل حضور ليوم لم يأتِ بعد");
+    if (diffDays < -45 || diffDays > 45) throw new Error("التاريخ بعيد جدًا");
+    if (!attIsWorkday(date, rules)) throw new Error("هذا اليوم عطلة أسبوعية");
+    var reason = String(req.reason || "").trim().slice(0, 200);
+    if (!reason) throw new Error("اكتب السبب");
+    var mk = attMonthKey(date);
+    var rec = readMonth_(mk).filter(function(r){ return r.emp === emp.name && r.date === date; })[0];
+    if (rec && rec.inTime) throw new Error("يوجد تسجيل لهذا اليوم — استخدم \"طلب تعديل الوقت\" من السجل");
+    if (rec && rec.inStatus === ATT_STATUS.LEAVE) throw new Error("هذا اليوم مسجّل عطلة من قبل");
+    rec = rec || { id: Utilities.getUuid().slice(0, 8), date: date, day: attDayName(date), emp: emp.name, points: 0 };
+    if (kind === "leave") {
+      rec.inStatus = ATT_STATUS.PENDING;
+      rec.pending = "طلب عطلة — السبب: " + reason;
+    } else {
+      var tin = validTime_(req.inTime), tout = validTime_(req.outTime);
+      if (!tin) throw new Error("اختر وقت الحضور");
+      if (tout && attToMin(tout) <= attToMin(tin)) throw new Error("وقت الانصراف لازم يكون بعد وقت الحضور");
+      rec.inTime = tin; rec.inReal = ""; rec.inDist = ""; rec.inStatus = ATT_STATUS.PENDING;
+      rec.outTime = tout || ""; rec.outReal = ""; rec.outDist = ""; rec.outStatus = tout ? ATT_STATUS.PENDING : "";
+      rec.opener = !!req.opener; rec.closer = !!req.closer;
+      rec.pending = "إضافة يوم سابق (سُجّل يوم " + now.date + " " + now.time + ") — السبب: " + reason;
+    }
+    rec.note = joinNote_(rec.note && !/سُجّل تلقائيًا/.test(rec.note) ? rec.note : "", "");
+    writeRecord_(rec);
+    markDirty_(mk);
+    return { status: ATT_STATUS.PENDING };
+  },
+
   // طلب تعديل وقت سابق — يبقى الوقت الأصلي حتى توافق الإدارة
   emp_edit: function(req){
     var emp = authEmployee_(req);
@@ -484,6 +524,16 @@ var API = {
     var rec = readMonth_(mk).filter(function(r){ return r.id === req.id; })[0];
     if (!rec) throw new Error("السجل غير موجود");
     var before = describe_(rec), rules = getRules_(), d = req.decision;
+    if (attIsLeaveRequest(rec) && (d === "approve" || d === "reject")) {
+      var why = String(rec.pending).replace(/^طلب عطلة — /, "");
+      if (d === "approve") { rec.inStatus = ATT_STATUS.LEAVE; rec.note = joinNote_(rec.note, "عطلة — " + why); }
+      else { rec.inStatus = attParseDate(rec.date) < attParseDate(nowParts_().date) ? ATT_STATUS.ABSENT : ""; rec.note = joinNote_(rec.note, "رُفض طلب العطلة — " + why); }
+      rec.pending = "";
+      writeRecord_(rec);
+      recalcMonth_(mk);
+      log_(who, d === "approve" ? "موافقة على عطلة" : "رفض عطلة", rec.emp + " — " + rec.date, why, req.note || "");
+      return { ok: true };
+    }
     if (d === "approve" || d === "excuse") {
       // تطبيق تعديلات الوقت المطلوبة (إن وجدت) ثم اعتماد السجل
       String(rec.pending || "").split(" | ").forEach(function(p){
@@ -749,10 +799,10 @@ function recalcMonth_(mk){
     sh.getRange(2, 1, last - 1, COLS.length).sort([{ column: 2, ascending: true }, { column: 4, ascending: true }]);
   }
   // ملخص الشهر
-  var head = ["الموظف","أيام الحضور","ساعات العمل","المطلوب","أيام فتح المحل","أيام الإغلاق","منتظم","16–30 د","31–60 د","أكثر من ساعة","سماح شهري","عذر طارئ","غياب","غياب بعذر","بانتظار الموافقة","مجموع الخصم (يوم)","النقاط","التقييم","فروق الوقت","ملاحظة للإدارة"];
+  var head = ["الموظف","أيام الحضور","ساعات العمل","المطلوب","أيام فتح المحل","أيام الإغلاق","منتظم","16–30 د","31–60 د","أكثر من ساعة","سماح شهري","عذر طارئ","غياب","غياب بعذر","أيام العطل","بانتظار الموافقة","مجموع الخصم (يوم)","النقاط","التقييم","فروق الوقت","ملاحظة للإدارة"];
   var rows = Object.keys(res.summary).map(function(k){
     var s = res.summary[k];
-    return [s.emp, s.present, attFmtDur(s.workedMin), attFmtDur(s.reqMin), s.openDays, s.closeDays, s.onTime, s.t2, s.t3, s.t4, s.allowance, s.excuse, s.absent, s.absentExcused, s.pending, s.deduct, s.points, s.rating, s.diffCount, s.diffAlert];
+    return [s.emp, s.present, attFmtDur(s.workedMin), attFmtDur(s.reqMin), s.openDays, s.closeDays, s.onTime, s.t2, s.t3, s.t4, s.allowance, s.excuse, s.absent, s.absentExcused, s.leave, s.pending, s.deduct, s.points, s.rating, s.diffCount, s.diffAlert];
   });
   sh.getRange(1, SUMMARY_COL, Math.max(sh.getMaxRows(), 2), head.length + 4).clearContent();
   sh.getRange(1, SUMMARY_COL, 1, head.length).setValues([head]).setFontWeight("bold").setBackground("#E10A1E").setFontColor("#FFFFFF");
@@ -888,6 +938,7 @@ function joinNote_(a, b){ b = String(b || "").trim().slice(0, 200); return !b ? 
 function yn_(v){ return v ? "نعم" : "لا"; }
 function fieldLabel_(k){ return { opener: "فتح المحل", closer: "أغلق المحل", excuse: "عذر طارئ", allowance: "سماح شهري" }[k] || k; }
 function describe_(r){
+  if (r.inStatus === ATT_STATUS.LEAVE) return "عطلة";
   var t = function(v, real){ return (v || "—") + (real && real !== v ? " [سُجّل فعليًا " + real + "]" : ""); };
   return "حضور " + t(r.inTime, r.inReal) + " (" + (r.inStatus || "—") + ")" + (r.outTime ? "، انصراف " + t(r.outTime, r.outReal) + " (" + r.outStatus + ")" : "");
 }

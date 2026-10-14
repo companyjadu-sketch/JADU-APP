@@ -562,6 +562,8 @@ function dayBits(r){
 }
 
 function catPill(r){
+  if (r.inStatus === ATT_STATUS.LEAVE) return '<span class="att-pill lv">عطلة</span>';
+  if (attIsLeaveRequest(r)) return '<span class="att-pill info">طلب عطلة — بانتظار الموافقة</span>';
   if (r.inStatus === ATT_STATUS.PENDING || r.outStatus === ATT_STATUS.PENDING || r.pending) return '<span class="att-pill info">بانتظار الموافقة</span>';
   if (r.inStatus === ATT_STATUS.ABSENT || r.inStatus === ATT_STATUS.REJECTED) return `<span class="att-pill bad">${esc(r.cat || "غياب")}</span>`;
   if (r.inStatus === ATT_STATUS.ABSENT_EXCUSED) return '<span class="att-pill mute">غياب بعذر</span>';
@@ -611,13 +613,63 @@ function renderEmployee(syncing){
       <div class="att-stat"><span class="k">خصم الشهر</span><span class="v">${fmtDays(s.deduct)} <small>يوم</small></span></div>
       <div class="att-stat"><span class="k">النقاط</span><span class="v">${s.points}</span></div>
       <div class="att-stat"><span class="k">ساعات الشهر</span><span class="v">${attFmtDur(s.workedMin || 0)}</span></div>
-      <div class="att-stat"><span class="k">بانتظار الموافقة</span><span class="v">${s.pending}</span></div>
+      <div class="att-stat"><span class="k">أيام العطل</span><span class="v">${s.leave || 0}${s.leavePending ? ` <small>+${s.leavePending} طلب</small>` : ""}</span></div>
     </div>
+    <div class="att-btns" style="margin:-4px 0 14px"><button class="att-btn" id="attAddDay">➕ نسيت التسجيل في يوم سابق</button><button class="att-btn" id="attAddLeave">🌴 طلب عطلة</button></div>
     <div class="att-box"><h3>سجل الشهر</h3>${rows || '<div class="att-empty">لا توجد سجلات بعد</div>'}</div>`;
+  $("#attAddDay").onclick = () => openAddDay("work");
+  $("#attAddLeave").onclick = () => openAddDay("leave");
   $("#attDoIn") && ($("#attDoIn").onclick = openCheckIn);
   $("#attDoOut") && ($("#attDoOut").onclick = openCheckOut);
   $("#attNotMe").onclick = async () => { await askIdentity(true); renderEmployee(); };
   body.querySelectorAll("[data-edit]").forEach(b => b.onclick = () => openEditRequest(MY.records.find(r => r.id === b.dataset.edit)));
+}
+
+// إضافة يوم سابق نسي تسجيله، أو طلب عطلة — بانتظار موافقة الإدارة
+function addDays(ds, n){ const d = attParseDate(ds); d.setDate(d.getDate() + n); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
+function openAddDay(kind){
+  const rules = attMergeRules(MY.rules), today = todayStr(), isLeave = kind === "leave";
+  const def = isLeave ? today : addDays(today, -1);
+  openSheet(`<h2>${isLeave ? "طلب عطلة" : "تسجيل يوم سابق"}</h2>
+    <p>${isLeave ? "اختر يوم العطلة (اليوم، أو يومًا سابقًا، أو قادمًا). يُرسل الطلب للإدارة، ولا يُعتمد إلا بموافقتها." : "إذا نسيت تسجيل حضورك أو انصرافك في يوم سابق، سجّله هنا. لا يُعتمد إلا بموافقة الإدارة."}</p>
+    <div class="att-field"><label for="attAdDate">التاريخ</label><input type="date" id="attAdDate" value="${def}" max="${isLeave ? addDays(today, 45) : today}" min="${addDays(today, -45)}" style="font-family:'IBM Plex Mono',monospace;direction:ltr;text-align:center;color-scheme:dark"></div>
+    <div class="att-hint" id="attAdDayName" style="margin:-8px 0 12px"></div>
+    ${isLeave ? "" : `<div class="att-grid2"><div class="att-field"><label for="attAdIn">وقت الحضور</label><input type="time" id="attAdIn" value="${esc(rules.work_start)}"></div>
+      <div class="att-field"><label for="attAdOut">وقت الانصراف</label><input type="time" id="attAdOut" value=""></div></div>
+      <label class="att-check"><input type="checkbox" id="attAdOpener"><span>فتحت المحل ذلك اليوم</span></label>
+      <label class="att-check"><input type="checkbox" id="attAdCloser"><span>أغلقت المحل ذلك اليوم</span></label>`}
+    <div class="att-field"><label for="attAdWhy">${isLeave ? "سبب العطلة" : "لماذا لم تسجّل في وقتها؟"}</label><input type="text" id="attAdWhy" maxlength="200" placeholder="${isLeave ? "مثال: ظرف عائلي" : "مثال: نسيت، أو كان الإنترنت مقطوعًا"}"></div>
+    <div class="msg" id="attAdMsg"></div>
+    <div class="att-btns"><button class="att-btn main" id="attAdOk">إرسال للإدارة</button><button class="att-btn" id="attAdCancel">إلغاء</button></div>`);
+  const showDay = () => {
+    const v = $("#attAdDate").value, el = $("#attAdDayName"); if (!v) { el.textContent = ""; return; }
+    const ex = MY.records.find(r => r.date === v);
+    el.textContent = attDayName(v) + (!attIsWorkday(v, rules) ? " — عطلة أسبوعية" : ex && ex.inTime ? " — يوجد تسجيل لهذا اليوم، استخدم طلب تعديل الوقت" : ex && ex.inStatus === ATT_STATUS.LEAVE ? " — مسجّل عطلة" : "");
+  };
+  $("#attAdDate").onchange = showDay; showDay();
+  $("#attAdCancel").onclick = closeSheet;
+  $("#attAdOk").onclick = async () => {
+    const msg = $("#attAdMsg"), date = $("#attAdDate").value, reason = $("#attAdWhy").value.trim();
+    const err = t => { msg.textContent = t; msg.className = "msg err"; };
+    if (!date) return err("اختر التاريخ");
+    if (!isLeave && date > today) return err("لا يمكن تسجيل حضور ليوم لم يأتِ بعد");
+    if (!attIsWorkday(date, rules)) return err("هذا اليوم عطلة أسبوعية");
+    const payload = { kind, date, reason };
+    if (!isLeave) {
+      payload.inTime = normTime($("#attAdIn").value); payload.outTime = normTime($("#attAdOut").value);
+      payload.opener = $("#attAdOpener").checked; payload.closer = $("#attAdCloser").checked;
+      if (!payload.inTime) return err("اختر وقت الحضور");
+      if (payload.outTime && attToMin(payload.outTime) <= attToMin(payload.inTime)) return err("وقت الانصراف لازم يكون بعد وقت الحضور");
+    }
+    if (!reason) return err(isLeave ? "اكتب سبب العطلة" : "اكتب السبب");
+    $("#attAdOk").disabled = true; msg.innerHTML = '<span class="spinner"></span> جارِ الإرسال…'; msg.className = "msg";
+    try {
+      await call("emp_add_day", payload);
+      closeSheet();
+      alertMsg(isLeave ? "تم إرسال طلب العطلة للإدارة، ويظهر في سجلك بعد الموافقة." : "تم إرسال تسجيل اليوم للإدارة، ويُعتمد بعد موافقتها.", "تم الإرسال");
+      refreshMe().then(() => renderEmployee()).catch(() => {});
+    } catch (e) { err(e.message); $("#attAdOk").disabled = false; }
+  };
 }
 
 function openEditRequest(r){
@@ -706,6 +758,11 @@ function renderAdmin(syncing){
     let title, sub, btns;
     if (kind === "absent") { title = `${r.emp} — غائب`; sub = shortDate(r.date) + " · لم يسجّل حضوره"; btns = `<button class="att-btn" data-dec="absent_excused" data-id="${r.id}">بعذر</button><button class="att-btn bad" data-dec="absent" data-id="${r.id}">بدون عذر</button>`; }
     else if (kind === "stay") { title = `${r.emp} — بقاء بعد الإغلاق`; sub = shortDate(r.date) + " · انصراف " + attFmt12(r.outTime) + " · " + String(r.stay).replace(/^طلب نقاط: /, "") + (r.note ? " · " + r.note : ""); btns = `<button class="att-btn ok" data-dec="stay_points" data-id="${r.id}">منح ${rules.points_per_stay} نقطة</button><button class="att-btn" data-dec="stay_no" data-id="${r.id}">رفض</button>`; }
+    else if (attIsLeaveRequest(r)) { title = `${r.emp} — طلب عطلة`; sub = shortDate(r.date) + " · " + String(r.pending).replace(/^طلب عطلة — /, "");
+      btns = `<button class="att-btn ok" data-dec="approve" data-id="${r.id}">موافقة على العطلة</button><button class="att-btn bad" data-dec="reject" data-id="${r.id}">رفض</button>`; }
+    else if (/^إضافة يوم سابق/.test(r.pending || "")) { title = `${r.emp} — إضافة يوم سابق`;
+      sub = shortDate(r.date) + " · حضور " + attFmt12(r.inTime) + (r.outTime ? " · انصراف " + attFmt12(r.outTime) : "") + (r.opener ? " · فتح المحل" : "") + (r.closer ? " · أغلق المحل" : "") + " · " + r.pending.replace(/^إضافة يوم سابق /, "");
+      btns = `<button class="att-btn ok" data-dec="approve" data-id="${r.id}">موافقة</button><button class="att-btn bad" data-dec="reject" data-id="${r.id}">رفض (يُحسب غياب)</button>`; }
     else { title = `${r.emp} — ${r.inStatus === ATT_STATUS.PENDING ? "حضور " + attFmt12(r.inTime) : r.outStatus === ATT_STATUS.PENDING && !/تعديل/.test(r.pending) ? "انصراف " + attFmt12(r.outTime) : "طلب تعديل"}`;
       sub = shortDate(r.date) + (r.opener ? " · فتح المحل" : "") + " · " + timePair("حضور", r.inTime, r.inReal)
         + (r.outTime ? " · " + timePair("انصراف", r.outTime, r.outReal) : "") + " · " + (r.pending || "") + (r.note ? " · " + r.note : "");
@@ -716,7 +773,7 @@ function renderAdmin(syncing){
   const sums = Object.values(d.summary).sort((a, b) => b.points - a.points || a.deduct - b.deduct);
   const sumHtml = sums.map(s => `<div class="att-sum" data-person="${esc(s.emp)}" role="button" tabindex="0"><div class="top"><b>${esc(s.emp)}</b><span class="att-pill ${/متميز/.test(s.rating) ? "ok" : /ملاحظات/.test(s.rating) ? "warn" : "mute"}">${esc(s.rating)}</span></div>
     <div class="nums"><span><b>${s.present}</b>أيام حضور</span><span><b>${fmtDays(s.deduct)}</b>أيام خصم</span><span><b>${s.points}</b>نقاط</span>
-      <span><b>${attFmtDur(s.workedMin || 0)}</b>ساعات عمل</span><span><b>${s.absent}</b>غياب</span><span><b>${s.t2 + s.t3 + s.t4}</b>تأخير/نقص</span></div>
+      <span><b>${attFmtDur(s.workedMin || 0)}</b>ساعات عمل</span><span><b>${s.absent}</b>غياب</span><span><b>${s.leave || 0}</b>أيام عطل</span></div>
     ${s.diffAlert ? `<div class="att-alert warn" style="margin:10px 0 0;padding:10px;font-size:12.5px">${esc(s.diffAlert)}</div>` : ""}
     <div class="att-more">عرض السجل الكامل ‹</div></div>`).join("");
   const alerts = sums.filter(s => s.diffAlert);
@@ -791,11 +848,13 @@ function heatGrid(d, rules){
     let tr = `<tr><td class="name" data-person="${esc(name)}" style="cursor:pointer;text-decoration:underline dotted">${esc(firstName(name))}</td>`;
     for (let i = 1; i <= days; i++) {
       const ds = d.month + "-" + pad(i), r = byKey[name + "|" + ds];
-      if (!attIsWorkday(ds, rules)) { tr += `<td class="c off" title="عطلة">ع</td>`; continue; }
+      if (!attIsWorkday(ds, rules)) { tr += `<td class="c off" title="عطلة أسبوعية">—</td>`; continue; }
       if (!r) { tr += ds <= today ? `<td class="c none" data-new="${ds}" data-emp="${esc(name)}" style="cursor:pointer" title="لا يوجد سجل"></td>` : '<td class="c none"></td>'; continue; }
       let cls, txt;
       const lost = r.lostMin;
-      if (r.inStatus === ATT_STATUS.PENDING || r.outStatus === ATT_STATUS.PENDING || r.pending) { cls = "pend"; txt = lost ? lost : "؟"; }
+      if (r.inStatus === ATT_STATUS.LEAVE) { cls = "lv"; txt = "ع"; }
+      else if (attIsLeaveRequest(r)) { cls = "pend"; txt = "ع؟"; }
+      else if (r.inStatus === ATT_STATUS.PENDING || r.outStatus === ATT_STATUS.PENDING || r.pending) { cls = "pend"; txt = lost ? lost : "؟"; }
       else if (r.inStatus === ATT_STATUS.ABSENT || r.inStatus === ATT_STATUS.REJECTED) { cls = "bad"; txt = "غ"; }
       else if (r.inStatus === ATT_STATUS.ABSENT_EXCUSED) { cls = "ex"; txt = "غ"; }
       else if (r.cat === "سماح شهري" || r.cat === "عذر طارئ") { cls = "ex"; txt = lost || "✓"; }
@@ -810,7 +869,7 @@ function heatGrid(d, rules){
   }).join("");
   return `<div class="att-heat-wrap"><table class="att-heat">${head}${rows}</table></div>
     <div class="att-legend"><span><i style="background:rgba(111,207,142,.5)"></i>منتظم (الرقم = دقائق تأخير من فتح المحل، أو نقص ساعات غيره)</span><span><i style="background:transparent;border-top:3px solid #fff"></i>خط أعلى الخانة = فتح المحل</span><span>… = لم يسجّل انصرافه بعد</span><span><i style="background:rgba(255,184,0,.55)"></i>تأخير بدون خصم</span>
-      <span><i style="background:rgba(255,107,94,.6)"></i>خصم أو غياب (غ)</span><span><i style="background:rgba(120,160,255,.55)"></i>بانتظار الموافقة</span><span><i style="background:var(--steel-200)"></i>سماح، عذر، أو غياب بعذر</span><span>ع = عطلة</span><span><i style="background:transparent;box-shadow:inset 0 0 0 2px #FF8A80"></i>وقت مختار يختلف عن وقت التسجيل الفعلي</span></div>`;
+      <span><i style="background:rgba(255,107,94,.6)"></i>خصم أو غياب (غ)</span><span><i style="background:rgba(120,160,255,.55)"></i>بانتظار الموافقة</span><span><i style="background:var(--steel-200)"></i>سماح، عذر، أو غياب بعذر</span><span><i style="background:rgba(77,208,225,.45)"></i>ع = عطلة</span><span>— = عطلة أسبوعية</span><span><i style="background:transparent;box-shadow:inset 0 0 0 2px #FF8A80"></i>وقت مختار يختلف عن وقت التسجيل الفعلي</span></div>`;
 }
 
 // مخطط دقائق التأخير: المحور الأفقي أيام الشهر، والعمودي دقائق التأخير
@@ -915,6 +974,7 @@ function renderPerson(){
         <span>عذر طارئ</span><b>${s.excuse}</b>
         <span>غياب بدون عذر</span><b>${s.absent}</b>
         <span>غياب بعذر</span><b>${s.absentExcused}</b>
+        <span>أيام العطل${s.leaveDates && s.leaveDates.length ? ` <small>(${esc(s.leaveDates.map(x => Number(x.slice(8)) + "/" + Number(x.slice(5, 7))).join("، "))})</small>` : ""}</span><b>${s.leave || 0}${s.leavePending ? ` <small>(+${s.leavePending} بانتظار الموافقة)</small>` : ""}</b>
         <span>بقاء بعد الإغلاق (10 د أو أكثر)</span><b>${stays.length}</b>
         <span>تسجيل خارج النطاق</span><b>${outside}</b>
         <span>فرق بين الوقت المختار والفعلي</span><b>${s.diffCount}</b>
@@ -1141,6 +1201,12 @@ const Mock = (function(){
       const h = db.records.find(r => r.date === prev && r.emp === "حكيم سحيم" && r.inTime);
       if (h) { h.pending = "تعديل الحضور إلى " + attFromMin(attToMin(h.inTime) - 10) + " — السبب: وصلت مبكرًا ونسيت التسجيل"; h.inStatus = S.PENDING; }
     }
+    // عطلة معتمدة لأنس في أحد الأيام، وطلب عطلة من حكيم لليوم التالي
+    const anasDay = db.records.filter(r => r.emp === "أنس الترهوني" && r.inTime && r.date < t).map(r => r.date)[2];
+    if (anasDay) { const r = db.records.find(x => x.emp === "أنس الترهوني" && x.date === anasDay);
+      Object.assign(r, { inTime: "", inReal: "", outTime: "", outReal: "", inStatus: S.LEAVE, opener: false, closer: false, note: "عطلة — السبب: ظرف عائلي" }); }
+    let nd = t; do { const d = attParseDate(nd); d.setDate(d.getDate() + 1); nd = d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); } while (!attIsWorkday(nd, db.rules));
+    if (nd.slice(0, 7) === mk) db.records.push({ id: nid(), date: nd, day: attDayName(nd), emp: "حكيم سحيم", inStatus: S.PENDING, pending: "طلب عطلة — السبب: موعد في المستشفى", points: 0 });
     // اليوم: إسلام سجّل حضوره من خارج النطاق
     if (attIsWorkday(t, db.rules)) db.records.push({ id: nid(), date: t, day: attDayName(t), emp: "إسلام الجهاني", inTime: "10:02", inReal: "10:20", inDist: 340,
       inStatus: S.PENDING, opener: true, pending: "حضور: خارج النطاق (340 م)", points: 0 });
@@ -1210,6 +1276,18 @@ const Mock = (function(){
       if (req.note) rec.note = rec.note ? rec.note + " | " + req.note : req.note;
       return { status: dec.status, reasons: dec.reasons, distance: d, time: t };
     },
+    emp_add_day: req => {
+      const e = emp(req), n = now(), date = req.date;
+      if (req.kind !== "leave" && date > n.date) throw new Error("لا يمكن تسجيل حضور ليوم لم يأتِ بعد");
+      if (!attIsWorkday(date, db.rules)) throw new Error("هذا اليوم عطلة أسبوعية");
+      let rec = db.records.find(r => r.emp === e.name && r.date === date);
+      if (rec && rec.inTime) throw new Error("يوجد تسجيل لهذا اليوم — استخدم \"طلب تعديل الوقت\" من السجل");
+      if (!rec) { rec = { id: nid(), date, day: attDayName(date), emp: e.name, points: 0 }; db.records.push(rec); }
+      if (req.kind === "leave") Object.assign(rec, { inStatus: S.PENDING, pending: "طلب عطلة — السبب: " + req.reason });
+      else Object.assign(rec, { inTime: req.inTime, inReal: "", outTime: req.outTime || "", outReal: "", inStatus: S.PENDING, outStatus: req.outTime ? S.PENDING : "",
+        opener: !!req.opener, closer: !!req.closer, note: "", pending: "إضافة يوم سابق (سُجّل يوم " + n.date + " " + n.time + ") — السبب: " + req.reason });
+      return { status: S.PENDING };
+    },
     emp_edit: req => {
       const e = emp(req), rec = db.records.find(r => r.id === req.id && r.emp === e.name);
       if (!rec) throw new Error("السجل غير موجود");
@@ -1256,6 +1334,13 @@ const Mock = (function(){
     admin_decide: req => {
       const rec = db.records.find(r => r.id === req.id); if (!rec) throw new Error("السجل غير موجود");
       const before = desc(rec), d = req.decision;
+      if (attIsLeaveRequest(rec) && (d === "approve" || d === "reject")) {
+        const why = rec.pending.replace(/^طلب عطلة — /, "");
+        rec.inStatus = d === "approve" ? S.LEAVE : (rec.date < todayStr() ? S.ABSENT : ""); rec.pending = "";
+        rec.note = (d === "approve" ? "عطلة — " : "رُفض طلب العطلة — ") + why;
+        log(req.adminEmail, d === "approve" ? "موافقة على عطلة" : "رفض عطلة", rec.emp + " — " + rec.date, why);
+        return { ok: true };
+      }
       if (d === "approve" || d === "excuse") {
         String(rec.pending || "").split(" | ").forEach(p => { const m = p.match(/تعديل (الحضور|الانصراف) إلى (\d{2}:\d{2})/); if (m) rec[m[1] === "الحضور" ? "inTime" : "outTime"] = m[2]; });
         if (rec.inTime) rec.inStatus = S.OK; if (rec.outTime) rec.outStatus = S.OK;
