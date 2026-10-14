@@ -51,8 +51,10 @@ var ATT_MONTH_NAMES = ["يناير","فبراير","مارس","أبريل","ما
 
 var ATT_STATUS = {
   OK: "معتمد", PENDING: "بانتظار الموافقة", REJECTED: "مرفوض",
-  ABSENT: "غائب بدون عذر", ABSENT_EXCUSED: "غائب بعذر"
+  ABSENT: "غائب بدون عذر", ABSENT_EXCUSED: "غائب بعذر", LEAVE: "عطلة"
 };
+// طلب عطلة بانتظار الموافقة: حالة "بانتظار الموافقة" بدون وقت حضور، ونص الطلب يبدأ بـ "طلب عطلة"
+function attIsLeaveRequest(r){ return r.inStatus === ATT_STATUS.PENDING && !r.inTime && /^طلب عطلة/.test(String(r.pending || "")); }
 
 function attMergeRules(r){
   var out = {}, k;
@@ -151,6 +153,8 @@ function attComputeMonth(records, rulesIn){
       return;
     }
     if (r.inStatus === ATT_STATUS.ABSENT_EXCUSED) { r.cat = "غياب بعذر"; return; }
+    if (r.inStatus === ATT_STATUS.LEAVE) { r.cat = "عطلة"; return; }
+    if (attIsLeaveRequest(r)) { r.cat = "طلب عطلة"; return; }
     var inMin = attToMin(r.inTime), outMin = attToMin(r.outTime);
     if (inMin === null) return;
     if (outMin !== null) { r.workedMin = Math.max(0, outMin - inMin); r.shortMin = Math.max(0, r.reqMin - r.workedMin); }
@@ -211,7 +215,7 @@ function attComputeMonth(records, rulesIn){
   var summary = {};
   sorted.forEach(function(r){
     var s = summary[r.emp] || (summary[r.emp] = { emp: r.emp, present: 0, onTime: 0, t2: 0, t3: 0, t4: 0,
-      allowance: 0, excuse: 0, absent: 0, absentExcused: 0, pending: 0, deduct: 0, points: 0, lateMin: 0, lostMin: 0,
+      allowance: 0, excuse: 0, absent: 0, absentExcused: 0, leave: 0, leaveDates: [], leavePending: 0, pending: 0, deduct: 0, points: 0, lateMin: 0, lostMin: 0,
       workedMin: 0, reqMin: 0, shortDays: 0, openDays: 0, closeDays: 0, diffs: [] });
     if (r.bigDiff) s.diffs.push({ date: r.date, inTime: r.inTime, inReal: r.inReal, inDiff: r.inDiff, outTime: r.outTime, outReal: r.outReal, outDiff: r.outDiff });
     if (r.inStatus === ATT_STATUS.PENDING || r.outStatus === ATT_STATUS.PENDING || r.pending) s.pending++;
@@ -219,6 +223,8 @@ function attComputeMonth(records, rulesIn){
     s.points += Number(r.points) || 0;
     if (r.inStatus === ATT_STATUS.ABSENT || r.inStatus === ATT_STATUS.REJECTED) { s.absent++; return; }
     if (r.inStatus === ATT_STATUS.ABSENT_EXCUSED) { s.absentExcused++; return; }
+    if (r.inStatus === ATT_STATUS.LEAVE) { s.leave++; s.leaveDates.push(r.date); return; }
+    if (attIsLeaveRequest(r)) { s.leavePending++; return; }
     if (!r.inTime) return;
     s.present++;
     if (r.opener) s.openDays++;
@@ -263,5 +269,5 @@ function attDecideStatus(opts, rules){
 
 if (typeof module !== "undefined") module.exports = {
   ATT_DEFAULT_RULES: ATT_DEFAULT_RULES, ATT_STATUS: ATT_STATUS, attComputeMonth: attComputeMonth,
-  attDecideStatus: attDecideStatus, attDistance: attDistance, attHoursFor: attHoursFor, attTimeDiff: attTimeDiff, attMergeRules: attMergeRules, attToMin: attToMin
+  attDecideStatus: attDecideStatus, attDistance: attDistance, attIsLeaveRequest: attIsLeaveRequest, attHoursFor: attHoursFor, attTimeDiff: attTimeDiff, attMergeRules: attMergeRules, attToMin: attToMin
 };
