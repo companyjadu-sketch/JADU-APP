@@ -564,6 +564,9 @@ function dayBits(r){
 function catPill(r){
   if (r.inStatus === ATT_STATUS.LEAVE) return '<span class="att-pill lv">عطلة</span>';
   if (attIsLeaveRequest(r)) return '<span class="att-pill info">طلب عطلة — بانتظار الموافقة</span>';
+  if (r.inStatus === ATT_STATUS.TRIP) return '<span class="att-pill tr">سفر عمل</span>';
+  if (attIsTripRequest(r)) return '<span class="att-pill info">طلب سفر عمل — بانتظار الموافقة</span>';
+  if (r.inStatus === ATT_STATUS.CLOSED) return '<span class="att-pill cl">الشركة مغلقة</span>';
   if (r.inStatus === ATT_STATUS.PENDING || r.outStatus === ATT_STATUS.PENDING || r.pending) return '<span class="att-pill info">بانتظار الموافقة</span>';
   if (r.inStatus === ATT_STATUS.ABSENT || r.inStatus === ATT_STATUS.REJECTED) return `<span class="att-pill bad">${esc(r.cat || "غياب")}</span>`;
   if (r.inStatus === ATT_STATUS.ABSENT_EXCUSED) return '<span class="att-pill mute">غياب بعذر</span>';
@@ -584,7 +587,7 @@ function renderEmployee(syncing){
   let todayHtml;
   if (!workday) todayHtml = '<div class="att-empty" style="padding:6px">اليوم عطلة</div>';
   else if (!t || (!t.inTime && !t.inStatus)) todayHtml = `<p style="margin:0;font-size:13px;color:var(--steel-500)">لم تسجّل حضورك اليوم بعد.</p><div class="att-btns"><button class="att-btn main" id="attDoIn">تسجيل الحضور</button></div>`;
-  else if (!t.inTime) todayHtml = `<p style="margin:0;font-size:13px">${catPill(t)}</p>`;
+  else if (!t.inTime) todayHtml = `<p style="margin:0;font-size:13px">${catPill(t)}</p>${(t.inStatus === ATT_STATUS.CLOSED || t.inStatus === ATT_STATUS.TRIP) && t.note ? `<small style="color:var(--steel-500)">${esc(prettyReq(t.note))}</small>` : ""}`;
   else {
     const hrs = MY.emp.hours || attHoursFor(MY.emp.name, rules);
     const so = t.outTime ? t.workedMin : Math.max(0, attToMin(nowHM()) - attToMin(t.inTime));
@@ -600,7 +603,7 @@ function renderEmployee(syncing){
       <small>${r.inTime ? `<span class="times">${esc(attFmt12(r.inTime))}${r.outTime ? " – " + esc(attFmt12(r.outTime)) : ""}</span>` : ""}
       ${r.inDiff ? " · سُجّل فعليًا " + esc(attFmt12(r.inReal)) : ""}${dayBits(r).length ? " · " + esc(dayBits(r).join(" · ")) : ""}${r.deduct ? " · خصم " + fmtDays(r.deduct) + " يوم" : ""}${r.points ? " · +" + r.points + " نقطة" : ""}</small>
       ${r.flags && r.flags.length ? `<small style="color:#FFC94D">${esc(r.flags.join("، "))}</small>` : ""}
-      ${r.pending ? `<small style="color:#9DB8FF">${esc(r.pending)}</small>` : ""}
+      ${r.pending ? `<small style="color:#9DB8FF">${esc(prettyReq(r.pending))}</small>` : ""}
       ${r.inTime ? `<button class="att-link" data-edit="${esc(r.id)}">طلب تعديل الوقت</button>` : ""}</div>
       <div class="r">${catPill(r)}</div></div>`).join("");
   body.innerHTML = `
@@ -608,17 +611,21 @@ function renderEmployee(syncing){
       <div class="r"><button class="att-link" id="attNotMe">لست ${esc(firstName(MY.emp.name))}؟</button></div></div>
     ${syncing ? '<div class="att-hint" style="margin:-6px 0 10px"><span class="spinner"></span> جارِ التحديث…</div>' : ""}
     ${me.pending ? `<div class="att-alert warn" style="padding:10px;font-size:12.5px">طلب تغيير الاسم إلى ${esc(me.pending)} بانتظار موافقة الإدارة.</div>` : ""}
+    ${rangeGroups(MY.records.filter(r => r.inStatus === ATT_STATUS.CLOSED && r.date > todayStr())).map(g => `<div class="att-alert info" style="padding:10px;font-size:12.5px"><strong>الشركة مغلقة ${esc(rangeText(g.dates))}</strong>${esc(g.note.replace(/^إغلاق الشركة — /, "السبب: "))}</div>`).join("")}
     <div class="att-box"><h3>اليوم <span class="sub">${esc(shortDate(todayStr()))}</span></h3>${todayHtml}</div>
     <div class="att-stats">
       <div class="att-stat"><span class="k">خصم الشهر</span><span class="v">${fmtDays(s.deduct)} <small>يوم</small></span></div>
       <div class="att-stat"><span class="k">النقاط</span><span class="v">${s.points}</span></div>
       <div class="att-stat"><span class="k">ساعات الشهر</span><span class="v">${attFmtDur(s.workedMin || 0)}</span></div>
       <div class="att-stat"><span class="k">أيام العطل</span><span class="v">${s.leave || 0}${s.leavePending ? ` <small>+${s.leavePending} طلب</small>` : ""}</span></div>
+      ${s.trip || s.tripPending ? `<div class="att-stat"><span class="k">أيام سفر العمل</span><span class="v">${s.trip || 0}${s.tripPending ? ` <small>+${s.tripPending} بانتظار الموافقة</small>` : ""}</span></div>` : ""}
+      ${s.closed ? `<div class="att-stat"><span class="k">إغلاق الشركة</span><span class="v">${s.closed} <small>أيام</small></span></div>` : ""}
     </div>
-    <div class="att-btns" style="margin:-4px 0 14px"><button class="att-btn" id="attAddDay">➕ نسيت التسجيل في يوم سابق</button><button class="att-btn" id="attAddLeave">🌴 طلب عطلة</button></div>
+    <div class="att-btns" style="margin:-4px 0 14px"><button class="att-btn" id="attAddDay">➕ نسيت التسجيل في يوم سابق</button><button class="att-btn" id="attAddLeave">🌴 طلب عطلة</button><button class="att-btn" id="attAddTrip">✈️ سفر عمل</button></div>
     <div class="att-box"><h3>سجل الشهر</h3>${rows || '<div class="att-empty">لا توجد سجلات بعد</div>'}</div>`;
   $("#attAddDay").onclick = () => openAddDay("work");
   $("#attAddLeave").onclick = () => openAddDay("leave");
+  $("#attAddTrip").onclick = () => openRangeSheet("trip");
   $("#attDoIn") && ($("#attDoIn").onclick = openCheckIn);
   $("#attDoOut") && ($("#attDoOut").onclick = openCheckOut);
   $("#attNotMe").onclick = async () => { await askIdentity(true); renderEmployee(); };
@@ -644,7 +651,7 @@ function openAddDay(kind){
   const showDay = () => {
     const v = $("#attAdDate").value, el = $("#attAdDayName"); if (!v) { el.textContent = ""; return; }
     const ex = MY.records.find(r => r.date === v);
-    el.textContent = attDayName(v) + (!attIsWorkday(v, rules) ? " — عطلة أسبوعية" : ex && ex.inTime ? " — يوجد تسجيل لهذا اليوم، استخدم طلب تعديل الوقت" : ex && ex.inStatus === ATT_STATUS.LEAVE ? " — مسجّل عطلة" : "");
+    el.textContent = attDayName(v) + (!attIsWorkday(v, rules) ? " — عطلة أسبوعية" : ex && ex.inTime ? " — يوجد تسجيل لهذا اليوم، استخدم طلب تعديل الوقت" : ex && ex.inStatus === ATT_STATUS.LEAVE ? " — مسجّل عطلة" : ex && ex.inStatus === ATT_STATUS.TRIP ? " — مسجّل سفر عمل" : ex && ex.inStatus === ATT_STATUS.CLOSED ? " — الشركة مغلقة" : "");
   };
   $("#attAdDate").onchange = showDay; showDay();
   $("#attAdCancel").onclick = closeSheet;
@@ -669,6 +676,82 @@ function openAddDay(kind){
       alertMsg(isLeave ? "تم إرسال طلب العطلة للإدارة، ويظهر في سجلك بعد الموافقة." : "تم إرسال تسجيل اليوم للإدارة، ويُعتمد بعد موافقتها.", "تم الإرسال");
       refreshMe().then(() => renderEmployee()).catch(() => {});
     } catch (e) { err(e.message); $("#attAdOk").disabled = false; }
+  };
+}
+
+// أيام العمل بين تاريخين (شاملة)
+function workdaysBetween(from, to, rules){
+  const out = []; if (!from || !to || to < from) return out;
+  for (let d = from; d <= to && out.length < 400; d = addDays(d, 1)) if (attIsWorkday(d, rules)) out.push(d);
+  return out;
+}
+const dm = ds => Number(ds.slice(8)) + "/" + Number(ds.slice(5, 7));
+// نص الطلب للعرض: بدون رقم الطلب والتواريخ الكاملة
+function prettyReq(t){
+  return String(t || "").replace(/#\w+ /, "").replace(/\((\d{4}-\d{2}-\d{2}) → (\d{4}-\d{2}-\d{2})\)/g, (m, a, b) => "من " + dm(a) + " إلى " + dm(b));
+}
+function rangeText(dates){ return dates.length === 1 ? "يوم " + attDayName(dates[0]) + " " + dm(dates[0]) : "من " + dm(dates[0]) + " إلى " + dm(dates[dates.length - 1]); }
+// تجميع أيام متتالية بنفس الملاحظة (للإغلاق وسفر العمل)
+function rangeGroups(records, byEmp){
+  const g = {};
+  records.slice().sort((a, b) => a.date < b.date ? -1 : 1).forEach(r => {
+    const note = String(r.note || "").split(" | ").filter(x => /إغلاق الشركة|سفر عمل/.test(x)).pop() || "";
+    const k = (byEmp ? r.emp : "") + "|" + note;
+    (g[k] || (g[k] = { emp: r.emp, note, dates: [] })).dates.push(r.date);
+  });
+  Object.values(g).forEach(x => { x.dates = [...new Set(x.dates)]; });
+  return Object.values(g);
+}
+
+// سفر عمل (طلب من الموظف أو إضافة من الإدارة) أو إغلاق الشركة — لفترة من تاريخ إلى تاريخ
+function openRangeSheet(kind){
+  const admin = kind !== "trip", rules = attMergeRules(admin ? ADM.rules : MY.rules), today = todayStr();
+  const title = { trip: "طلب سفر عمل", admin_trip: "إضافة سفر عمل لموظف", closure: "إغلاق الشركة" }[kind];
+  const intro = { trip: "إذا كنت مسافرًا في مهمة للشركة، اختر بداية ونهاية السفر. تُحسب كل الأيام أيام عمل كاملة بدون خصم، ولا تُحسب من عطلك. يُرسل الطلب للإدارة ولا يُعتمد إلا بموافقتها.",
+    admin_trip: "يُعتمد مباشرة بدون طلب. تُحسب الأيام أيام عمل كاملة بدون خصم، ولا تُحسب عطلة.",
+    closure: "لكل الموظفين: لا يُحسب غيابًا ولا عطلة ولا خصمًا، ولا يُطلب تسجيل الحضور في هذه الأيام. الموظف الذي سجّل حضوره فعلًا في أحد هذه الأيام يبقى سجله كما هو." }[kind];
+  const emps = admin ? ADM.employees.filter(e => e.active) : [];
+  const dateIn = (id, label, v) => `<div class="att-field"><label for="${id}">${label}</label><input type="date" id="${id}" value="${v}" style="font-family:'IBM Plex Mono',monospace;direction:ltr;text-align:center;color-scheme:dark"></div>`;
+  openSheet(`<h2>${title}</h2><p>${intro}</p>
+    ${kind === "admin_trip" ? `<div class="att-field"><label for="attRgEmp">الموظف</label><select id="attRgEmp">${emps.map(e => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join("")}</select></div>` : ""}
+    <div class="att-grid2">${dateIn("attRgFrom", "من تاريخ", today)}${dateIn("attRgTo", "إلى تاريخ", today)}</div>
+    <div class="att-hint" id="attRgInfo" style="margin:-8px 0 12px"></div>
+    <div class="att-field"><label for="attRgWhy">${kind === "closure" ? "سبب الإغلاق" : "الوجهة أو سبب السفر"}</label><input type="text" id="attRgWhy" maxlength="200" placeholder="${kind === "closure" ? "مثال: مناسبة عائلية للإدارة" : "مثال: طرابلس — استلام بضاعة"}"></div>
+    <div class="msg" id="attRgMsg"></div>
+    <div class="att-btns"><button class="att-btn main" id="attRgOk">${kind === "trip" ? "إرسال للإدارة" : kind === "closure" ? "إغلاق الشركة" : "حفظ"}</button><button class="att-btn" id="attRgCancel">إلغاء</button></div>`);
+  const info = () => {
+    const f = $("#attRgFrom").value, t = $("#attRgTo").value, el = $("#attRgInfo");
+    if (!f || !t) { el.textContent = ""; return; }
+    if (t < f) { el.textContent = "تاريخ النهاية قبل البداية"; return; }
+    const n = workdaysBetween(f, t, rules).length;
+    el.textContent = `من ${attDayName(f)} ${dm(f)} إلى ${attDayName(t)} ${dm(t)} — ${n} ${n === 1 ? "يوم عمل" : "أيام عمل"} (العطلة الأسبوعية لا تُحسب)`;
+  };
+  $("#attRgFrom").onchange = () => { if (!$("#attRgTo").value || $("#attRgTo").value < $("#attRgFrom").value) $("#attRgTo").value = $("#attRgFrom").value; info(); };
+  $("#attRgTo").onchange = info; info();
+  $("#attRgCancel").onclick = closeSheet;
+  $("#attRgOk").onclick = async () => {
+    const msg = $("#attRgMsg"), from = $("#attRgFrom").value, to = $("#attRgTo").value, reason = $("#attRgWhy").value.trim();
+    const err = t => { msg.textContent = t; msg.className = "msg err"; };
+    if (!from || !to) return err("اختر تاريخ البداية والنهاية");
+    if (to < from) return err("تاريخ النهاية قبل البداية");
+    const n = workdaysBetween(from, to, rules).length;
+    if (!n) return err("لا توجد أيام عمل في هذه الفترة");
+    if (!reason) return err(kind === "closure" ? "اكتب سبب الإغلاق" : "اكتب الوجهة أو سبب السفر");
+    if (admin && typeof showConfirm === "function") {
+      const who = kind === "closure" ? "لكل الموظفين" : "لـ " + $("#attRgEmp").selectedOptions[0].textContent;
+      if (!(await showConfirm(`${title} ${who}\n${rangeText(workdaysBetween(from, to, rules))} (${n} أيام عمل)\nسيُسجَّل باسمك في سجل التعديلات.`, { title: "تأكيد", okText: "نعم" }))) return;
+    }
+    $("#attRgOk").disabled = true; msg.innerHTML = '<span class="spinner"></span> جارِ الحفظ…'; msg.className = "msg";
+    try {
+      let res;
+      if (kind === "trip") res = await call("emp_trip", { from, to, reason });
+      else if (kind === "admin_trip") res = await call("admin_trip_add", { empId: $("#attRgEmp").value, from, to, reason });
+      else res = await call("admin_closure", { from, to, reason });
+      closeSheet();
+      const sk = res && res.skipped && res.skipped.length ? `\nهذه الأيام لم تتغير لأنها مسجّلة من قبل (حضور أو عطلة أو إغلاق الشركة): ${res.skipped.join("، ")}` : "";
+      if (kind === "trip") { alertMsg("تم إرسال طلب سفر العمل للإدارة، ويُعتمد بعد موافقتها." + sk, "تم الإرسال"); refreshMe().then(() => renderEmployee()).catch(() => {}); }
+      else { alertMsg((kind === "closure" ? "تم تسجيل إغلاق الشركة." : "تم تسجيل سفر العمل.") + sk, "تم"); await reloadAfterChange(); }
+    } catch (e) { err(e.message); $("#attRgOk").disabled = false; }
   };
 }
 
@@ -717,8 +800,9 @@ if (adminView) new MutationObserver(() => { if (adminView.classList.contains("ac
   .observe(adminView, { attributes: true, attributeFilter: ["class"] });
 
 function pendingItems(records){
-  const out = [];
+  const out = [], trips = {};
   records.forEach(r => {
+    if (attIsTripRequest(r)) { const k = r.emp + "|" + attTripGroup(r); if (trips[k]) trips[k].days.push(r.date); else out.push(trips[k] = { r, kind: "trip", days: [r.date] }); return; }
     if (r.inStatus === ATT_STATUS.PENDING || r.outStatus === ATT_STATUS.PENDING || r.pending) out.push({ r, kind: "pending" });
     if (r.inStatus === ATT_STATUS.ABSENT && /سُجّل تلقائيًا/.test(r.note || "")) out.push({ r, kind: "absent" });
     if (/^طلب نقاط/.test(r.stay || "")) out.push({ r, kind: "stay" });
@@ -754,9 +838,13 @@ function renderAdmin(syncing){
   const devHtml = devReq.map(x => `<div class="att-row" style="display:block"><div class="l"><b>${esc(x.current ? "تغيير اسم هاتف: " + x.current + " ← " + x.name : "هاتف جديد باسم " + x.name)}</b>
     <small>${esc((x.reason || "") + (x.at ? " · " + x.at : ""))}</small></div>
     <div class="att-btns"><button class="att-btn ok" data-dev="approve" data-devid="${esc(x.deviceId)}" data-emp="${esc(x.empId)}">موافقة</button><button class="att-btn bad" data-dev="reject" data-devid="${esc(x.deviceId)}" data-emp="${esc(x.empId)}">رفض</button></div></div>`).join("");
-  const pendHtml = pend.map(({ r, kind }) => {
+  const pendHtml = pend.map(({ r, kind, days }) => {
     let title, sub, btns;
-    if (kind === "absent") { title = `${r.emp} — غائب`; sub = shortDate(r.date) + " · لم يسجّل حضوره"; btns = `<button class="att-btn" data-dec="absent_excused" data-id="${r.id}">بعذر</button><button class="att-btn bad" data-dec="absent" data-id="${r.id}">بدون عذر</button>`; }
+    if (kind === "trip") { const m = String(r.pending).match(/\((\d{4}-\d{2}-\d{2}) → (\d{4}-\d{2}-\d{2})\) — (.*)$/);
+      const all = m ? workdaysBetween(m[1], m[2], rules) : days;
+      title = `${r.emp} — سفر عمل`; sub = (m ? rangeText([m[1], m[2]]) : rangeText(days)) + " · " + all.length + " أيام عمل" + (m ? " · " + m[3] : "");
+      btns = `<button class="att-btn ok" data-dec="approve" data-id="${r.id}">موافقة على السفر</button><button class="att-btn bad" data-dec="reject" data-id="${r.id}">رفض</button>`; }
+    else if (kind === "absent") { title = `${r.emp} — غائب`; sub = shortDate(r.date) + " · لم يسجّل حضوره"; btns = `<button class="att-btn" data-dec="absent_excused" data-id="${r.id}">بعذر</button><button class="att-btn bad" data-dec="absent" data-id="${r.id}">بدون عذر</button>`; }
     else if (kind === "stay") { title = `${r.emp} — بقاء بعد الإغلاق`; sub = shortDate(r.date) + " · انصراف " + attFmt12(r.outTime) + " · " + String(r.stay).replace(/^طلب نقاط: /, "") + (r.note ? " · " + r.note : ""); btns = `<button class="att-btn ok" data-dec="stay_points" data-id="${r.id}">منح ${rules.points_per_stay} نقطة</button><button class="att-btn" data-dec="stay_no" data-id="${r.id}">رفض</button>`; }
     else if (attIsLeaveRequest(r)) { title = `${r.emp} — طلب عطلة`; sub = shortDate(r.date) + " · " + String(r.pending).replace(/^طلب عطلة — /, "");
       btns = `<button class="att-btn ok" data-dec="approve" data-id="${r.id}">موافقة على العطلة</button><button class="att-btn bad" data-dec="reject" data-id="${r.id}">رفض</button>`; }
@@ -773,7 +861,7 @@ function renderAdmin(syncing){
   const sums = Object.values(d.summary).sort((a, b) => b.points - a.points || a.deduct - b.deduct);
   const sumHtml = sums.map(s => `<div class="att-sum" data-person="${esc(s.emp)}" role="button" tabindex="0"><div class="top"><b>${esc(s.emp)}</b><span class="att-pill ${/متميز/.test(s.rating) ? "ok" : /ملاحظات/.test(s.rating) ? "warn" : "mute"}">${esc(s.rating)}</span></div>
     <div class="nums"><span><b>${s.present}</b>أيام حضور</span><span><b>${fmtDays(s.deduct)}</b>أيام خصم</span><span><b>${s.points}</b>نقاط</span>
-      <span><b>${attFmtDur(s.workedMin || 0)}</b>ساعات عمل</span><span><b>${s.absent}</b>غياب</span><span><b>${s.leave || 0}</b>أيام عطل</span></div>
+      <span><b>${attFmtDur(s.workedMin || 0)}</b>ساعات عمل</span><span><b>${s.absent}</b>غياب</span><span><b>${s.leave || 0}</b>أيام عطل</span>${s.trip ? `<span><b>${s.trip}</b>سفر عمل</span>` : ""}</div>
     ${s.diffAlert ? `<div class="att-alert warn" style="margin:10px 0 0;padding:10px;font-size:12.5px">${esc(s.diffAlert)}</div>` : ""}
     <div class="att-more">عرض السجل الكامل ‹</div></div>`).join("");
   const alerts = sums.filter(s => s.diffAlert);
@@ -784,13 +872,22 @@ function renderAdmin(syncing){
     ${alerts.map(s => `<div class="att-row" style="display:block"><div class="l"><b>${esc(s.emp)}</b><small>${esc(s.diffAlert)}</small>
       ${s.diffs.map(x => `<small>• ${esc(shortDate(x.date))}: ${esc(x.inDiff >= x.outDiff ? timePair("حضور", x.inTime, x.inReal) : timePair("انصراف", x.outTime, x.outReal))}</small>`).join("")}</div></div>`).join("")}</div>` : "";
 
+  const closures = rangeGroups(d.records.filter(r => r.inStatus === ATT_STATUS.CLOSED));
+  const trips = rangeGroups(d.records.filter(r => r.inStatus === ATT_STATUS.TRIP), true);
+  const spanHtml = closures.length || trips.length ? `<div class="att-box"><h3>إغلاق الشركة وسفر العمل <span class="sub">هذا الشهر</span></h3>
+    ${closures.map(g => `<div class="att-row"><div class="l"><b>🏢 الشركة مغلقة ${esc(rangeText(g.dates))}</b><small>${esc(g.note.replace(/^إغلاق الشركة — /, ""))} · ${g.dates.length} أيام عمل</small></div>
+      <div class="r"><button class="att-link" data-cancel="closure" data-from="${g.dates[0]}" data-to="${g.dates[g.dates.length - 1]}">إلغاء</button></div></div>`).join("")}
+    ${trips.map(g => `<div class="att-row"><div class="l"><b>✈️ ${esc(g.emp)} — سفر عمل ${esc(rangeText(g.dates))}</b><small>${esc(g.note.replace(/^سفر عمل /, "").replace(/^\(.*?\) — /, "").replace(/ — أضافته الإدارة$/, ""))} · ${g.dates.length} أيام عمل</small></div>
+      <div class="r"><button class="att-link" data-cancel="trip" data-emp="${esc(g.emp)}" data-from="${g.dates[0]}" data-to="${g.dates[g.dates.length - 1]}">إلغاء</button></div></div>`).join("")}</div>` : "";
   let unread = 0;
   try { unread = Number(localStorage.getItem(LS_LOG_SEEN + "_n") || 0); } catch (e) {}
   body.innerHTML = `
     ${syncing ? '<div class="att-hint" style="margin:0 0 8px"><span class="spinner"></span> جارِ التحديث…</div>' : ""}
     <select class="att-month" id="attMonthSel" aria-label="الشهر">${months.map(m => `<option value="${m}" ${m === d.month ? "selected" : ""}>${esc(attMonthTitle(m))}</option>`).join("")}</select>
+    <div class="att-btns" style="margin:0 0 14px"><button class="att-btn" id="attCloseCo">🏢 إغلاق الشركة</button><button class="att-btn" id="attAdmTrip">✈️ سفر عمل لموظف</button></div>
     ${alertHtml}${dayHtml}
     <div class="att-box"><h3>بانتظار الموافقة <span class="att-pill ${pendCount ? "info" : "mute"}">${pendCount}</span></h3>${devHtml + pendHtml || '<div class="att-empty" style="padding:6px">لا توجد طلبات معلّقة</div>'}</div>
+    ${spanHtml}
     <div class="att-box"><h3>الحضور اليومي <span class="sub">اضغط على أي يوم للتفاصيل</span></h3>${heatGrid(d, rules)}</div>
     <div class="att-box att-chart"><h3>دقائق التأخير أو نقص الساعات</h3>${lateChart(d, rules)}</div>
     <div class="att-box"><h3>ملخص الشهر <span class="sub">اضغط على الموظف لكل التفاصيل</span></h3>${sumHtml || '<div class="att-empty">لا توجد سجلات لهذا الشهر</div>'}</div>
@@ -801,6 +898,14 @@ function renderAdmin(syncing){
       ${ATT_SHEET_URL ? `<a class="list-btn" href="${esc(ATT_SHEET_URL)}" target="_blank" rel="noopener" style="text-decoration:none"><div class="list-icon">${ICON.sheet}</div><div class="list-text"><strong>فتح ملف جوجل شيت</strong><span>كل الأشهر في ملف واحد</span></div>${ICON.chev}</a>` : ""}
     </div>`;
   $("#attMonthSel").onchange = e => loadAdmin(e.target.value);
+  $("#attCloseCo").onclick = () => openRangeSheet("closure");
+  $("#attAdmTrip").onclick = () => openRangeSheet("admin_trip");
+  body.querySelectorAll("[data-cancel]").forEach(b => b.onclick = async () => {
+    const isTrip = b.dataset.cancel === "trip", txt = rangeText(workdaysBetween(b.dataset.from, b.dataset.to, rules));
+    if (typeof showConfirm === "function" && !(await showConfirm(isTrip ? `إلغاء سفر العمل لـ ${b.dataset.emp} ${txt}؟\nتعود الأيام فارغة.` : `إلغاء إغلاق الشركة ${txt}؟\nتعود الأيام أيام عمل عادية.`, { title: "تأكيد", okText: "نعم، إلغاء" }))) return;
+    try { await call("admin_closure_cancel", { kind: b.dataset.cancel, emp: b.dataset.emp || "", from: b.dataset.from, to: b.dataset.to }); loadAdmin(); }
+    catch (e) { alertMsg(e.message); }
+  });
   body.querySelectorAll("[data-person]").forEach(el => {
     const go = () => openPerson(el.dataset.person);
     el.onclick = go; el.onkeydown = e => { if (e.key === "Enter") go(); };
@@ -829,7 +934,8 @@ async function decide(id, decision, note){
   const r = ADM.records.find(x => x.id === id);
   const labels = { approve: "الموافقة على", reject: "رفض", excuse: "اعتماد عذر طارئ لـ", absent_excused: "تسجيل غياب بعذر لـ",
                    absent: "تسجيل غياب بدون عذر لـ", stay_points: "منح نقاط البقاء لـ", stay_no: "رفض نقاط البقاء لـ" };
-  if (typeof showConfirm === "function" && !(await showConfirm(`${labels[decision]} ${r.emp} — ${shortDate(r.date)}؟\nسيُسجَّل القرار باسمك في سجل التعديلات.`, { title: "تأكيد", okText: "نعم" }))) return;
+  const what = attIsTripRequest(r) && (decision === "approve" || decision === "reject") ? `${decision === "approve" ? "الموافقة على" : "رفض"} سفر العمل لـ ${r.emp} (كل أيام الطلب)؟` : `${labels[decision]} ${r.emp} — ${shortDate(r.date)}؟`;
+  if (typeof showConfirm === "function" && !(await showConfirm(`${what}\nسيُسجَّل القرار باسمك في سجل التعديلات.`, { title: "تأكيد", okText: "نعم" }))) return;
   try { await call("admin_decide", { month: ADM.month, id, decision, note }); closeSheet(); await reloadAfterChange(); }
   catch (e) { alertMsg(e.message); }
 }
@@ -854,6 +960,9 @@ function heatGrid(d, rules){
       const lost = r.lostMin;
       if (r.inStatus === ATT_STATUS.LEAVE) { cls = "lv"; txt = "ع"; }
       else if (attIsLeaveRequest(r)) { cls = "pend"; txt = "ع؟"; }
+      else if (r.inStatus === ATT_STATUS.TRIP) { cls = "tr"; txt = "س"; }
+      else if (attIsTripRequest(r)) { cls = "pend"; txt = "س؟"; }
+      else if (r.inStatus === ATT_STATUS.CLOSED) { cls = "cl"; txt = "م"; }
       else if (r.inStatus === ATT_STATUS.PENDING || r.outStatus === ATT_STATUS.PENDING || r.pending) { cls = "pend"; txt = lost ? lost : "؟"; }
       else if (r.inStatus === ATT_STATUS.ABSENT || r.inStatus === ATT_STATUS.REJECTED) { cls = "bad"; txt = "غ"; }
       else if (r.inStatus === ATT_STATUS.ABSENT_EXCUSED) { cls = "ex"; txt = "غ"; }
@@ -869,7 +978,7 @@ function heatGrid(d, rules){
   }).join("");
   return `<div class="att-heat-wrap"><table class="att-heat">${head}${rows}</table></div>
     <div class="att-legend"><span><i style="background:rgba(111,207,142,.5)"></i>منتظم (الرقم = دقائق تأخير من فتح المحل، أو نقص ساعات غيره)</span><span><i style="background:transparent;border-top:3px solid #fff"></i>خط أعلى الخانة = فتح المحل</span><span>… = لم يسجّل انصرافه بعد</span><span><i style="background:rgba(255,184,0,.55)"></i>تأخير بدون خصم</span>
-      <span><i style="background:rgba(255,107,94,.6)"></i>خصم أو غياب (غ)</span><span><i style="background:rgba(120,160,255,.55)"></i>بانتظار الموافقة</span><span><i style="background:var(--steel-200)"></i>سماح، عذر، أو غياب بعذر</span><span><i style="background:rgba(77,208,225,.45)"></i>ع = عطلة</span><span>— = عطلة أسبوعية</span><span><i style="background:transparent;box-shadow:inset 0 0 0 2px #FF8A80"></i>وقت مختار يختلف عن وقت التسجيل الفعلي</span></div>`;
+      <span><i style="background:rgba(255,107,94,.6)"></i>خصم أو غياب (غ)</span><span><i style="background:rgba(120,160,255,.55)"></i>بانتظار الموافقة</span><span><i style="background:var(--steel-200)"></i>سماح، عذر، أو غياب بعذر</span><span><i style="background:rgba(77,208,225,.45)"></i>ع = عطلة</span><span><i style="background:rgba(186,140,255,.5)"></i>س = سفر عمل</span><span><i style="background:rgba(255,255,255,.12)"></i>م = الشركة مغلقة</span><span>— = عطلة أسبوعية</span><span><i style="background:transparent;box-shadow:inset 0 0 0 2px #FF8A80"></i>وقت مختار يختلف عن وقت التسجيل الفعلي</span></div>`;
 }
 
 // مخطط دقائق التأخير: المحور الأفقي أيام الشهر، والعمودي دقائق التأخير
@@ -975,6 +1084,8 @@ function renderPerson(){
         <span>غياب بدون عذر</span><b>${s.absent}</b>
         <span>غياب بعذر</span><b>${s.absentExcused}</b>
         <span>أيام العطل${s.leaveDates && s.leaveDates.length ? ` <small>(${esc(s.leaveDates.map(x => Number(x.slice(8)) + "/" + Number(x.slice(5, 7))).join("، "))})</small>` : ""}</span><b>${s.leave || 0}${s.leavePending ? ` <small>(+${s.leavePending} بانتظار الموافقة)</small>` : ""}</b>
+        <span>أيام سفر العمل${s.tripDates && s.tripDates.length ? ` <small>(${esc(s.tripDates.map(dm).join("، "))})</small>` : ""}</span><b>${s.trip || 0}${s.tripPending ? ` <small>(+${s.tripPending} بانتظار الموافقة)</small>` : ""}</b>
+        <span>أيام إغلاق الشركة</span><b>${s.closed || 0}</b>
         <span>بقاء بعد الإغلاق (10 د أو أكثر)</span><b>${stays.length}</b>
         <span>تسجيل خارج النطاق</span><b>${outside}</b>
         <span>فرق بين الوقت المختار والفعلي</span><b>${s.diffCount}</b>
@@ -992,6 +1103,14 @@ function openRecordAdmin(id, empName, dateStr){
   const r = id ? ADM.records.find(x => x.id === id) : null;
   if (!r) {
     openSheet(`<h2>${esc(empName)}</h2><p>${esc(shortDate(dateStr))} — لا يوجد سجل لهذا اليوم. سيُسجَّل الغياب تلقائيًا بعد نهاية الدوام، ويمكنك تحديد إن كان بعذر من قائمة الموافقات.</p>
+      <div class="att-btns"><button class="att-btn" id="attRecClose">إغلاق</button></div>`);
+    $("#attRecClose").onclick = closeSheet; return;
+  }
+  const special = [ATT_STATUS.LEAVE, ATT_STATUS.TRIP, ATT_STATUS.CLOSED].indexOf(r.inStatus) !== -1 || !!attRequestKind(r);
+  if (special) {
+    openSheet(`<h2>${esc(r.emp)}</h2><p>${esc(shortDate(r.date))} — ${catPill(r)}</p>
+      <div class="att-box" style="margin-bottom:12px;font-size:13px;line-height:1.9">الحالة: ${esc(r.inStatus)}${r.pending ? `<br><span style="color:#9DB8FF">${esc(prettyReq(r.pending))}</span>` : ""}${r.note ? `<br>${esc(prettyReq(r.note))}` : ""}</div>
+      <div class="att-hint">${r.inStatus === ATT_STATUS.CLOSED || r.inStatus === ATT_STATUS.TRIP ? "للإلغاء استخدم زر «إلغاء» في خانة «إغلاق الشركة وسفر العمل» بصفحة الحضور." : attRequestKind(r) ? "الطلب في قائمة «بانتظار الموافقة»." : ""}</div>
       <div class="att-btns"><button class="att-btn" id="attRecClose">إغلاق</button></div>`);
     $("#attRecClose").onclick = closeSheet; return;
   }
@@ -1207,6 +1326,9 @@ const Mock = (function(){
       Object.assign(r, { inTime: "", inReal: "", outTime: "", outReal: "", inStatus: S.LEAVE, opener: false, closer: false, note: "عطلة — السبب: ظرف عائلي" }); }
     let nd = t; do { const d = attParseDate(nd); d.setDate(d.getDate() + 1); nd = d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); } while (!attIsWorkday(nd, db.rules));
     if (nd.slice(0, 7) === mk) db.records.push({ id: nid(), date: nd, day: attDayName(nd), emp: "حكيم سحيم", inStatus: S.PENDING, pending: "طلب عطلة — السبب: موعد في المستشفى", points: 0 });
+    // إغلاق الشركة يومين قادمين (مناسبة)
+    { let c = nd, list = []; while (list.length < 6) { const d = attParseDate(c); d.setDate(d.getDate() + 1); c = d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); if (attIsWorkday(c, db.rules)) list.push(c); }
+      list.slice(4).filter(x => x.slice(0, 7) === mk).forEach(x => db.employees.forEach(e => db.records.push({ id: nid(), date: x, day: attDayName(x), emp: e.name, inStatus: S.CLOSED, note: "إغلاق الشركة — مناسبة عائلية للإدارة", points: 0 }))); }
     // اليوم: إسلام سجّل حضوره من خارج النطاق
     if (attIsWorkday(t, db.rules)) db.records.push({ id: nid(), date: t, day: attDayName(t), emp: "إسلام الجهاني", inTime: "10:02", inReal: "10:20", inDist: 340,
       inStatus: S.PENDING, opener: true, pending: "حضور: خارج النطاق (340 م)", points: 0 });
@@ -1232,6 +1354,12 @@ const Mock = (function(){
     shift_hours: db.rules.shift_hours, emp_hours: rulesH().emp_hours });
   // القواعد مع ساعات كل موظف
   const rulesH = () => { const h = {}; db.employees.forEach(e => { if (Number(e.hours) > 0) h[e.name] = Number(e.hours); }); return Object.assign({}, db.rules, { emp_hours: h }); };
+  const range = (days, emps, fn) => { let done = 0; const skipped = [];
+    days.forEach(ds => emps.forEach(e => {
+      let rec = db.records.find(r => r.emp === e.name && r.date === ds); const isNew = !rec;
+      rec = rec || { id: nid(), date: ds, day: attDayName(ds), emp: e.name, points: 0 };
+      if (fn(rec) === false) { skipped.push((emps.length > 1 ? firstName(e.name) + " " : "") + Number(ds.slice(8)) + "/" + Number(ds.slice(5, 7))); return; }
+      if (isNew) db.records.push(rec); done++; })); return { done, skipped }; };
   const months = () => [...new Set(db.records.map(r => r.date.slice(0, 7)))].sort().reverse();
   const tt = (v, real) => (v || "—") + (real && real !== v ? " [سُجّل فعليًا " + real + "]" : "");
   const desc = r => "حضور " + tt(r.inTime, r.inReal) + " (" + (r.inStatus || "—") + ")" + (r.outTime ? "، انصراف " + tt(r.outTime, r.outReal) + " (" + r.outStatus + ")" : "");
@@ -1288,6 +1416,30 @@ const Mock = (function(){
         opener: !!req.opener, closer: !!req.closer, note: "", pending: "إضافة يوم سابق (سُجّل يوم " + n.date + " " + n.time + ") — السبب: " + req.reason });
       return { status: S.PENDING };
     },
+    emp_trip: req => {
+      const e = emp(req), days = workdaysBetween(req.from, req.to, db.rules);
+      if (!days.length) throw new Error("لا توجد أيام عمل في هذه الفترة");
+      const tag = "طلب سفر عمل #" + nid() + " (" + req.from + " → " + req.to + ") — " + req.reason;
+      return range(days, [e], rec => { if (rec.inTime || [S.LEAVE, S.TRIP, S.CLOSED].includes(rec.inStatus)) return false; rec.inStatus = S.PENDING; rec.pending = tag; });
+    },
+    admin_trip_add: req => {
+      const e = db.employees.find(x => String(x.id) === String(req.empId)), days = workdaysBetween(req.from, req.to, db.rules);
+      const res = range(days, [e], rec => { if (rec.inTime || rec.inStatus === S.CLOSED) return false; rec.inStatus = S.TRIP; rec.pending = ""; rec.note = "سفر عمل (" + req.from + " → " + req.to + ") — " + req.reason + " — أضافته الإدارة"; });
+      log(req.adminEmail, "إضافة سفر عمل", e.name + " — " + req.from + " → " + req.to, res.done + " أيام", req.reason);
+      return res;
+    },
+    admin_closure: req => {
+      const days = workdaysBetween(req.from, req.to, db.rules);
+      const res = range(days, db.employees.filter(e => e.active), rec => { if (rec.inTime) return false; rec.inStatus = S.CLOSED; rec.pending = ""; rec.note = "إغلاق الشركة — " + req.reason; });
+      log(req.adminEmail, "إغلاق الشركة", req.from + " → " + req.to + " (" + days.length + " أيام عمل)", req.reason);
+      return res;
+    },
+    admin_closure_cancel: req => {
+      const st = req.kind === "trip" ? S.TRIP : S.CLOSED; let n = 0;
+      db.records.forEach(x => { if (x.date >= req.from && x.date <= (req.to || req.from) && x.inStatus === st && (!req.emp || x.emp === req.emp)) { x.inStatus = ""; x.note = "أُلغي " + st; n++; } });
+      log(req.adminEmail, "إلغاء " + st, (req.emp ? req.emp + " — " : "") + req.from + " → " + req.to, n + " سجلات");
+      return { changed: n };
+    },
     emp_edit: req => {
       const e = emp(req), rec = db.records.find(r => r.id === req.id && r.emp === e.name);
       if (!rec) throw new Error("السجل غير موجود");
@@ -1334,6 +1486,13 @@ const Mock = (function(){
     admin_decide: req => {
       const rec = db.records.find(r => r.id === req.id); if (!rec) throw new Error("السجل غير موجود");
       const before = desc(rec), d = req.decision;
+      if (attIsTripRequest(rec) && (d === "approve" || d === "reject")) {
+        const g = attTripGroup(rec), why = rec.pending.replace(/^طلب سفر عمل #\w+ /, ""); let n = 0;
+        db.records.filter(x => x.emp === rec.emp && attIsTripRequest(x) && attTripGroup(x) === g).forEach(x => {
+          x.inStatus = d === "approve" ? S.TRIP : (x.date < todayStr() ? S.ABSENT : ""); x.note = d === "approve" ? "سفر عمل " + why : "رُفض طلب سفر العمل"; x.pending = ""; n++; });
+        log(req.adminEmail, d === "approve" ? "موافقة على سفر عمل" : "رفض سفر عمل", rec.emp + " — " + n + " أيام", why);
+        return { ok: true, days: n };
+      }
       if (attIsLeaveRequest(rec) && (d === "approve" || d === "reject")) {
         const why = rec.pending.replace(/^طلب عطلة — /, "");
         rec.inStatus = d === "approve" ? S.LEAVE : (rec.date < todayStr() ? S.ABSENT : ""); rec.pending = "";
