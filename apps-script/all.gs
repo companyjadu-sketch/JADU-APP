@@ -53,10 +53,19 @@ var ATT_MONTH_NAMES = ["يناير","فبراير","مارس","أبريل","ما
 
 var ATT_STATUS = {
   OK: "معتمد", PENDING: "بانتظار الموافقة", REJECTED: "مرفوض",
-  ABSENT: "غائب بدون عذر", ABSENT_EXCUSED: "غائب بعذر", LEAVE: "عطلة"
+  ABSENT: "غائب بدون عذر", ABSENT_EXCUSED: "غائب بعذر", LEAVE: "عطلة",
+  TRIP: "سفر عمل", CLOSED: "إغلاق الشركة"
 };
-// طلب عطلة بانتظار الموافقة: حالة "بانتظار الموافقة" بدون وقت حضور، ونص الطلب يبدأ بـ "طلب عطلة"
-function attIsLeaveRequest(r){ return r.inStatus === ATT_STATUS.PENDING && !r.inTime && /^طلب عطلة/.test(String(r.pending || "")); }
+// طلب بانتظار الموافقة بدون وقت حضور: "طلب عطلة …" أو "طلب سفر عمل …"
+function attRequestKind(r){
+  if (r.inStatus !== ATT_STATUS.PENDING || r.inTime) return "";
+  var p = String(r.pending || "");
+  return /^طلب عطلة/.test(p) ? "leave" : /^طلب سفر عمل/.test(p) ? "trip" : "";
+}
+function attIsLeaveRequest(r){ return attRequestKind(r) === "leave"; }
+function attIsTripRequest(r){ return attRequestKind(r) === "trip"; }
+// رقم طلب السفر (يجمع كل أيام الطلب الواحد): "طلب سفر عمل #ab12 …"
+function attTripGroup(r){ var m = String(r.pending || "").match(/^طلب سفر عمل #(\w+)/); return m ? m[1] : ""; }
 
 function attMergeRules(r){
   var out = {}, k;
@@ -156,7 +165,10 @@ function attComputeMonth(records, rulesIn){
     }
     if (r.inStatus === ATT_STATUS.ABSENT_EXCUSED) { r.cat = "غياب بعذر"; return; }
     if (r.inStatus === ATT_STATUS.LEAVE) { r.cat = "عطلة"; return; }
+    if (r.inStatus === ATT_STATUS.TRIP) { r.cat = "سفر عمل"; return; }
+    if (r.inStatus === ATT_STATUS.CLOSED) { r.cat = "إغلاق الشركة"; return; }
     if (attIsLeaveRequest(r)) { r.cat = "طلب عطلة"; return; }
+    if (attIsTripRequest(r)) { r.cat = "طلب سفر عمل"; return; }
     var inMin = attToMin(r.inTime), outMin = attToMin(r.outTime);
     if (inMin === null) return;
     if (outMin !== null) { r.workedMin = Math.max(0, outMin - inMin); r.shortMin = Math.max(0, r.reqMin - r.workedMin); }
@@ -217,7 +229,7 @@ function attComputeMonth(records, rulesIn){
   var summary = {};
   sorted.forEach(function(r){
     var s = summary[r.emp] || (summary[r.emp] = { emp: r.emp, present: 0, onTime: 0, t2: 0, t3: 0, t4: 0,
-      allowance: 0, excuse: 0, absent: 0, absentExcused: 0, leave: 0, leaveDates: [], leavePending: 0, pending: 0, deduct: 0, points: 0, lateMin: 0, lostMin: 0,
+      allowance: 0, excuse: 0, absent: 0, absentExcused: 0, leave: 0, leaveDates: [], leavePending: 0, trip: 0, tripDates: [], tripPending: 0, closed: 0, closedDates: [], pending: 0, deduct: 0, points: 0, lateMin: 0, lostMin: 0,
       workedMin: 0, reqMin: 0, shortDays: 0, openDays: 0, closeDays: 0, diffs: [] });
     if (r.bigDiff) s.diffs.push({ date: r.date, inTime: r.inTime, inReal: r.inReal, inDiff: r.inDiff, outTime: r.outTime, outReal: r.outReal, outDiff: r.outDiff });
     if (r.inStatus === ATT_STATUS.PENDING || r.outStatus === ATT_STATUS.PENDING || r.pending) s.pending++;
@@ -226,7 +238,10 @@ function attComputeMonth(records, rulesIn){
     if (r.inStatus === ATT_STATUS.ABSENT || r.inStatus === ATT_STATUS.REJECTED) { s.absent++; return; }
     if (r.inStatus === ATT_STATUS.ABSENT_EXCUSED) { s.absentExcused++; return; }
     if (r.inStatus === ATT_STATUS.LEAVE) { s.leave++; s.leaveDates.push(r.date); return; }
+    if (r.inStatus === ATT_STATUS.TRIP) { s.trip++; s.tripDates.push(r.date); return; }
+    if (r.inStatus === ATT_STATUS.CLOSED) { s.closed++; s.closedDates.push(r.date); return; }
     if (attIsLeaveRequest(r)) { s.leavePending++; return; }
+    if (attIsTripRequest(r)) { s.tripPending++; return; }
     if (!r.inTime) return;
     s.present++;
     if (r.opener) s.openDays++;
@@ -271,7 +286,7 @@ function attDecideStatus(opts, rules){
 
 if (typeof module !== "undefined") module.exports = {
   ATT_DEFAULT_RULES: ATT_DEFAULT_RULES, ATT_STATUS: ATT_STATUS, attComputeMonth: attComputeMonth,
-  attDecideStatus: attDecideStatus, attDistance: attDistance, attIsLeaveRequest: attIsLeaveRequest, attHoursFor: attHoursFor, attTimeDiff: attTimeDiff, attMergeRules: attMergeRules, attToMin: attToMin
+  attDecideStatus: attDecideStatus, attDistance: attDistance, attIsLeaveRequest: attIsLeaveRequest, attIsTripRequest: attIsTripRequest, attTripGroup: attTripGroup, attRequestKind: attRequestKind, attParseDate: attParseDate, attIsWorkday: attIsWorkday, attHoursFor: attHoursFor, attTimeDiff: attTimeDiff, attMergeRules: attMergeRules, attToMin: attToMin
 };
 
 // =====================================================================
@@ -427,6 +442,8 @@ var API = {
     var rec = readMonth_(mk).filter(function(r){ return r.emp === emp.name && r.date === date; })[0];
     if (rec && rec.inTime) throw new Error("يوجد تسجيل لهذا اليوم — استخدم \"طلب تعديل الوقت\" من السجل");
     if (rec && rec.inStatus === ATT_STATUS.LEAVE) throw new Error("هذا اليوم مسجّل عطلة من قبل");
+    if (rec && rec.inStatus === ATT_STATUS.TRIP) throw new Error("هذا اليوم مسجّل سفر عمل");
+    if (rec && rec.inStatus === ATT_STATUS.CLOSED) throw new Error("الشركة مغلقة في هذا اليوم");
     rec = rec || { id: Utilities.getUuid().slice(0, 8), date: date, day: attDayName(date), emp: emp.name, points: 0 };
     if (kind === "leave") {
       rec.inStatus = ATT_STATUS.PENDING;
@@ -444,6 +461,22 @@ var API = {
     writeRecord_(rec);
     markDirty_(mk);
     return { status: ATT_STATUS.PENDING };
+  },
+
+  // طلب سفر عمل لفترة (من تاريخ إلى تاريخ) — بانتظار موافقة الإدارة، وكل أيام الطلب تُعتمد أو تُرفض معًا
+  emp_trip: function(req){
+    var emp = authEmployee_(req), rules = getRules_(), now = nowParts_();
+    var reason = String(req.reason || "").trim().slice(0, 200);
+    if (!reason) throw new Error("اكتب الوجهة أو سبب السفر");
+    var days = rangeDays_(req.from, req.to, rules, now, -45, 90);
+    var gid = Utilities.getUuid().slice(0, 4);
+    var tag = "طلب سفر عمل #" + gid + " (" + req.from + " → " + req.to + ") — " + reason;
+    var res = writeRange_(days, [emp], function(rec){
+      if (rec.inTime || rec.inStatus === ATT_STATUS.LEAVE || rec.inStatus === ATT_STATUS.TRIP || rec.inStatus === ATT_STATUS.CLOSED) return false;
+      rec.inStatus = ATT_STATUS.PENDING; rec.pending = tag; return true;
+    });
+    if (!res.done) throw new Error("لا توجد أيام عمل متاحة في هذه الفترة" + (res.skipped.length ? " (" + res.skipped.join("، ") + ")" : ""));
+    return { status: ATT_STATUS.PENDING, days: res.done, skipped: res.skipped };
   },
 
   // طلب تعديل وقت سابق — يبقى الوقت الأصلي حتى توافق الإدارة
@@ -524,6 +557,24 @@ var API = {
     var rec = readMonth_(mk).filter(function(r){ return r.id === req.id; })[0];
     if (!rec) throw new Error("السجل غير موجود");
     var before = describe_(rec), rules = getRules_(), d = req.decision;
+    if (attIsTripRequest(rec) && (d === "approve" || d === "reject")) {
+      var gid = attTripGroup(rec), txt = String(rec.pending), today = nowParts_().date;
+      var rng = txt.match(/\((\d{4}-\d{2}-\d{2}) → (\d{4}-\d{2}-\d{2})\)/);
+      var months = rng ? monthsBetween_(rng[1], rng[2]) : [mk];
+      var why = txt.replace(/^طلب سفر عمل #\w+ /, ""), n = 0;
+      months.forEach(function(m){
+        var touched = false;
+        readMonth_(m).forEach(function(x){
+          if (x.emp !== rec.emp || !attIsTripRequest(x) || attTripGroup(x) !== gid) return;
+          if (d === "approve") { x.inStatus = ATT_STATUS.TRIP; x.note = joinNote_(x.note, "سفر عمل " + why); }
+          else { x.inStatus = attParseDate(x.date) < attParseDate(today) ? ATT_STATUS.ABSENT : ""; x.note = joinNote_(x.note, "رُفض طلب سفر العمل"); }
+          x.pending = ""; writeRecord_(x); n++; touched = true;
+        });
+        if (touched) recalcMonth_(m);
+      });
+      log_(who, d === "approve" ? "موافقة على سفر عمل" : "رفض سفر عمل", rec.emp + " — " + n + " أيام", why, req.note || "");
+      return { ok: true, days: n };
+    }
     if (attIsLeaveRequest(rec) && (d === "approve" || d === "reject")) {
       var why = String(rec.pending).replace(/^طلب عطلة — /, "");
       if (d === "approve") { rec.inStatus = ATT_STATUS.LEAVE; rec.note = joinNote_(rec.note, "عطلة — " + why); }
@@ -578,6 +629,59 @@ var API = {
     recalcMonth_(mk);
     log_(who, "تعديل سجل", rec.emp + " — " + rec.date, changes.join("، "), "");
     return { ok: true };
+  },
+
+  // سفر عمل تضيفه الإدارة مباشرة لموظف (معتمد بدون طلب)
+  admin_trip_add: function(req){
+    var who = authAdmin_(req), rules = getRules_(), now = nowParts_();
+    var emp = getEmployees_().filter(function(x){ return String(x.id) === String(req.empId); })[0];
+    if (!emp) throw new Error("اختر الموظف");
+    var reason = String(req.reason || "").trim().slice(0, 200);
+    if (!reason) throw new Error("اكتب الوجهة أو سبب السفر");
+    var days = rangeDays_(req.from, req.to, rules, now, -60, 120);
+    var res = writeRange_(days, [emp], function(rec){
+      if (rec.inTime || rec.inStatus === ATT_STATUS.CLOSED) return false;
+      rec.inStatus = ATT_STATUS.TRIP; rec.pending = ""; rec.note = joinNote_("", "سفر عمل (" + req.from + " → " + req.to + ") — " + reason + " — أضافته الإدارة");
+      return true;
+    });
+    log_(who, "إضافة سفر عمل", emp.name + " — " + req.from + " → " + req.to, res.done + " أيام" + (res.skipped.length ? " (لم يُغيَّر: " + res.skipped.join("، ") + ")" : ""), reason);
+    return { days: res.done, skipped: res.skipped };
+  },
+
+  // إغلاق الشركة لكل الموظفين لفترة (مناسبة أو ظرف) — لا يُحسب غيابًا ولا عطلة ولا خصمًا
+  admin_closure: function(req){
+    var who = authAdmin_(req), rules = getRules_(), now = nowParts_();
+    var reason = String(req.reason || "").trim().slice(0, 200);
+    if (!reason) throw new Error("اكتب سبب الإغلاق");
+    var days = rangeDays_(req.from, req.to, rules, now, -60, 120);
+    var emps = getEmployees_().filter(function(e){ return e.active; });
+    var res = writeRange_(days, emps, function(rec){
+      if (rec.inTime) return false;
+      rec.inStatus = ATT_STATUS.CLOSED; rec.pending = ""; rec.note = "إغلاق الشركة — " + reason;
+      return true;
+    });
+    log_(who, "إغلاق الشركة", req.from + " → " + req.to + " (" + days.length + " أيام عمل)", reason, res.skipped.length ? "حضر فعلًا: " + res.skipped.join("، ") : "");
+    notifyAdmins_(who, "إغلاق الشركة", "إغلاق الشركة من " + req.from + " إلى " + req.to + "\nالسبب: " + reason);
+    return { days: days.length, skipped: res.skipped };
+  },
+
+  // إلغاء إغلاق الشركة (أو سفر عمل) ليوم أو فترة — تعود الأيام فارغة
+  admin_closure_cancel: function(req){
+    var who = authAdmin_(req), rules = getRules_(), now = nowParts_();
+    var status = req.kind === "trip" ? ATT_STATUS.TRIP : ATT_STATUS.CLOSED;
+    var days = rangeDays_(req.from, req.to || req.from, rules, now, -120, 365);
+    var n = 0;
+    monthsBetween_(days[0], days[days.length - 1]).forEach(function(m){
+      var touched = false;
+      readMonth_(m).forEach(function(x){
+        if (days.indexOf(x.date) === -1 || x.inStatus !== status) return;
+        if (req.emp && x.emp !== req.emp) return;
+        x.inStatus = ""; x.note = joinNote_(x.note, "أُلغي " + status); writeRecord_(x); n++; touched = true;
+      });
+      if (touched) recalcMonth_(m);
+    });
+    log_(who, "إلغاء " + status, (req.emp ? req.emp + " — " : "") + req.from + (req.to && req.to !== req.from ? " → " + req.to : ""), n + " سجلات", "");
+    return { changed: n };
   },
 
   admin_rules_save: function(req){
@@ -799,10 +903,10 @@ function recalcMonth_(mk){
     sh.getRange(2, 1, last - 1, COLS.length).sort([{ column: 2, ascending: true }, { column: 4, ascending: true }]);
   }
   // ملخص الشهر
-  var head = ["الموظف","أيام الحضور","ساعات العمل","المطلوب","أيام فتح المحل","أيام الإغلاق","منتظم","16–30 د","31–60 د","أكثر من ساعة","سماح شهري","عذر طارئ","غياب","غياب بعذر","أيام العطل","بانتظار الموافقة","مجموع الخصم (يوم)","النقاط","التقييم","فروق الوقت","ملاحظة للإدارة"];
+  var head = ["الموظف","أيام الحضور","ساعات العمل","المطلوب","أيام فتح المحل","أيام الإغلاق","منتظم","16–30 د","31–60 د","أكثر من ساعة","سماح شهري","عذر طارئ","غياب","غياب بعذر","أيام العطل","سفر عمل","إغلاق الشركة","بانتظار الموافقة","مجموع الخصم (يوم)","النقاط","التقييم","فروق الوقت","ملاحظة للإدارة"];
   var rows = Object.keys(res.summary).map(function(k){
     var s = res.summary[k];
-    return [s.emp, s.present, attFmtDur(s.workedMin), attFmtDur(s.reqMin), s.openDays, s.closeDays, s.onTime, s.t2, s.t3, s.t4, s.allowance, s.excuse, s.absent, s.absentExcused, s.leave, s.pending, s.deduct, s.points, s.rating, s.diffCount, s.diffAlert];
+    return [s.emp, s.present, attFmtDur(s.workedMin), attFmtDur(s.reqMin), s.openDays, s.closeDays, s.onTime, s.t2, s.t3, s.t4, s.allowance, s.excuse, s.absent, s.absentExcused, s.leave, s.trip, s.closed, s.pending, s.deduct, s.points, s.rating, s.diffCount, s.diffAlert];
   });
   sh.getRange(1, SUMMARY_COL, Math.max(sh.getMaxRows(), 2), head.length + 4).clearContent();
   sh.getRange(1, SUMMARY_COL, 1, head.length).setValues([head]).setFontWeight("bold").setBackground("#E10A1E").setFontColor("#FFFFFF");
@@ -813,6 +917,48 @@ function recalcMonth_(mk){
   if (res.dayFlags.length) sh.getRange(fr + 1, SUMMARY_COL, res.dayFlags.length, 2)
     .setValues(res.dayFlags.map(function(d){ return [d.date, d.flags.join(" | ")]; }));
 }
+
+// أيام العمل بين تاريخين (شاملة) مع التحقق من الحدود
+function rangeDays_(from, to, rules, now, minOff, maxOff){
+  from = String(from || ""); to = String(to || "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) throw new Error("اختر تاريخ البداية والنهاية");
+  var a = attParseDate(from), b = attParseDate(to), t = attParseDate(now.date);
+  if (b < a) throw new Error("تاريخ النهاية قبل البداية");
+  if ((b - a) / 86400000 > 45) throw new Error("الفترة طويلة جدًا (الحد 45 يومًا)");
+  if ((a - t) / 86400000 < minOff || (b - t) / 86400000 > maxOff) throw new Error("التاريخ بعيد جدًا");
+  var out = [];
+  for (var d = new Date(a); d <= b; d.setDate(d.getDate() + 1)) {
+    ds = d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2);
+    if (attIsWorkday(ds, rules)) out.push(ds);
+  }
+  if (!out.length) throw new Error("لا توجد أيام عمل في هذه الفترة");
+  return out;
+}
+function monthsBetween_(a, b){
+  var out = [], m = attMonthKey(a), end = attMonthKey(b);
+  while (m <= end) { out.push(m); var y = Number(m.slice(0, 4)), mo = Number(m.slice(5)) + 1; if (mo > 12) { mo = 1; y++; } m = y + "-" + (mo < 10 ? "0" : "") + mo; }
+  return out;
+}
+// يكتب سجلًا لكل (يوم × موظف) عبر الأشهر؛ fn تعدّل السجل وترجع false لتخطيه
+function writeRange_(days, emps, fn){
+  var done = 0, skipped = [];
+  monthsBetween_(days[0], days[days.length - 1]).forEach(function(m){
+    var rows = readMonth_(m), touched = false;
+    days.filter(function(d){ return attMonthKey(d) === m; }).forEach(function(ds){
+      emps.forEach(function(e){
+        var rec = rows.filter(function(r){ return r.emp === e.name && r.date === ds; })[0];
+        var isNew = !rec;
+        rec = rec || { id: Utilities.getUuid().slice(0, 8), date: ds, day: attDayName(ds), emp: e.name, points: 0 };
+        if (!isNew && /سُجّل تلقائيًا/.test(rec.note || "")) rec.note = "";
+        if (fn(rec) === false) { skipped.push((emps.length > 1 ? firstName_(e.name) + " " : "") + Number(ds.slice(8)) + "/" + Number(ds.slice(5, 7))); return; }
+        writeRecord_(rec); done++; touched = true;
+      });
+    });
+    if (touched) markDirty_(m);
+  });
+  return { done: done, skipped: skipped };
+}
+function firstName_(n){ return String(n).split(" ")[0]; }
 
 function listMonths_(){
   var out = [];
@@ -938,7 +1084,7 @@ function joinNote_(a, b){ b = String(b || "").trim().slice(0, 200); return !b ? 
 function yn_(v){ return v ? "نعم" : "لا"; }
 function fieldLabel_(k){ return { opener: "فتح المحل", closer: "أغلق المحل", excuse: "عذر طارئ", allowance: "سماح شهري" }[k] || k; }
 function describe_(r){
-  if (r.inStatus === ATT_STATUS.LEAVE) return "عطلة";
+  if (r.inStatus === ATT_STATUS.LEAVE || r.inStatus === ATT_STATUS.TRIP || r.inStatus === ATT_STATUS.CLOSED) return r.inStatus;
   var t = function(v, real){ return (v || "—") + (real && real !== v ? " [سُجّل فعليًا " + real + "]" : ""); };
   return "حضور " + t(r.inTime, r.inReal) + " (" + (r.inStatus || "—") + ")" + (r.outTime ? "، انصراف " + t(r.outTime, r.outReal) + " (" + r.outStatus + ")" : "");
 }

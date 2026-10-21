@@ -3,7 +3,7 @@
 // مباشرة من كود الصفحة نفسها (مع نسخة احتياطية محليًا عبر localStorage)،
 // هذا الملف مسؤول فقط عن تخزين "هيكل" التطبيق (الصفحة، الصور، المكتبات) عشان يفتح بدون إنترنت.
 
-const CACHE_NAME = 'jadu-app-v5';
+const CACHE_NAME = 'jadu-app-v6';
 const CORE_ASSETS = [
   './',
   './index.html',

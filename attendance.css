@@ -150,3 +150,9 @@
 .att-emp-dev{ grid-column:1 / -1; font-size:12px; color:var(--steel-500); margin-top:-4px; display:flex; gap:10px; align-items:center; }
 .att-pill.lv{ background:rgba(77,208,225,.15); color:#80DEEA; }
 .att-heat td.c.lv{ background:rgba(77,208,225,.22); color:#80DEEA; }
+.att-pill.tr{ background:rgba(186,140,255,.16); color:#CDB4FF; }
+.att-pill.cl{ background:rgba(255,255,255,.08); color:var(--steel-300, #c9ccd1); }
+.att-heat td.c.tr{ background:rgba(186,140,255,.25); color:#D9C7FF; }
+.att-heat td.c.cl{ background:rgba(255,255,255,.07); color:#aab0b8; }
+.att-alert.info{ background:rgba(120,160,255,.10); border:1px solid rgba(120,160,255,.32); color:#B9CCFF; }
+.att-alert.info strong{ display:block; font-size:14px; margin-bottom:2px; }
