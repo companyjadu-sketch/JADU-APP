@@ -93,6 +93,7 @@ const ITEM_IMAGES = {
   "1709": "images/surbisa/1709.jpg",  // SURBISA 61114
   "1710": "images/surbisa/1710.jpg",  // SURBISA 61116
   "1713": "images/surbisa/1713.jpg",  // SURBISA 61150
+  "1715": "images/surbisa/1715.jpg",  // SURBISA 61732 (صورة الساطور الأقرب 61723)
   "1716": "images/surbisa/1716.jpg",  // SURBISA 61111
   "1717": "images/surbisa/1717.jpg",  // SURBISA 61012
   "1718": "images/surbisa/1718.jpg",  // SURBISA 61101
