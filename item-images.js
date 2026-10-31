@@ -83,7 +83,20 @@ const ITEM_IMAGES = {
   "2528": "https://static.ticimax.cloud/cdn-cgi/image/width=800,quality=85,format=webp/53979/uploads/urunresimleri/buyuk/net-celik-helvane-tencere-kapakli-1103-a1-e71.jpg",
   "2529": "https://static.ticimax.cloud/cdn-cgi/image/width=800,quality=85,format=webp/53979/uploads/urunresimleri/buyuk/net-celik-helvane-tencere-kapakli-1103-a1-e71.jpg",
   "2531": "https://static.ticimax.cloud/cdn-cgi/image/width=800,quality=85,format=webp/53979/uploads/urunresimleri/buyuk/net-celik-helvane-tencere-kapakli-1103-a1-e71.jpg",
-  "2533": "https://static.ticimax.cloud/cdn-cgi/image/width=800,quality=85,format=webp/53979/uploads/urunresimleri/buyuk/net-celik-helvane-tencere-kapakli-1103-a1-e71.jpg"
+  "2533": "https://static.ticimax.cloud/cdn-cgi/image/width=800,quality=85,format=webp/53979/uploads/urunresimleri/buyuk/net-celik-helvane-tencere-kapakli-1103-a1-e71.jpg",
+  // سكاكين SURBISA — صور من موقع سوربيسا الرسمي (مربعة 1080 بخلفية بيضاء)
+  "1703": "images/surbisa/1703.jpg",  // SURBISA 61140
+  "1704": "images/surbisa/1704.jpg",  // SURBISA 61120
+  "1705": "images/surbisa/1705.jpg",  // SURBISA 61030
+  "1707": "images/surbisa/1707.jpg",  // SURBISA 61015
+  "1708": "images/surbisa/1708.jpg",  // SURBISA 61112
+  "1709": "images/surbisa/1709.jpg",  // SURBISA 61114
+  "1710": "images/surbisa/1710.jpg",  // SURBISA 61116
+  "1713": "images/surbisa/1713.jpg",  // SURBISA 61150
+  "1716": "images/surbisa/1716.jpg",  // SURBISA 61111
+  "1717": "images/surbisa/1717.jpg",  // SURBISA 61012
+  "1718": "images/surbisa/1718.jpg",  // SURBISA 61101
+  "1729": "images/surbisa/1729.jpg",  // SURBISA 61115
 };
 
 // صور حسب الموديل المكتوب في اسم الصنف (مثل "مريول 236")
