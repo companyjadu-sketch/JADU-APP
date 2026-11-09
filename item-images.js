@@ -117,3 +117,29 @@ const MODEL_IMAGES = [
     }
   }
 ];
+
+// صور فيرمو FERMO حسب شفرة النوع (الموديل) — من قائمة المورد Glace بعد تنظيفها (خلفية بيضاء بدون شعار المصنع)
+// تنطبق على أي صنف شفرة النوع عنده = الموديل، أو الموديل مكتوب داخل اسم الصنف
+// المقارنة تتجاهل الشرطات والمسافات وحالة الحروف (DF-12L-2 = df12l2)
+const TYPE_CODE_IMAGES = {
+  "DF-10L-2": "images/fermo/DF-10L-2.jpg",
+  "DF-12L-2": "images/fermo/DF-12L-2.jpg",
+  "DH-2*3": "images/fermo/DH-2x3.jpg",
+  "DH-2*4": "images/fermo/DH-2x4.jpg",
+  "DH-6P": "images/fermo/DH-6P.jpg",
+  "DH-828": "images/fermo/DH-828.jpg",
+  "DH-8P": "images/fermo/DH-8P.jpg",
+  "EB-4A": "images/fermo/EB-4A.jpg",
+  "EB-8A": "images/fermo/EB-8A.jpg",
+  "EG-811E": "images/fermo/EG-811E.jpg",
+  "EG-813": "images/fermo/EG-813.jpg",
+  "EG-818": "images/fermo/EG-818.jpg",
+  "EG-820": "images/fermo/EG-820.jpg",
+  "EH-767": "images/fermo/EH-767.jpg",
+  "GF-221": "images/fermo/GF-221.jpg",
+  "GH-718": "images/fermo/GH-718.jpg",
+  "GH-720": "images/fermo/GH-720.jpg",
+  "GH-722": "images/fermo/GH-722.jpg",
+  "R60-1": "images/fermo/R60-1.jpg",
+  "R60-2": "images/fermo/R60-2.jpg",
+};

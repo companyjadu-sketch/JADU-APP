@@ -943,6 +943,13 @@ function itemImage(number){
 
 // صورة حسب رقم الموديل المكتوب في اسم الصنف (MODEL_IMAGES في item-images.js)
 let modelImageCache = null, modelImageCacheFor = null;
+// توحيد شفرة النوع للمقارنة: حروف كبيرة، * و × تصبح X، وحذف الشرطات والمسافات
+function normCode(c){ return String(c || '').toUpperCase().replace(/[*×]/g, 'X').replace(/[^A-Z0-9]/g, ''); }
+let typeCodeMap = null;
+if(typeof TYPE_CODE_IMAGES !== 'undefined'){
+  typeCodeMap = {};
+  for(const k in TYPE_CODE_IMAGES) typeCodeMap[normCode(k)] = TYPE_CODE_IMAGES[k];
+}
 function modelImage(n){
   if(typeof MODEL_IMAGES === 'undefined' || !ITEMS.length) return '';
   if(modelImageCacheFor !== ITEMS){
@@ -954,6 +961,13 @@ function modelImage(n){
         const nums = name.match(/\d+/g) || [];
         const hit = nums.find(x => g.images[x]);
         if(hit){ modelImageCache[String(it.number).trim()] = g.images[hit]; break; }
+      }
+      const key = String(it.number).trim();
+      if(!modelImageCache[key] && typeCodeMap){
+        const byCode = typeCodeMap[normCode(it.typeCode)];
+        const byName = byCode || (name.toUpperCase().match(/[A-Z]{1,3}[\s-]*\d[A-Z0-9*×\s-]*/g) || [])
+          .map(normCode).map(c => typeCodeMap[c]).find(Boolean);
+        if(byCode || byName) modelImageCache[key] = byCode || byName;
       }
     }
     modelImageCacheFor = ITEMS;
