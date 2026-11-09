@@ -122,6 +122,8 @@ const MODEL_IMAGES = [
 // تنطبق على أي صنف شفرة النوع عنده = الموديل، أو الموديل مكتوب داخل اسم الصنف
 // المقارنة تتجاهل الشرطات والمسافات وحالة الحروف (DF-12L-2 = df12l2)
 const TYPE_CODE_IMAGES = {
+  "DE-1": "images/fermo/DE-1.jpg",
+  "DE-2": "images/fermo/DE-2.jpg",
   "DF-10L-2": "images/fermo/DF-10L-2.jpg",
   "DF-12L-2": "images/fermo/DF-12L-2.jpg",
   "DH-2*3": "images/fermo/DH-2x3.jpg",
