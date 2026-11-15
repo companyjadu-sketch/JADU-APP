@@ -221,10 +221,63 @@ let currentNav = { view: 'gate', step: null }; // آخر حالة تنقل مُ�
 function navMatchesCurrent(view, step){
   return currentNav.view === view && (view !== 'employee' || currentNav.step === step);
 }
+// عدّاد الحالات المسجّلة فوق الشاشة الرئيسية (يُستعمل للرجوع للبداية عند تسجيل الخروج)
+let navDepth = 0;
+// رجوع برمجي (عند إغلاق نافذة بزرّها) لم يصل حدث popstate الخاص به بعد
+let owedBacks = 0;
+// تسجيلات مؤجَّلة إلى أن ينتهي الرجوع البرمجي — حتى لا يمسح الرجوع حالة سُجّلت للتو
+const navQueue = [];
+function navPush(state, url){
+  const run = () => {
+    navDepth++; state.d = navDepth;
+    try { url === undefined ? history.pushState(state, '') : history.pushState(state, '', url); } catch(e){}
+  };
+  syncBackLayers();   // نافذة أُغلقت للتو ولم يُزَل أثرها بعد؟ نزيله أولًا حتى لا يمسح رجوعُها هذه الحالة الجديدة
+  if (owedBacks) navQueue.push(run); else run();
+  return run;
+}
+const layerChecks = [];
+let syncingLayers = false;
+function syncBackLayers(){
+  if (syncingLayers) return;
+  syncingLayers = true;
+  try { layerChecks.forEach(f => f()); } finally { syncingLayers = false; }
+}
+function navBackSilently(){ owedBacks++; if (owedBacks === 1) history.back(); }
+
 function pushNavState(view, step){
   currentNav = { view, step: view === 'employee' ? step : null };
   if (isRestoringNav) return;
-  try { history.pushState({ view, step: currentNav.step }, '', view === 'employee' ? ('#employee-' + step) : ('#' + view)); } catch(e){}
+  navPush({ view, step: currentNav.step }, view === 'employee' ? ('#employee-' + step) : ('#' + view));
+}
+
+// ---------------------------------------------------------------
+// النوافذ المنبثقة (صورة مكبّرة، كاميرا، دخول، تأكيد، نوافذ الحضور…) وزر الرجوع
+// ---------------------------------------------------------------
+// كل نافذة تُفتح تسجَّل كحالة بتاريخ المتصفح، فزر الرجوع بالهاتف يغلقها هي
+// فقط بدل أن يغيّر الشاشة التي خلفها. وإذا أُغلقت بزرّها نزيل حالتها من التاريخ.
+const backLayers = [];
+function registerBackLayer(el, close, isOpen){
+  if (!el) return;
+  isOpen = isOpen || (() => el.classList.contains('open'));
+  let entry = null;
+  const check = () => {
+    const open = isOpen();
+    if (open && !entry) {
+      entry = { close, byBack: false };
+      entry.run = navPush({ view: currentNav.view, step: currentNav.step, layer: el.id });
+      backLayers.push(entry);
+    } else if (!open && entry) {
+      const e = entry; entry = null;
+      const i = backLayers.indexOf(e); if (i > -1) backLayers.splice(i, 1);
+      if (e.byBack) return;                                  // أُغلقت بزر الرجوع: حالتها خرجت من التاريخ فعلًا
+      const q = navQueue.indexOf(e.run);
+      if (q > -1) { navQueue.splice(q, 1); return; }         // لم تُسجَّل بعد
+      navBackSilently();
+    }
+  };
+  layerChecks.push(check);
+  new MutationObserver(check).observe(el, { attributes: true, attributeFilter: ['class', 'hidden'] });
 }
 
 function applyNavState(state){
@@ -254,6 +307,19 @@ function showView(id){
 }
 
 window.addEventListener('popstate', (e) => {
+  navDepth = (e.state && e.state.d) || 0;
+  if (owedBacks) {   // رجوع برمجي بعد إغلاق نافذة بزرّها: لا تغيير بالشاشة
+    owedBacks--;
+    if (owedBacks) { history.back(); return; }
+    navQueue.splice(0).forEach(run => run());
+    return;
+  }
+  if (backLayers.length) {   // زر الرجوع ونافذة مفتوحة: نغلق أعلى نافذة فقط
+    const top = backLayers[backLayers.length - 1];
+    top.byBack = true;
+    try { top.close(); } catch(err){}
+    return;
+  }
   isRestoringNav = true;
   applyNavState(e.state);
   isRestoringNav = false;
@@ -579,7 +645,8 @@ document.getElementById('loginCancel')?.addEventListener('click', ()=>{
 });
 document.getElementById('adminLogoutBtn')?.addEventListener('click', async ()=>{
   if (auth) await auth.signOut();
-  showView('gate');
+  // نرجع للشاشة الرئيسية بمسح كل ما فوقها من التاريخ، حتى لا يعيد زر الرجوع شاشات الإدارة بعد الخروج
+  if (navDepth > 0) history.go(-navDepth); else showView('gate');
 });
 
 // =====================================================================
@@ -1962,6 +2029,12 @@ function closeCamera(){
 document.getElementById('employeeScanBtn')?.addEventListener('click', openCamera);
 document.getElementById('camCloseBtn')?.addEventListener('click', closeCamera);
 
+// ربط كل النوافذ المنبثقة بزر الرجوع
+registerBackLayer(document.getElementById('dlgOverlay'), () => closeDialog(false));
+registerBackLayer(document.getElementById('pinOverlay'), () => closeOverlay());
+registerBackLayer(document.getElementById('loginOverlay'), () => document.getElementById('loginCancel')?.click());
+registerBackLayer(document.getElementById('camOverlay'), () => closeCamera());
+
 // ---------------------------------------------------------------
 initFirebase();
 
@@ -1993,6 +2066,7 @@ if ('serviceWorker' in navigator) {
   };
   function close(){ box.hidden = true; document.body.style.overflow = ''; img.removeAttribute('src'); if(lastFocus) lastFocus.focus(); }
   document.getElementById('lbClose').addEventListener('click', close);
+  registerBackLayer(box, close, () => !box.hidden);
   document.getElementById('lbIn').addEventListener('click', () => setScale(s * 1.5));
   document.getElementById('lbOut').addEventListener('click', () => setScale(s / 1.5));
   document.getElementById('lbReset').addEventListener('click', () => setScale(1));
