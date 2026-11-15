@@ -185,6 +185,7 @@ addView("att-rules", "قواعد الدوام والخصم", "attRulesBody");
 addView("att-log", "سجل التعديلات", "attLogBody");
 addView("att-staff", "الموظفون", "attStaffBody");
 addView("att-person", "سجل الموظف", "attPersonBody");
+addView("att-sec", "الحضور والانصراف", "attSecBody");
 
 const overlay = document.createElement("div");
 overlay.className = "att-overlay"; overlay.id = "attOverlay";
@@ -202,6 +203,8 @@ function closeSheet(){
   overlay.classList.remove("open");
   if (typeof closeFocusTrap === "function") closeFocusTrap();
 }
+// زر الرجوع بالهاتف يغلق النافذة المفتوحة (ونافذة "من أنت؟" تُعامل كضغط "لاحقًا/إلغاء")
+if (typeof registerBackLayer === "function") registerBackLayer(overlay, () => { const c = $("#attWhoCancel"); if (c) c.click(); else closeSheet(); });
 function alertMsg(msg, title){
   if (typeof showAlert === "function") return showAlert(msg, { title: title || "تنبيه" });
   alert(msg);
@@ -889,38 +892,48 @@ function renderAdmin(syncing){
   }).join("");
 
   const sums = Object.values(d.summary).sort((a, b) => b.points - a.points || a.deduct - b.deduct);
-  const sumHtml = sums.map(s => `<div class="att-sum" data-person="${esc(s.emp)}" role="button" tabindex="0"><div class="top"><b>${esc(s.emp)}</b><span class="att-pill ${/متميز/.test(s.rating) ? "ok" : /ملاحظات/.test(s.rating) ? "warn" : "mute"}">${esc(s.rating)}</span></div>
-    <div class="nums"><span><b>${s.present}</b>أيام حضور</span><span><b>${fmtDays(s.deduct)}</b>أيام خصم</span><span><b>${s.points}</b>نقاط</span>
-      <span><b>${attFmtDur(s.workedMin || 0)}</b>ساعات عمل</span><span><b>${s.absent}</b>غياب</span><span><b>${s.leave || 0}</b>أيام عطل</span>${s.trip ? `<span><b>${s.trip}</b>سفر عمل</span>` : ""}</div>
-    ${s.diffAlert ? `<div class="att-alert warn" style="margin:10px 0 0;padding:10px;font-size:12.5px">${esc(s.diffAlert)}</div>` : ""}
-    <div class="att-more">عرض السجل الكامل ‹</div></div>`).join("");
   const alerts = sums.filter(s => s.diffAlert);
   const dayFl = (d.dayFlags || []).filter(x => x.date < d.now.date || x.flags.some(f => /أكثر من موظف|فتح/.test(f)));
-  const dayHtml = dayFl.length ? `<div class="att-box" style="border-color:rgba(255,184,0,.45)"><h3>فتح وإغلاق المحل <span class="att-pill warn">${dayFl.length}</span></h3>
-    ${dayFl.slice().reverse().map(x => `<div class="att-row"><div class="l"><b>${esc(shortDate(x.date))}</b>${x.flags.map(f => `<small>• ${esc(f)}</small>`).join("")}</div></div>`).join("")}</div>` : "";
-  const alertHtml = alerts.length ? `<div class="att-box" style="border-color:rgba(255,184,0,.45)"><h3>ملاحظات للتفحص <span class="att-pill warn">${alerts.length}</span></h3>
-    ${alerts.map(s => `<div class="att-row" style="display:block"><div class="l"><b>${esc(s.emp)}</b><small>${esc(s.diffAlert)}</small>
-      ${s.diffs.map(x => `<small>• ${esc(shortDate(x.date))}: ${esc(x.inDiff >= x.outDiff ? timePair("حضور", x.inTime, x.inReal) : timePair("انصراف", x.outTime, x.outReal))}</small>`).join("")}</div></div>`).join("")}</div>` : "";
-
   const closures = rangeGroups(d.records.filter(r => r.inStatus === ATT_STATUS.CLOSED));
   const trips = rangeGroups(d.records.filter(r => r.inStatus === ATT_STATUS.TRIP), true);
-  const spanHtml = closures.length || trips.length ? `<div class="att-box"><h3>إغلاق الشركة وسفر العمل <span class="sub">هذا الشهر</span></h3>
-    ${closures.map(g => `<div class="att-row"><div class="l"><b>🏢 الشركة مغلقة ${esc(rangeText(g.dates))}</b><small>${esc(g.note.replace(/^إغلاق الشركة — /, ""))} · ${g.dates.length} أيام عمل</small></div>
-      <div class="r"><button class="att-link" data-cancel="closure" data-from="${g.dates[0]}" data-to="${g.dates[g.dates.length - 1]}">إلغاء</button></div></div>`).join("")}
-    ${trips.map(g => `<div class="att-row"><div class="l"><b>✈️ ${esc(g.emp)} — سفر عمل ${esc(rangeText(g.dates))}</b><small>${esc(g.note.replace(/^سفر عمل /, "").replace(/^\(.*?\) — /, "").replace(/ — أضافته الإدارة$/, ""))} · ${g.dates.length} أيام عمل</small></div>
-      <div class="r"><button class="att-link" data-cancel="trip" data-emp="${esc(g.emp)}" data-from="${g.dates[0]}" data-to="${g.dates[g.dates.length - 1]}">إلغاء</button></div></div>`).join("")}</div>` : "";
-  let unread = 0;
-  try { unread = Number(localStorage.getItem(LS_LOG_SEEN + "_n") || 0); } catch (e) {}
+  const byKey = {}; d.records.forEach(r => { byKey[r.emp + "|" + r.date] = r; });
+
+  // محتوى كل قسم — يُعرض في شاشة مستقلة عند الضغط على أمره في القائمة
+  ADM_PARTS = { devReq, rules,
+    pending: `<div class="att-box">${devHtml + pendHtml || '<div class="att-empty" style="padding:6px">لا توجد طلبات معلّقة</div>'}</div>`,
+    notes: `<div class="att-box">${alerts.map(s => `<div class="att-row" style="display:block" data-person="${esc(s.emp)}"><div class="l"><b>${esc(s.emp)}</b><small>${esc(s.diffAlert)}</small>
+      ${s.diffs.map(x => `<small>• ${esc(shortDate(x.date))}: ${esc(x.inDiff >= x.outDiff ? timePair("حضور", x.inTime, x.inReal) : timePair("انصراف", x.outTime, x.outReal))}</small>`).join("")}</div></div>`).join("") || '<div class="att-empty" style="padding:6px">لا توجد ملاحظات</div>'}</div>`,
+    shop: `<div class="att-box">${dayFl.slice().reverse().map(x => `<div class="att-row"><div class="l"><b>${esc(shortDate(x.date))}</b>${x.flags.map(f => `<small>• ${esc(f)}</small>`).join("")}</div></div>`).join("") || '<div class="att-empty" style="padding:6px">لا توجد ملاحظات على فتح وإغلاق المحل</div>'}</div>`,
+    grid: `<div class="att-box"><h3>جدول الأيام <span class="sub">اضغط على أي يوم للتفاصيل</span></h3>${heatGrid(d, rules)}</div>`,
+    eval: `${STRIP_LEGEND}${sums.map(s => scoreCard(s, d, rules, byKey)).join("") || '<div class="att-empty">لا توجد سجلات لهذا الشهر</div>'}`,
+    spans: `<div class="att-btns" style="margin:0 0 14px"><button class="att-btn" id="attCloseCo">🏢 إغلاق الشركة</button><button class="att-btn" id="attAdmTrip">✈️ سفر عمل لموظف</button></div>
+      <div class="att-box"><h3>المسجَّل هذا الشهر</h3>
+      ${closures.map(g => `<div class="att-row"><div class="l"><b>🏢 الشركة مغلقة ${esc(rangeText(g.dates))}</b><small>${esc(g.note.replace(/^إغلاق الشركة — /, ""))} · ${g.dates.length} أيام عمل</small></div>
+        <div class="r"><button class="att-link" data-cancel="closure" data-from="${g.dates[0]}" data-to="${g.dates[g.dates.length - 1]}">إلغاء</button></div></div>`).join("")}
+      ${trips.map(g => `<div class="att-row"><div class="l"><b>✈️ ${esc(g.emp)} — سفر عمل ${esc(rangeText(g.dates))}</b><small>${esc(g.note.replace(/^سفر عمل /, "").replace(/^\(.*?\) — /, "").replace(/ — أضافته الإدارة$/, ""))} · ${g.dates.length} أيام عمل</small></div>
+        <div class="r"><button class="att-link" data-cancel="trip" data-emp="${esc(g.emp)}" data-from="${g.dates[0]}" data-to="${g.dates[g.dates.length - 1]}">إلغاء</button></div></div>`).join("")}
+      ${closures.length || trips.length ? "" : '<div class="att-empty" style="padding:6px">لا يوجد إغلاق أو سفر عمل هذا الشهر</div>'}</div>`
+  };
+
+  // القائمة الرئيسية: سطر واحد لكل موظف (هل عليه خصم؟) ثم أوامر تفتح التفاصيل
+  const quick = sums.map(s => { const v = deductVerdict(s.deduct);
+    return `<div class="att-quick" data-person="${esc(s.emp)}" role="button" tabindex="0"><i class="dot ${v.cls}"></i><b>${esc(s.emp)}</b><span class="att-pill ${v.cls}">${esc(v.short)}</span></div>`; }).join("");
+  const cmd = (key, icon, title, sub, n, cls) => `<button class="list-btn" data-sec="${key}"><div class="list-icon">${icon}</div>
+    <div class="list-text"><strong>${title}${n ? ` <span class="list-badge${cls ? " " + cls : ""}">${n}</span>` : ""}</strong><span>${sub}</span></div>${ICON.chev}</button>`;
+  const spanCount = closures.length + trips.length;
   body.innerHTML = `
     ${syncing ? '<div class="att-hint" style="margin:0 0 8px"><span class="spinner"></span> جارِ التحديث…</div>' : ""}
     <select class="att-month" id="attMonthSel" aria-label="الشهر">${months.map(m => `<option value="${m}" ${m === d.month ? "selected" : ""}>${esc(attMonthTitle(m))}</option>`).join("")}</select>
-    <div class="att-btns" style="margin:0 0 14px"><button class="att-btn" id="attCloseCo">🏢 إغلاق الشركة</button><button class="att-btn" id="attAdmTrip">✈️ سفر عمل لموظف</button></div>
-    ${alertHtml}${dayHtml}
-    <div class="att-box"><h3>بانتظار الموافقة <span class="att-pill ${pendCount ? "info" : "mute"}">${pendCount}</span></h3>${devHtml + pendHtml || '<div class="att-empty" style="padding:6px">لا توجد طلبات معلّقة</div>'}</div>
-    ${spanHtml}
-    <div class="att-box"><h3>الحضور اليومي <span class="sub">اضغط على أي يوم للتفاصيل</span></h3>${heatGrid(d, rules)}</div>
-    <div class="att-box att-chart"><h3>دقائق التأخير أو نقص الساعات</h3>${lateChart(d, rules)}</div>
-    <div class="att-box"><h3>ملخص الشهر <span class="sub">اضغط على الموظف لكل التفاصيل</span></h3>${sumHtml || '<div class="att-empty">لا توجد سجلات لهذا الشهر</div>'}</div>
+    ${quick ? `<div class="att-box att-quick-box"><h3>خصومات الشهر <span class="sub">اضغط على الموظف لسجله</span></h3>${quick}</div>` : ""}
+    <div class="list">
+      ${cmd("pending", ICON.clock, "بانتظار الموافقة", pendCount ? "طلبات تحتاج قرارك" : "لا توجد طلبات معلّقة", pendCount)}
+      ${cmd("eval", ICON.users, "تقييم الموظفين", "الخصم، التأخير، الغياب والنقاط لكل موظف")}
+      ${cmd("grid", ICON.sheet, "الحضور اليومي", "جدول أيام الشهر لكل الموظفين")}
+      ${alerts.length ? cmd("notes", ICON.pin, "ملاحظات للتفحص", "فرق بين الوقت المختار ووقت التسجيل الفعلي", alerts.length, "warn") : ""}
+      ${dayFl.length ? cmd("shop", ICON.pin, "فتح وإغلاق المحل", "أيام فيها ملاحظة على الفتح أو الإغلاق", dayFl.length, "warn") : ""}
+      ${cmd("spans", ICON.log, "إغلاق الشركة وسفر العمل", spanCount ? "المسجَّل هذا الشهر: " + spanCount : "تسجيل إغلاق للشركة أو سفر عمل لموظف")}
+    </div>
+    <div class="section-label" style="margin-top:18px">الإعدادات</div>
     <div class="list">
       <button class="list-btn" id="attGoRules"><div class="list-icon">${ICON.rules}</div><div class="list-text"><strong>قواعد الدوام والخصم</strong><span>أوقات الدوام، ساعات العمل، النطاق، الخصومات</span></div>${ICON.chev}</button>
       <button class="list-btn" id="attGoStaff"><div class="list-icon">${ICON.users}</div><div class="list-text"><strong>الموظفون</strong><span>إضافة موظف أو إيقافه</span></div>${ICON.chev}</button>
@@ -928,8 +941,33 @@ function renderAdmin(syncing){
       ${ATT_SHEET_URL ? `<a class="list-btn" href="${esc(ATT_SHEET_URL)}" target="_blank" rel="noopener" style="text-decoration:none"><div class="list-icon">${ICON.sheet}</div><div class="list-text"><strong>فتح ملف جوجل شيت</strong><span>كل الأشهر في ملف واحد</span></div>${ICON.chev}</a>` : ""}
     </div>`;
   $("#attMonthSel").onchange = e => loadAdmin(e.target.value);
-  $("#attCloseCo").onclick = () => openRangeSheet("closure");
-  $("#attAdmTrip").onclick = () => openRangeSheet("admin_trip");
+  body.querySelectorAll("[data-sec]").forEach(b => b.onclick = () => openSection(b.dataset.sec));
+  bindAdmin(body);
+  $("#attGoRules").onclick = () => { showView("att-rules"); renderRules(); };
+  $("#attGoStaff").onclick = () => { showView("att-staff"); renderStaff(); };
+  $("#attGoLog").onclick = () => { showView("att-log"); renderLog(); };
+  refreshLogBadge(d.log);
+  if (SEC) renderSection();
+}
+
+// ---------------------------------------------------------------------
+// أقسام الإدارة: كل أمر في القائمة يفتح شاشة تفاصيله (وزر الرجوع يعيدك للقائمة)
+// ---------------------------------------------------------------------
+let ADM_PARTS = null, SEC = null;
+const SEC_TITLES = { pending: "بانتظار الموافقة", eval: "تقييم الموظفين", grid: "الحضور اليومي", notes: "ملاحظات للتفحص", shop: "فتح وإغلاق المحل", spans: "إغلاق الشركة وسفر العمل" };
+function openSection(key){ SEC = key; showView("att-sec"); renderSection(); }
+function renderSection(){
+  const body = $("#attSecBody");
+  if (!ADM_PARTS || !SEC) { body.innerHTML = '<div class="att-empty">افتح الحضور والانصراف أولًا</div>'; return; }
+  $("#view-att-sec h2").textContent = SEC_TITLES[SEC];
+  body.innerHTML = `<div class="att-hint" style="margin:0 0 10px">${esc(attMonthTitle(ADM.month))}</div>${ADM_PARTS[SEC]}`;
+  bindAdmin(body);
+}
+function bindAdmin(body){
+  const rules = ADM_PARTS.rules, devReq = ADM_PARTS.devReq;
+  const closeCo = $("#attCloseCo", body), admTrip = $("#attAdmTrip", body);
+  if (closeCo) closeCo.onclick = () => openRangeSheet("closure");
+  if (admTrip) admTrip.onclick = () => openRangeSheet("admin_trip");
   body.querySelectorAll("[data-cancel]").forEach(b => b.onclick = async () => {
     const isTrip = b.dataset.cancel === "trip", txt = rangeText(workdaysBetween(b.dataset.from, b.dataset.to, rules));
     if (typeof showConfirm === "function" && !(await showConfirm(isTrip ? `إلغاء سفر العمل لـ ${b.dataset.emp} ${txt}؟\nتعود الأيام فارغة.` : `إلغاء إغلاق الشركة ${txt}؟\nتعود الأيام أيام عمل عادية.`, { title: "تأكيد", okText: "نعم، إلغاء" }))) return;
@@ -950,10 +988,74 @@ function renderAdmin(syncing){
   });
   body.querySelectorAll("td.c[data-id]").forEach(td => td.onclick = () => openRecordAdmin(td.dataset.id));
   body.querySelectorAll("td.c[data-new]").forEach(td => td.onclick = () => openRecordAdmin(null, td.dataset.emp, td.dataset.new));
-  $("#attGoRules").onclick = () => { showView("att-rules"); renderRules(); };
-  $("#attGoStaff").onclick = () => { showView("att-staff"); renderStaff(); };
-  $("#attGoLog").onclick = () => { showView("att-log"); renderLog(); };
-  refreshLogBadge(d.log);
+}
+
+// حكم الخصم: يجيب بنظرة واحدة "هل عليه خصم كبير أم لا"
+// أخضر = لا خصم · أصفر = خصم حتى يوم واحد · أحمر = أكثر من يوم
+function deductVerdict(deduct){
+  deduct = deduct || 0;
+  if (deduct <= 0) return { cls: "ok", short: "لا خصم", long: "لا يوجد خصم" };
+  const t = "خصم " + fmtDays(deduct) + " يوم";
+  return deduct <= 1 ? { cls: "warn", short: t, long: "خصم بسيط — " + fmtDays(deduct) + " يوم" } : { cls: "bad", short: t, long: "خصم كبير — " + fmtDays(deduct) + " يوم" };
+}
+// لون ورمز خانة اليوم (مشترك بين جدول الأيام، شريط الشهر، وتقويم الموظف)
+function cellInfo(r, rules){
+  let cls, txt;
+  const lost = r.lostMin;
+  if (r.inStatus === ATT_STATUS.LEAVE) { cls = "lv"; txt = "ع"; }
+  else if (attIsLeaveRequest(r)) { cls = "pend"; txt = "ع؟"; }
+  else if (r.inStatus === ATT_STATUS.TRIP) { cls = "tr"; txt = "س"; }
+  else if (attIsTripRequest(r)) { cls = "pend"; txt = "س؟"; }
+  else if (r.inStatus === ATT_STATUS.CLOSED) { cls = "cl"; txt = "م"; }
+  else if (r.inStatus === ATT_STATUS.PENDING || r.outStatus === ATT_STATUS.PENDING || r.pending) { cls = "pend"; txt = lost ? lost : "؟"; }
+  else if (r.inStatus === ATT_STATUS.ABSENT || r.inStatus === ATT_STATUS.REJECTED) { cls = "bad"; txt = "غ"; }
+  else if (r.inStatus === ATT_STATUS.ABSENT_EXCUSED) { cls = "ex"; txt = "غ"; }
+  else if (r.cat === "سماح شهري" || r.cat === "عذر طارئ") { cls = "ex"; txt = lost || "✓"; }
+  else if (lost === null) { cls = "ok"; txt = "…"; }
+  else if (r.deduct > 0) { cls = "bad"; txt = lost; }
+  else if (lost > rules.grace_min) { cls = "t2"; txt = lost; }
+  else { cls = "ok"; txt = lost ? lost : "✓"; }
+  return { cls, txt };
+}
+const STRIP_LEGEND = `<div class="att-legend" style="margin:0 0 12px"><span><i style="background:rgba(111,207,142,.5)"></i>منتظم</span><span><i style="background:rgba(255,184,0,.55)"></i>تأخير بدون خصم</span>
+  <span><i style="background:rgba(255,107,94,.6)"></i>خصم أو غياب</span><span><i style="background:rgba(120,160,255,.55)"></i>بانتظار الموافقة</span><span><i style="background:var(--steel-200)"></i>عذر، عطلة أو سفر</span></div>`;
+// بطاقة تقييم موظف: حكم الخصم بلون واضح + شريط أيام الشهر + أهم الأرقام
+function scoreCard(s, d, rules, byKey){
+  const [y, m] = d.month.split("-").map(Number), days = new Date(y, m, 0).getDate();
+  const v = deductVerdict(s.deduct);
+  let strip = "";
+  for (let i = 1; i <= days; i++) {
+    const ds = d.month + "-" + pad(i), r = byKey[s.emp + "|" + ds];
+    strip += !attIsWorkday(ds, rules) ? '<i class="off"></i>' : !r ? "<i></i>" : `<i class="${cellInfo(r, rules).cls}"></i>`;
+  }
+  const late = (s.t2 || 0) + (s.t3 || 0) + (s.t4 || 0);
+  const pct = s.reqMin ? Math.min(100, Math.round((s.workedMin || 0) * 100 / s.reqMin)) : 0;
+  return `<div class="att-sum att-score" data-person="${esc(s.emp)}" role="button" tabindex="0">
+    <div class="top"><b>${esc(s.emp)}</b><span class="att-pill ${/متميز/.test(s.rating) ? "ok" : /ملاحظات/.test(s.rating) ? "warn" : "mute"}">${esc(s.rating)}</span></div>
+    <div class="att-verdict ${v.cls}">${esc(v.long)}</div>
+    <div class="att-strip" aria-hidden="true">${strip}</div>
+    <div class="nums"><span><b class="${late ? "c-warn" : ""}">${late}</b>أيام تأخير/نقص</span><span><b class="${s.absent ? "c-bad" : ""}">${s.absent}</b>غياب بدون عذر</span><span><b>${s.points}</b>نقاط</span></div>
+    <div class="att-bar"><i style="width:${pct}%"></i></div>
+    <div class="att-bar-cap"><span>ساعات العمل</span><span>${attFmtDur(s.workedMin || 0)} من ${attFmtDur(s.reqMin || 0)}</span></div>
+    ${s.diffAlert ? `<div class="att-alert warn" style="margin:10px 0 0;padding:10px;font-size:12.5px">${esc(s.diffAlert)}</div>` : ""}
+    <div class="att-more">عرض السجل الكامل ‹</div></div>`;
+}
+// تقويم شهر موظف واحد: أسبوع في كل صف (السبت أولًا)، كل خانة ملوّنة حسب حالة اليوم
+function monthCalendar(d, rules, name){
+  const [y, m] = d.month.split("-").map(Number), days = new Date(y, m, 0).getDate();
+  const byDate = {}; d.records.forEach(r => { if (r.emp === name) byDate[r.date] = r; });
+  let cells = ["س", "ح", "ن", "ث", "ر", "خ", "ج"].map(x => `<span class="h">${x}</span>`).join("");
+  const lead = (new Date(y, m - 1, 1).getDay() + 1) % 7;
+  for (let i = 0; i < lead; i++) cells += "<span></span>";
+  for (let i = 1; i <= days; i++) {
+    const ds = d.month + "-" + pad(i), r = byDate[ds];
+    if (!attIsWorkday(ds, rules)) { cells += `<span class="c off"><small>${i}</small>—</span>`; continue; }
+    if (!r) { cells += `<span class="c none"><small>${i}</small>&nbsp;</span>`; continue; }
+    const c = cellInfo(r, rules);
+    cells += `<span class="c ${c.cls}" data-id="${esc(r.id)}" role="button"><small>${i}</small>${c.txt}</span>`;
+  }
+  return `<div class="att-cal">${cells}</div>${STRIP_LEGEND.replace('margin:0 0 12px', 'margin:12px 0 0')}
+    <div class="att-hint">الرقم داخل الخانة = دقائق التأخير أو نقص الساعات · ✓ منتظم · غ غياب · ع عطلة · س سفر عمل · م الشركة مغلقة. اضغط على اليوم للتفاصيل.</div>`;
 }
 
 async function reloadAfterChange(){
@@ -986,21 +1088,7 @@ function heatGrid(d, rules){
       const ds = d.month + "-" + pad(i), r = byKey[name + "|" + ds];
       if (!attIsWorkday(ds, rules)) { tr += `<td class="c off" title="عطلة أسبوعية">—</td>`; continue; }
       if (!r) { tr += ds <= today ? `<td class="c none" data-new="${ds}" data-emp="${esc(name)}" style="cursor:pointer" title="لا يوجد سجل"></td>` : '<td class="c none"></td>'; continue; }
-      let cls, txt;
-      const lost = r.lostMin;
-      if (r.inStatus === ATT_STATUS.LEAVE) { cls = "lv"; txt = "ع"; }
-      else if (attIsLeaveRequest(r)) { cls = "pend"; txt = "ع؟"; }
-      else if (r.inStatus === ATT_STATUS.TRIP) { cls = "tr"; txt = "س"; }
-      else if (attIsTripRequest(r)) { cls = "pend"; txt = "س؟"; }
-      else if (r.inStatus === ATT_STATUS.CLOSED) { cls = "cl"; txt = "م"; }
-      else if (r.inStatus === ATT_STATUS.PENDING || r.outStatus === ATT_STATUS.PENDING || r.pending) { cls = "pend"; txt = lost ? lost : "؟"; }
-      else if (r.inStatus === ATT_STATUS.ABSENT || r.inStatus === ATT_STATUS.REJECTED) { cls = "bad"; txt = "غ"; }
-      else if (r.inStatus === ATT_STATUS.ABSENT_EXCUSED) { cls = "ex"; txt = "غ"; }
-      else if (r.cat === "سماح شهري" || r.cat === "عذر طارئ") { cls = "ex"; txt = lost || "✓"; }
-      else if (lost === null) { cls = "ok"; txt = "…"; }
-      else if (r.deduct > 0) { cls = "bad"; txt = lost; }
-      else if (lost > rules.grace_min) { cls = "t2"; txt = lost; }
-      else { cls = "ok"; txt = lost ? lost : "✓"; }
+      let { cls, txt } = cellInfo(r, rules);
       if (r.opener) cls += " op";
       tr += `<td class="c ${cls}${r.bigDiff ? " diff" : ""}" data-id="${esc(r.id)}" title="${esc((r.cat || "") + (r.bigDiff ? " — الوقت المختار يختلف عن وقت التسجيل الفعلي" : ""))}">${txt}</td>`;
     }
@@ -1009,43 +1097,6 @@ function heatGrid(d, rules){
   return `<div class="att-heat-wrap"><table class="att-heat">${head}${rows}</table></div>
     <div class="att-legend"><span><i style="background:rgba(111,207,142,.5)"></i>منتظم (الرقم = دقائق تأخير من فتح المحل، أو نقص ساعات غيره)</span><span><i style="background:transparent;border-top:3px solid #fff"></i>خط أعلى الخانة = فتح المحل</span><span>… = لم يسجّل انصرافه بعد</span><span><i style="background:rgba(255,184,0,.55)"></i>تأخير بدون خصم</span>
       <span><i style="background:rgba(255,107,94,.6)"></i>خصم أو غياب (غ)</span><span><i style="background:rgba(120,160,255,.55)"></i>بانتظار الموافقة</span><span><i style="background:var(--steel-200)"></i>سماح، عذر، أو غياب بعذر</span><span><i style="background:rgba(77,208,225,.45)"></i>ع = عطلة</span><span><i style="background:rgba(186,140,255,.5)"></i>س = سفر عمل</span><span><i style="background:rgba(255,255,255,.12)"></i>م = الشركة مغلقة</span><span>— = عطلة أسبوعية</span><span><i style="background:transparent;box-shadow:inset 0 0 0 2px #FF8A80"></i>وقت مختار يختلف عن وقت التسجيل الفعلي</span></div>`;
-}
-
-// مخطط دقائق التأخير: المحور الأفقي أيام الشهر، والعمودي دقائق التأخير
-const SERIES_COLORS = ["#4FC3F7", "#FFB74D", "#CE93D8", "#81C784", "#F06292", "#FFF176"];
-function lateChart(d, rules, only){
-  const [y, m] = d.month.split("-").map(Number);
-  const days = new Date(y, m, 0).getDate();
-  const emps = only ? [only] : [...new Set(d.records.map(r => r.emp))];
-  if (!emps.length) return '<div class="att-empty">لا توجد بيانات</div>';
-  const W = 340, H = 236, L = 44, R = 10, T = 14, B = 46;
-  const maxLate = Math.max(30, ...d.records.map(r => r.lostMin || 0));
-  const step = maxLate > 60 ? 30 : 15;
-  const yMax = Math.ceil(maxLate / step) * step;
-  const x = day => L + (day - 1) * (W - L - R) / Math.max(1, days - 1);
-  const yy = v => T + (H - T - B) * (1 - v / yMax);
-  let g = "";
-  for (let v = 0; v <= yMax; v += step) g += `<line class="grid" x1="${L}" x2="${W - R}" y1="${yy(v)}" y2="${yy(v)}"/><text class="num" x="${L - 6}" y="${yy(v) + 3}" text-anchor="end">${v}</text>`;
-  [1, 5, 10, 15, 20, 25, days].forEach(dd => { if (dd <= days) g += `<text class="num" x="${x(dd)}" y="${H - B + 14}" text-anchor="middle">${dd}</text>`; });
-  // خط حد التأخير المسموح
-  g += `<line x1="${L}" x2="${W - R}" y1="${yy(rules.grace_min)}" y2="${yy(rules.grace_min)}" stroke="#FFC94D" stroke-dasharray="5 4" stroke-width="1.2"/>
-        <text class="lim" x="${W - R - 2}" y="${yy(rules.grace_min) - 5}" text-anchor="end">الحد المسموح: ${rules.grace_min} دقيقة</text>`;
-  let lines = "", legend = "";
-  const allEmps = [...new Set(d.records.map(r => r.emp))];
-  emps.forEach(name => {
-    const col = SERIES_COLORS[Math.max(0, allEmps.indexOf(name)) % SERIES_COLORS.length];
-    const pts = d.records.filter(r => r.emp === name && r.lostMin !== null && r.lostMin !== undefined)
-      .map(r => ({ day: Number(r.date.slice(8)), v: r.lostMin, k: r.lostKind })).sort((a, b) => a.day - b.day);
-    if (pts.length > 1) lines += `<polyline fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round" points="${pts.map(p => x(p.day) + "," + yy(p.v)).join(" ")}"/>`;
-    pts.forEach(p => { lines += `<circle cx="${x(p.day)}" cy="${yy(p.v)}" r="3.2" fill="${col}"><title>${esc(name)} — يوم ${p.day}: ${esc(p.k)} ${p.v} دقيقة</title></circle>`; });
-    legend += `<span><i style="background:${col};border-radius:50%"></i>${esc(name)}</span>`;
-  });
-  const axes = `<line class="ax" x1="${L}" x2="${W - R}" y1="${H - B}" y2="${H - B}"/><line class="ax" x1="${L}" x2="${L}" y1="${T}" y2="${H - B}"/>
-    <text class="title" x="${(L + W - R) / 2}" y="${H - 8}" text-anchor="middle">المحور الأفقي: أيام الشهر (1 – ${days})</text>
-    <text class="title" transform="translate(12 ${(T + H - B) / 2}) rotate(-90)" text-anchor="middle">المحور العمودي: الدقائق</text>`;
-  return `<svg viewBox="0 0 ${W} ${H}" direction="ltr" style="direction:ltr" role="img" aria-label="مخطط دقائق التأخير أو نقص الساعات لكل موظف حسب أيام الشهر">${g}${axes}${lines}</svg>
-    <div class="att-legend">${legend}</div>
-    <div class="att-hint">كل نقطة = يوم عمل للموظف. إذا فتح المحل فارتفاعها = دقائق تأخره بعد ${esc(attFmt12(rules.work_start))}، وإلا = الدقائق الناقصة من ساعات عمله. أيام الغياب والعطلة وقبل الانصراف لا تظهر.</div>`;
 }
 
 // =====================================================================
@@ -1093,6 +1144,8 @@ function renderPerson(){
       <div class="r"><span class="att-pill ${/متميز/.test(s.rating) ? "ok" : /ملاحظات/.test(s.rating) ? "warn" : "mute"}">${esc(s.rating)}</span></div></div>
     ${s.diffAlert ? `<div class="att-alert warn"><b>ملاحظة للإدارة</b>${esc(s.diffAlert)}
       ${s.diffs.map(x => `<br>• ${esc(shortDate(x.date))}: ${esc(x.inDiff >= x.outDiff ? timePair("حضور", x.inTime, x.inReal) : timePair("انصراف", x.outTime, x.outReal))}`).join("")}</div>` : ""}
+    <div class="att-verdict ${deductVerdict(s.deduct).cls}" style="margin-bottom:14px">${esc(deductVerdict(s.deduct).long)}</div>
+    <div class="att-box"><h3>أيام الشهر</h3>${monthCalendar(d, rules, name)}</div>
     <div class="att-stats">
       <div class="att-stat"><span class="k">أيام الحضور</span><span class="v">${s.present}</span></div>
       <div class="att-stat"><span class="k">مجموع الخصم</span><span class="v">${fmtDays(s.deduct)} <small>يوم</small></span></div>
@@ -1123,9 +1176,8 @@ function renderPerson(){
         <span>بانتظار الموافقة</span><b>${s.pending}</b>
       </div></div>
     ${deductRows.length ? `<div class="att-box"><h3>سبب الخصومات</h3>${deductRows.map(r => `<div class="att-row"><div class="l"><b>${esc(shortDate(r.date))}</b><small>${esc(r.cat)}${r.flags && r.flags.length ? " · " + esc(r.flags.join("، ")) : ""}</small></div><div class="r"><span class="att-pill bad">${fmtDays(r.deduct)} يوم</span></div></div>`).join("")}</div>` : ""}
-    <div class="att-box att-chart"><h3>دقائق التأخير أو نقص الساعات</h3>${lateChart(d, rules, name)}</div>
     <div class="att-box"><h3>السجل الكامل <span class="sub">اضغط على أي يوم للتعديل</span></h3>${recs.map(row).join("") || '<div class="att-empty">لا توجد سجلات</div>'}</div>`;
-  body.querySelectorAll(".att-row[data-id]").forEach(el => el.onclick = () => openRecordAdmin(el.dataset.id));
+  body.querySelectorAll(".att-row[data-id], .att-cal [data-id]").forEach(el => el.onclick = () => openRecordAdmin(el.dataset.id));
 }
 
 // تفاصيل سجل واحد للإدارة (من الضغط على خانة اليوم)
