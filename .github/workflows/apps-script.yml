@@ -1,0 +1,50 @@
+# ينشر كود الحضور (apps-script/all.gs) إلى Apps Script تلقائيًا عند أي تعديل عليه في main،
+# ويحدّث نفس عملية النشر الحالية حتى لا يتغير الرابط الذي يتصل به الموقع.
+# يحتاج سرّين في إعدادات المستودع: CLASPRC_JSON (ملف دخول clasp) و SCRIPT_ID (معرّف مشروع السكربت).
+name: نشر كود الحضور إلى Apps Script
+
+on:
+  push:
+    branches: [main]
+    paths: ["apps-script/all.gs"]
+  workflow_dispatch:
+
+concurrency: apps-script-deploy
+
+env:
+  # معرّف عملية النشر التي يتصل بها الموقع (نفسه الموجود في ATT_API_URL بملف attendance.js)
+  DEPLOYMENT_ID: AKfycbwu4D9_kR2wWv7EVFQ7UA06IvILceQSRb-7q6wO1H521ErCtoRxfaXKjtD6GWfKm4lTdQ
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: التحقق من الأسرار
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+          SCRIPT_ID: ${{ secrets.SCRIPT_ID }}
+        run: |
+          if [ -z "$CLASPRC_JSON" ] || [ -z "$SCRIPT_ID" ]; then
+            echo "::error::الأسرار CLASPRC_JSON و SCRIPT_ID غير موجودة في إعدادات المستودع"; exit 1
+          fi
+          printf '%s' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
+          mkdir -p "$RUNNER_TEMP/gas"
+          printf '{"scriptId":"%s","rootDir":"."}' "$SCRIPT_ID" > "$RUNNER_TEMP/gas/.clasp.json"
+      - name: رفع الكود ونشر إصدار جديد
+        working-directory: ${{ runner.temp }}/gas
+        run: |
+          npm install --no-save --silent @google/clasp@2.4.2
+          # نسحب المشروع الحالي للحفاظ على ملف الإعدادات (appsscript.json) كما هو
+          npx clasp pull
+          test -f appsscript.json
+          find . -maxdepth 1 -type f \( -name '*.js' -o -name '*.gs' \) -delete
+          cp "$GITHUB_WORKSPACE/apps-script/all.gs" Code.js
+          npx clasp push -f
+          npx clasp deploy -i "$DEPLOYMENT_ID" -d "تلقائي من GitHub ${GITHUB_SHA::7}"
+      - name: حذف ملف الدخول
+        if: always()
+        run: rm -f "$HOME/.clasprc.json"
