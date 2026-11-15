@@ -604,7 +604,7 @@ function renderEmployee(syncing){
       ${r.inDiff ? " · سُجّل فعليًا " + esc(attFmt12(r.inReal)) : ""}${dayBits(r).length ? " · " + esc(dayBits(r).join(" · ")) : ""}${r.deduct ? " · خصم " + fmtDays(r.deduct) + " يوم" : ""}${r.points ? " · +" + r.points + " نقطة" : ""}</small>
       ${r.flags && r.flags.length ? `<small style="color:#FFC94D">${esc(r.flags.join("، "))}</small>` : ""}
       ${r.pending ? `<small style="color:#9DB8FF">${esc(prettyReq(r.pending))}</small>` : ""}
-      ${r.inTime ? `<button class="att-link" data-edit="${esc(r.id)}">طلب تعديل الوقت</button>` : ""}</div>
+      ${r.inTime ? `<button class="att-link" data-edit="${esc(r.id)}">طلب تعديل الوقت</button>` : ""}${r.inTime && !r.outTime && r.date < todayStr() && r.inStatus !== ATT_STATUS.REJECTED ? ` <button class="att-link" data-addout="${esc(r.date)}">أضف وقت الانصراف</button>` : ""}</div>
       <div class="r">${catPill(r)}</div></div>`).join("");
   body.innerHTML = `
     <div class="att-row" style="border:none;padding:0 0 12px"><div class="l"><b style="font-size:15px">${esc(MY.emp.name)}</b><small>${esc(attMonthTitle(MY.month))}</small></div>
@@ -630,28 +630,43 @@ function renderEmployee(syncing){
   $("#attDoOut") && ($("#attDoOut").onclick = openCheckOut);
   $("#attNotMe").onclick = async () => { await askIdentity(true); renderEmployee(); };
   body.querySelectorAll("[data-edit]").forEach(b => b.onclick = () => openEditRequest(MY.records.find(r => r.id === b.dataset.edit)));
+  body.querySelectorAll("[data-addout]").forEach(b => b.onclick = () => openAddDay("work", { date: b.dataset.addout, part: "out" }));
 }
 
 // إضافة يوم سابق نسي تسجيله، أو طلب عطلة — بانتظار موافقة الإدارة
 function addDays(ds, n){ const d = attParseDate(ds); d.setDate(d.getDate() + n); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
-function openAddDay(kind){
+function openAddDay(kind, preset){
   const rules = attMergeRules(MY.rules), today = todayStr(), isLeave = kind === "leave";
-  const def = isLeave ? today : addDays(today, -1);
+  const def = preset && preset.date ? preset.date : isLeave ? today : addDays(today, -1);
   openSheet(`<h2>${isLeave ? "طلب عطلة" : "تسجيل يوم سابق"}</h2>
     <p>${isLeave ? "اختر يوم العطلة (اليوم، أو يومًا سابقًا، أو قادمًا). يُرسل الطلب للإدارة، ولا يُعتمد إلا بموافقتها." : "إذا نسيت تسجيل حضورك أو انصرافك في يوم سابق، سجّله هنا. لا يُعتمد إلا بموافقة الإدارة."}</p>
     <div class="att-field"><label for="attAdDate">التاريخ</label><input type="date" id="attAdDate" value="${def}" max="${isLeave ? addDays(today, 45) : today}" min="${addDays(today, -45)}" style="font-family:'IBM Plex Mono',monospace;direction:ltr;text-align:center;color-scheme:dark"></div>
     <div class="att-hint" id="attAdDayName" style="margin:-8px 0 12px"></div>
-    ${isLeave ? "" : `<div class="att-grid2"><div class="att-field"><label for="attAdIn">وقت الحضور</label><input type="time" id="attAdIn" value="${esc(rules.work_start)}"></div>
-      <div class="att-field"><label for="attAdOut">وقت الانصراف</label><input type="time" id="attAdOut" value=""></div></div>
-      <label class="att-check"><input type="checkbox" id="attAdOpener"><span>فتحت المحل ذلك اليوم</span></label>
-      <label class="att-check"><input type="checkbox" id="attAdCloser"><span>أغلقت المحل ذلك اليوم</span></label>`}
+    ${isLeave ? "" : `<div class="att-field"><label>ماذا تريد أن تسجّل؟</label>
+        <div class="att-seg" id="attAdPart"><button type="button" data-part="in">الحضور فقط</button><button type="button" data-part="out">الانصراف فقط</button><button type="button" data-part="both">الحضور والانصراف</button></div></div>
+      <div class="att-grid2"><div class="att-field" id="attAdInBox"><label for="attAdIn">وقت الحضور</label><input type="time" id="attAdIn" value="${esc(rules.work_start)}"></div>
+      <div class="att-field" id="attAdOutBox"><label for="attAdOut">وقت الانصراف</label><input type="time" id="attAdOut" value=""></div></div>
+      <label class="att-check" id="attAdOpenerBox"><input type="checkbox" id="attAdOpener"><span>فتحت المحل ذلك اليوم</span></label>
+      <label class="att-check" id="attAdCloserBox"><input type="checkbox" id="attAdCloser"><span>أغلقت المحل ذلك اليوم</span></label>`}
     <div class="att-field"><label for="attAdWhy">${isLeave ? "سبب العطلة" : "لماذا لم تسجّل في وقتها؟"}</label><input type="text" id="attAdWhy" maxlength="200" placeholder="${isLeave ? "مثال: ظرف عائلي" : "مثال: نسيت، أو كان الإنترنت مقطوعًا"}"></div>
     <div class="msg" id="attAdMsg"></div>
     <div class="att-btns"><button class="att-btn main" id="attAdOk">إرسال للإدارة</button><button class="att-btn" id="attAdCancel">إلغاء</button></div>`);
+  // الاختيار: حضور فقط / انصراف فقط / الاثنان — يُظهر الخانات المطلوبة فقط
+  let part = (preset && preset.part) || "in", partTouched = !!(preset && preset.part);
+  const setPart = p => {
+    part = p; if (isLeave) return;
+    $("#attAdPart").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.part === p));
+    $("#attAdInBox").style.display = $("#attAdOpenerBox").style.display = p === "out" ? "none" : "";
+    $("#attAdOutBox").style.display = $("#attAdCloserBox").style.display = p === "in" ? "none" : "";
+    $("#attAdWhy").placeholder = p === "out" ? "مثال: نسيت تسجيل الانصراف" : "مثال: نسيت، أو كان الإنترنت مقطوعًا";
+  };
+  if (!isLeave) { $("#attAdPart").querySelectorAll("button").forEach(b => b.onclick = () => { partTouched = true; setPart(b.dataset.part); showDay(); }); setPart(part); }
   const showDay = () => {
     const v = $("#attAdDate").value, el = $("#attAdDayName"); if (!v) { el.textContent = ""; return; }
     const ex = MY.records.find(r => r.date === v);
-    el.textContent = attDayName(v) + (!attIsWorkday(v, rules) ? " — عطلة أسبوعية" : ex && ex.inTime ? " — يوجد تسجيل لهذا اليوم، استخدم طلب تعديل الوقت" : ex && ex.inStatus === ATT_STATUS.LEAVE ? " — مسجّل عطلة" : ex && ex.inStatus === ATT_STATUS.TRIP ? " — مسجّل سفر عمل" : ex && ex.inStatus === ATT_STATUS.CLOSED ? " — الشركة مغلقة" : "");
+    const noOut = !isLeave && ex && ex.inTime && !ex.outTime;
+    if (noOut && !partTouched && part !== "out") setPart("out");
+    el.textContent = attDayName(v) + (!attIsWorkday(v, rules) ? " — عطلة أسبوعية" : noOut && part === "out" ? " — حضورك مسجّل " + attFmt12(ex.inTime) + " بدون انصراف" : noOut ? " — حضورك مسجّل لهذا اليوم، اختر «الانصراف فقط»" : !isLeave && part === "out" && !(ex && ex.inTime) ? " — لا يوجد حضور مسجّل لهذا اليوم" : ex && ex.inTime ? " — يوجد تسجيل لهذا اليوم، استخدم طلب تعديل الوقت" : ex && ex.inStatus === ATT_STATUS.LEAVE ? " — مسجّل عطلة" : ex && ex.inStatus === ATT_STATUS.TRIP ? " — مسجّل سفر عمل" : ex && ex.inStatus === ATT_STATUS.CLOSED ? " — الشركة مغلقة" : "");
   };
   $("#attAdDate").onchange = showDay; showDay();
   $("#attAdCancel").onclick = closeSheet;
@@ -663,17 +678,29 @@ function openAddDay(kind){
     if (!attIsWorkday(date, rules)) return err("هذا اليوم عطلة أسبوعية");
     const payload = { kind, date, reason };
     if (!isLeave) {
-      payload.inTime = normTime($("#attAdIn").value); payload.outTime = normTime($("#attAdOut").value);
-      payload.opener = $("#attAdOpener").checked; payload.closer = $("#attAdCloser").checked;
-      if (!payload.inTime) return err("اختر وقت الحضور");
-      if (payload.outTime && attToMin(payload.outTime) <= attToMin(payload.inTime)) return err("وقت الانصراف لازم يكون بعد وقت الحضور");
+      const ex = MY.records.find(r => r.date === date);
+      payload.part = part;
+      payload.inTime = part === "out" ? "" : normTime($("#attAdIn").value); payload.outTime = part === "in" ? "" : normTime($("#attAdOut").value);
+      payload.opener = part !== "out" && $("#attAdOpener").checked; payload.closer = part !== "in" && $("#attAdCloser").checked;
+      if (part === "out") {
+        if (date >= today) return err("انصراف اليوم يُسجَّل من زر «تسجيل الانصراف»");
+        if (!ex || !ex.inTime) return err("لا يوجد حضور مسجّل لهذا اليوم — اختر «الحضور والانصراف»");
+        if (ex.outTime) return err("انصرافك مسجّل لهذا اليوم — استخدم «طلب تعديل الوقت» من السجل");
+        if (!payload.outTime) return err("اختر وقت الانصراف");
+        if (attToMin(payload.outTime) <= attToMin(ex.inTime)) return err("وقت الانصراف لازم يكون بعد وقت الحضور (" + attFmt12(ex.inTime) + ")");
+      } else {
+        if (ex && ex.inTime) return err(ex.outTime ? "يوجد تسجيل لهذا اليوم — استخدم «طلب تعديل الوقت» من السجل" : "حضورك مسجّل لهذا اليوم — اختر «الانصراف فقط»");
+        if (!payload.inTime) return err("اختر وقت الحضور");
+        if (part === "both" && !payload.outTime) return err("اختر وقت الانصراف");
+        if (payload.outTime && attToMin(payload.outTime) <= attToMin(payload.inTime)) return err("وقت الانصراف لازم يكون بعد وقت الحضور");
+      }
     }
     if (!reason) return err(isLeave ? "اكتب سبب العطلة" : "اكتب السبب");
     $("#attAdOk").disabled = true; msg.innerHTML = '<span class="spinner"></span> جارِ الإرسال…'; msg.className = "msg";
     try {
       await call("emp_add_day", payload);
       closeSheet();
-      alertMsg(isLeave ? "تم إرسال طلب العطلة للإدارة، ويظهر في سجلك بعد الموافقة." : "تم إرسال تسجيل اليوم للإدارة، ويُعتمد بعد موافقتها.", "تم الإرسال");
+      alertMsg(isLeave ? "تم إرسال طلب العطلة للإدارة، ويظهر في سجلك بعد الموافقة." : part === "out" ? "تم إرسال وقت الانصراف للإدارة، ويُعتمد بعد موافقتها." : "تم إرسال تسجيل اليوم للإدارة، ويُعتمد بعد موافقتها.", "تم الإرسال");
       refreshMe().then(() => renderEmployee()).catch(() => {});
     } catch (e) { err(e.message); $("#attAdOk").disabled = false; }
   };
@@ -851,6 +878,9 @@ function renderAdmin(syncing){
     else if (/^إضافة يوم سابق/.test(r.pending || "")) { title = `${r.emp} — إضافة يوم سابق`;
       sub = shortDate(r.date) + " · حضور " + attFmt12(r.inTime) + (r.outTime ? " · انصراف " + attFmt12(r.outTime) : "") + (r.opener ? " · فتح المحل" : "") + (r.closer ? " · أغلق المحل" : "") + " · " + r.pending.replace(/^إضافة يوم سابق /, "");
       btns = `<button class="att-btn ok" data-dec="approve" data-id="${r.id}">موافقة</button><button class="att-btn bad" data-dec="reject" data-id="${r.id}">رفض (يُحسب غياب)</button>`; }
+    else if (/إضافة انصراف ليوم سابق/.test(r.pending || "") && r.inStatus !== ATT_STATUS.PENDING) { title = `${r.emp} — إضافة انصراف ليوم سابق`;
+      sub = shortDate(r.date) + " · حضور " + attFmt12(r.inTime) + " · انصراف " + attFmt12(r.outTime) + (r.closer ? " · أغلق المحل" : "") + " · " + r.pending.replace(/^.*إضافة انصراف ليوم سابق /, "");
+      btns = `<button class="att-btn ok" data-dec="approve" data-id="${r.id}">موافقة</button><button class="att-btn bad" data-dec="reject" data-id="${r.id}">رفض (يبقى بلا انصراف)</button>`; }
     else { title = `${r.emp} — ${r.inStatus === ATT_STATUS.PENDING ? "حضور " + attFmt12(r.inTime) : r.outStatus === ATT_STATUS.PENDING && !/تعديل/.test(r.pending) ? "انصراف " + attFmt12(r.outTime) : "طلب تعديل"}`;
       sub = shortDate(r.date) + (r.opener ? " · فتح المحل" : "") + " · " + timePair("حضور", r.inTime, r.inReal)
         + (r.outTime ? " · " + timePair("انصراف", r.outTime, r.outReal) : "") + " · " + (r.pending || "") + (r.note ? " · " + r.note : "");
@@ -1329,6 +1359,9 @@ const Mock = (function(){
     // إغلاق الشركة يومين قادمين (مناسبة)
     { let c = nd, list = []; while (list.length < 6) { const d = attParseDate(c); d.setDate(d.getDate() + 1); c = d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); if (attIsWorkday(c, db.rules)) list.push(c); }
       list.slice(4).filter(x => x.slice(0, 7) === mk).forEach(x => db.employees.forEach(e => db.records.push({ id: nid(), date: x, day: attDayName(x), emp: e.name, inStatus: S.CLOSED, note: "إغلاق الشركة — مناسبة عائلية للإدارة", points: 0 }))); }
+    // حكيم: يوم سابق سجّل فيه حضوره ونسي الانصراف (لتجربة «الانصراف فقط»)
+    { const h = db.records.filter(r => r.emp === "حكيم سحيم" && r.inTime && r.outTime && r.date < t && !r.pending); const x = h[h.length - 2];
+      if (x) Object.assign(x, { outTime: "", outReal: "", outDist: "", outStatus: "", closer: false, points: 0, note: "" }); }
     // اليوم: إسلام سجّل حضوره من خارج النطاق
     if (attIsWorkday(t, db.rules)) db.records.push({ id: nid(), date: t, day: attDayName(t), emp: "إسلام الجهاني", inTime: "10:02", inReal: "10:20", inDist: 340,
       inStatus: S.PENDING, opener: true, pending: "حضور: خارج النطاق (340 م)", points: 0 });
@@ -1409,6 +1442,15 @@ const Mock = (function(){
       if (req.kind !== "leave" && date > n.date) throw new Error("لا يمكن تسجيل حضور ليوم لم يأتِ بعد");
       if (!attIsWorkday(date, db.rules)) throw new Error("هذا اليوم عطلة أسبوعية");
       let rec = db.records.find(r => r.emp === e.name && r.date === date);
+      if (req.kind !== "leave" && req.part === "out") {
+        if (date >= n.date) throw new Error("انصراف اليوم يُسجَّل من زر «تسجيل الانصراف»");
+        if (!rec || !rec.inTime) throw new Error("لا يوجد حضور مسجّل لهذا اليوم — اختر «الحضور والانصراف»");
+        if (rec.outTime) throw new Error("انصرافك مسجّل لهذا اليوم — استخدم «طلب تعديل الوقت» من السجل");
+        if (!req.outTime || attToMin(req.outTime) <= attToMin(rec.inTime)) throw new Error("وقت الانصراف لازم يكون بعد وقت الحضور");
+        const tag = "إضافة انصراف ليوم سابق (سُجّل يوم " + n.date + " " + n.time + ") — السبب: " + req.reason;
+        Object.assign(rec, { outTime: req.outTime, outReal: "", outDist: "", outStatus: S.PENDING, closer: !!req.closer, pending: rec.pending ? rec.pending + " | " + tag : tag });
+        return { status: S.PENDING };
+      }
       if (rec && rec.inTime) throw new Error("يوجد تسجيل لهذا اليوم — استخدم \"طلب تعديل الوقت\" من السجل");
       if (!rec) { rec = { id: nid(), date, day: attDayName(date), emp: e.name, points: 0 }; db.records.push(rec); }
       if (req.kind === "leave") Object.assign(rec, { inStatus: S.PENDING, pending: "طلب عطلة — السبب: " + req.reason });
@@ -1505,6 +1547,7 @@ const Mock = (function(){
         if (rec.inTime) rec.inStatus = S.OK; if (rec.outTime) rec.outStatus = S.OK;
         if (d === "excuse") rec.excuse = true; rec.pending = "";
       } else if (d === "reject") {
+        if (/إضافة انصراف ليوم سابق/.test(rec.pending || "")) Object.assign(rec, { outTime: "", outReal: "", outDist: "", outStatus: "", closer: false, note: (rec.note ? rec.note + " | " : "") + "رُفض طلب إضافة الانصراف" });
         const editOnly = /^(تعديل [^|]+)( \| تعديل [^|]+)*$/.test(rec.pending || "");
         if (editOnly) { rec.inStatus = S.OK; if (rec.outTime) rec.outStatus = S.OK; }
         else { if (rec.inStatus === S.PENDING) rec.inStatus = S.REJECTED; if (rec.outStatus === S.PENDING) rec.outStatus = S.REJECTED; }

@@ -149,7 +149,23 @@ var API = {
     if (!reason) throw new Error("اكتب السبب");
     var mk = attMonthKey(date);
     var rec = readMonth_(mk).filter(function(r){ return r.emp === emp.name && r.date === date; })[0];
-    if (rec && rec.inTime) throw new Error("يوجد تسجيل لهذا اليوم — استخدم \"طلب تعديل الوقت\" من السجل");
+    // انصراف فقط: الحضور مسجّل والموظف نسي الانصراف — يُضاف وقت الانصراف بانتظار موافقة الإدارة
+    var part = req.part === "out" || req.part === "in" || req.part === "both" ? req.part : "";
+    if (kind === "work" && part === "out") {
+      if (diffDays >= 0) throw new Error("انصراف اليوم يُسجَّل من زر «تسجيل الانصراف»");
+      if (!rec || !rec.inTime) throw new Error("لا يوجد حضور مسجّل لهذا اليوم — اختر «الحضور والانصراف»");
+      if (rec.outTime) throw new Error("انصرافك مسجّل لهذا اليوم — استخدم «طلب تعديل الوقت» من السجل");
+      var o = validTime_(req.outTime);
+      if (!o) throw new Error("اختر وقت الانصراف");
+      if (attToMin(o) <= attToMin(rec.inTime)) throw new Error("وقت الانصراف لازم يكون بعد وقت الحضور");
+      rec.outTime = o; rec.outReal = ""; rec.outDist = ""; rec.outStatus = ATT_STATUS.PENDING; rec.closer = !!req.closer;
+      var tag = "إضافة انصراف ليوم سابق (سُجّل يوم " + now.date + " " + now.time + ") — السبب: " + reason;
+      rec.pending = rec.pending ? rec.pending + " | " + tag : tag;
+      writeRecord_(rec);
+      markDirty_(mk);
+      return { status: ATT_STATUS.PENDING };
+    }
+    if (rec && rec.inTime) throw new Error(rec.outTime || !part ? "يوجد تسجيل لهذا اليوم — استخدم \"طلب تعديل الوقت\" من السجل" : "حضورك مسجّل لهذا اليوم — اختر «الانصراف فقط»");
     if (rec && rec.inStatus === ATT_STATUS.LEAVE) throw new Error("هذا اليوم مسجّل عطلة من قبل");
     if (rec && rec.inStatus === ATT_STATUS.TRIP) throw new Error("هذا اليوم مسجّل سفر عمل");
     if (rec && rec.inStatus === ATT_STATUS.CLOSED) throw new Error("الشركة مغلقة في هذا اليوم");
@@ -158,12 +174,13 @@ var API = {
       rec.inStatus = ATT_STATUS.PENDING;
       rec.pending = "طلب عطلة — السبب: " + reason;
     } else {
-      var tin = validTime_(req.inTime), tout = validTime_(req.outTime);
+      var tin = validTime_(req.inTime), tout = part === "in" ? null : validTime_(req.outTime);
       if (!tin) throw new Error("اختر وقت الحضور");
+      if (part === "both" && !tout) throw new Error("اختر وقت الانصراف");
       if (tout && attToMin(tout) <= attToMin(tin)) throw new Error("وقت الانصراف لازم يكون بعد وقت الحضور");
       rec.inTime = tin; rec.inReal = ""; rec.inDist = ""; rec.inStatus = ATT_STATUS.PENDING;
       rec.outTime = tout || ""; rec.outReal = ""; rec.outDist = ""; rec.outStatus = tout ? ATT_STATUS.PENDING : "";
-      rec.opener = !!req.opener; rec.closer = !!req.closer;
+      rec.opener = !!req.opener; rec.closer = !!tout && !!req.closer;
       rec.pending = "إضافة يوم سابق (سُجّل يوم " + now.date + " " + now.time + ") — السبب: " + reason;
     }
     rec.note = joinNote_(rec.note && !/سُجّل تلقائيًا/.test(rec.note) ? rec.note : "", "");
@@ -306,12 +323,20 @@ var API = {
       rec.pending = "";
     } else if (d === "reject") {
       // رفض الطلب المعلّق: لو كان تعديل وقت نرجع للوقت الأصلي، ولو كان تسجيلًا خارج النطاق يُرفض الحضور
+      // رفض إضافة انصراف ليوم سابق: يرجع اليوم بلا انصراف كما كان
+      if (/إضافة انصراف ليوم سابق/.test(rec.pending || "")) {
+        rec.outTime = ""; rec.outReal = ""; rec.outDist = ""; rec.outStatus = ""; rec.closer = false;
+        rec.note = joinNote_(rec.note, "رُفض طلب إضافة الانصراف");
+      }
       var editOnly = /^(تعديل [^|]+)( \| تعديل [^|]+)*$/.test(rec.pending || "");
       if (editOnly) { rec.inStatus = rec.inTime ? ATT_STATUS.OK : rec.inStatus; if (rec.outTime) rec.outStatus = ATT_STATUS.OK; }
       else { if (rec.inStatus === ATT_STATUS.PENDING) rec.inStatus = ATT_STATUS.REJECTED; if (rec.outStatus === ATT_STATUS.PENDING) rec.outStatus = ATT_STATUS.REJECTED; }
       rec.pending = "";
-    } else if (d === "absent_excused") { rec.inStatus = ATT_STATUS.ABSENT_EXCUSED; rec.pending = ""; }
-    else if (d === "absent") { rec.inStatus = ATT_STATUS.ABSENT; rec.pending = ""; }
+    } else if (d === "absent_excused" || d === "absent") {
+      // بعد قرار الإدارة يخرج اليوم من قائمة «بانتظار الموافقة» (كانت «بدون عذر» تبقيه فيها)
+      rec.inStatus = d === "absent" ? ATT_STATUS.ABSENT : ATT_STATUS.ABSENT_EXCUSED; rec.pending = "";
+      rec.note = String(rec.note || "").replace("سُجّل تلقائيًا", "راجعته الإدارة");
+    }
     else if (d === "stay_points") { rec.points = (Number(rec.points) || 0) + rules.points_per_stay; rec.stay = "تمت الموافقة على النقاط"; }
     else if (d === "stay_no") { rec.stay = "رُفض طلب النقاط"; }
     else throw new Error("قرار غير معروف");

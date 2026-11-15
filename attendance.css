@@ -156,3 +156,9 @@
 .att-heat td.c.cl{ background:rgba(255,255,255,.07); color:#aab0b8; }
 .att-alert.info{ background:rgba(120,160,255,.10); border:1px solid rgba(120,160,255,.32); color:#B9CCFF; }
 .att-alert.info strong{ display:block; font-size:14px; margin-bottom:2px; }
+
+/* اختيار ما يُسجَّل في «تسجيل يوم سابق»: حضور فقط / انصراف فقط / الاثنان */
+.att-seg{ display:flex; gap:6px; }
+.att-seg button{ flex:1; padding:10px 4px; border-radius:9px; border:1.5px solid var(--line); background:var(--steel-200);
+  color:var(--steel-900); font-family:'Tajawal', sans-serif; font-size:12.5px; font-weight:700; cursor:pointer; }
+.att-seg button.on{ background:var(--amber); border-color:var(--amber); color:#fff; }
