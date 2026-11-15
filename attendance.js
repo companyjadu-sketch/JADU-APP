@@ -990,13 +990,12 @@ function bindAdmin(body){
   body.querySelectorAll("td.c[data-new]").forEach(td => td.onclick = () => openRecordAdmin(null, td.dataset.emp, td.dataset.new));
 }
 
-// حكم الخصم: يجيب بنظرة واحدة "هل عليه خصم كبير أم لا"
-// أخضر = لا خصم · أصفر = خصم حتى يوم واحد · أحمر = أكثر من يوم
+// سطر الخصم: أخضر = لا خصم، أحمر = عليه خصم (المقدار كما تحسبه قواعد الخصم، بدون أي تصنيف إضافي)
 function deductVerdict(deduct){
   deduct = deduct || 0;
   if (deduct <= 0) return { cls: "ok", short: "لا خصم", long: "لا يوجد خصم" };
   const t = "خصم " + fmtDays(deduct) + " يوم";
-  return deduct <= 1 ? { cls: "warn", short: t, long: "خصم بسيط — " + fmtDays(deduct) + " يوم" } : { cls: "bad", short: t, long: "خصم كبير — " + fmtDays(deduct) + " يوم" };
+  return { cls: "bad", short: t, long: t };
 }
 // لون ورمز خانة اليوم (مشترك بين جدول الأيام، شريط الشهر، وتقويم الموظف)
 function cellInfo(r, rules){

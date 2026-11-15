@@ -169,12 +169,10 @@
 .att-quick b{ flex:1; min-width:0; font-size:14px; }
 .att-quick .att-pill{ font-size:12.5px; padding:3px 11px; }
 .att-quick .dot{ width:10px; height:10px; border-radius:50%; flex-shrink:0; background:var(--ok); }
-.att-quick .dot.warn{ background:#FFC94D; }
 .att-quick .dot.bad{ background:var(--warn); }
 .list-badge.warn{ background:rgba(255,184,0,.2); color:#FFC94D; }
 .att-verdict{ border-radius:10px; padding:11px 12px; font-size:15px; font-weight:800; text-align:center; margin-bottom:10px;
   background:rgba(111,207,142,.14); color:var(--ok); border:1px solid rgba(111,207,142,.35); }
-.att-verdict.warn{ background:rgba(255,184,0,.14); color:#FFC94D; border-color:rgba(255,184,0,.4); }
 .att-verdict.bad{ background:rgba(255,107,94,.16); color:#FF8A80; border-color:rgba(255,107,94,.5); }
 .att-strip{ display:grid; grid-template-columns:repeat(16,minmax(0,1fr)); gap:3px; margin-bottom:12px; }
 .att-strip i{ display:block; aspect-ratio:1; border-radius:4px; background:transparent; border:1px dashed var(--line); }
