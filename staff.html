@@ -37,6 +37,7 @@
 
 <link rel="stylesheet" href="app.css">
 <link rel="stylesheet" href="attendance.css">
+<link rel="stylesheet" href="share-cart.css">
 </head>
 <body data-page="staff">
 
@@ -146,7 +147,37 @@
           مشاركة أخرى
         </button>
       </div>
+
+      <!-- مشاركة الصنف كصورة + إضافته لسلة المشاركة — للموظف فقط -->
+      <div class="share-row" id="employeeShareImgRow" style="display:none; margin-top:10px;">
+        <button class="share-btn" id="shareImageBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+          <span>مشاركة كصورة</span>
+        </button>
+        <button class="share-btn" id="shareCartToggleBtn"><span>أضف للمشاركة</span></button>
+      </div>
+      <div class="msg" id="shareImageMsg" role="status"></div>
     </div>
+  </div>
+
+  <!-- ============ الموظف — سلة المشاركة ============ -->
+  <div class="view" id="view-share-cart">
+    <div class="back-row">
+      <button class="back-btn" data-back="employee" aria-label="رجوع">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <h2>سلة المشاركة</h2>
+    </div>
+    <p class="sc-info" id="shareCartInfo"></p>
+    <div id="shareCartBody"></div>
+    <div class="sc-actions">
+      <button type="button" class="primary-btn" id="shareCartSendBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5 15.4 17.5M15.4 6.5 8.6 10.5"/></svg>
+        <span>مشاركة السلة</span>
+      </button>
+      <button type="button" class="sc-clear" id="shareCartClearBtn">تفريغ السلة</button>
+    </div>
+    <div class="msg" id="shareCartMsg" role="status"></div>
   </div>
 
   <!-- ============ الإدارة العامة — القائمة الرئيسية ============ -->
@@ -412,6 +443,12 @@
     سلة الصور: <span id="photoBasketCount">0</span> — مراجعة وإرسال للإدارة
   </button>
 </div>
+<div class="share-cart-bar" id="shareCartBar" hidden>
+  <div class="share-cart-inner">
+    <span class="share-cart-label">سلة المشاركة: <b id="shareCartCount">0</b> صنف</span>
+    <button type="button" id="shareCartOpen">عرض السلة</button>
+  </div>
+</div>
 <div class="lightbox" id="lightbox" hidden role="dialog" aria-modal="true" aria-label="عرض الصورة">
   <img id="lbImg" alt="" referrerpolicy="no-referrer">
   <button type="button" class="lb-btn lb-close" id="lbClose" aria-label="إغلاق">✕</button>
@@ -422,6 +459,7 @@
   </div>
 </div>
 <script src="app.js"></script>
+<script src="share-cart.js"></script>
 <script src="attendance-core.js"></script>
 <script src="attendance.js"></script>
 </body>

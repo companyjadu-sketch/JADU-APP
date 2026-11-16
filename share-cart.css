@@ -1,0 +1,71 @@
+/* ===== سلة المشاركة ===== */
+
+/* زر الإضافة داخل صف الصنف في نتائج البحث */
+/* يوضع تحت الصورة المصغّرة حتى لا يأخذ من عرض اسم الصنف */
+.item-row.with-thumb.with-add .ir-thumb{ grid-column:1; grid-row:1; align-self:end; }
+.item-row.with-thumb.with-add .ir-body{ grid-column:2; grid-row:1 / span 2; }
+.sc-add{
+  grid-column:1; grid-row:2; align-self:start; margin-top:6px;
+  width:56px; height:32px; border-radius:8px;
+  display:flex; align-items:center; justify-content:center;
+  border:1.5px solid var(--line); background:var(--steel-200); color:var(--steel-900); cursor:pointer;
+}
+.sc-add svg{ width:20px; height:20px; }
+.sc-add.on{ background:var(--amber); border-color:var(--amber); color:#fff; }
+.sc-add:focus-visible{ outline:2px solid var(--amber-dark); outline-offset:2px; }
+
+/* أزرار صفحة الصنف */
+.share-btn.on{ border-color:var(--amber); color:var(--amber-dark); }
+
+/* الشريط السفلي */
+.share-cart-bar{
+  position:fixed; left:0; right:0; bottom:0; z-index:49;
+  padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px));
+  background:linear-gradient(transparent, rgba(0,0,0,.6));
+}
+.share-cart-bar[hidden]{ display:none; }
+.share-cart-bar.stacked{ padding-bottom:0; background:none; }
+.share-cart-inner{
+  width:100%; max-width:520px; margin:0 auto; min-height:52px;
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  padding:6px 6px 6px 14px; padding-inline:14px 6px;
+  background:var(--surface); border:1.5px solid var(--amber); border-radius:12px;
+  box-shadow:0 6px 20px rgba(0,0,0,.45);
+}
+.share-cart-label{ font-size:14px; font-weight:700; color:var(--steel-900); }
+.share-cart-label b{ font-family:'IBM Plex Mono', monospace; color:var(--amber-dark); margin:0 3px; }
+.share-cart-inner button{
+  min-height:40px; padding:0 18px; border:0; border-radius:9px; background:var(--amber); color:#fff;
+  font:700 14px 'Tajawal',sans-serif; cursor:pointer; flex-shrink:0;
+}
+body.has-share-bar .app{ padding-bottom:84px; }
+
+/* صفحة السلة */
+.sc-info{ font-size:12.5px; color:var(--steel-500); margin:0 0 12px; }
+.sc-row{
+  display:grid; grid-template-columns:56px minmax(0,1fr) 40px; column-gap:12px; align-items:center;
+  padding:10px 12px; margin-bottom:8px;
+  background:var(--surface); border:1.5px solid var(--line); border-radius:10px;
+}
+.sc-body{ display:flex; flex-direction:column; gap:6px; min-width:0; }
+.sc-name{ font-size:13.5px; font-weight:600; color:var(--steel-900); }
+.sc-meta{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.sc-num{
+  font-family:'IBM Plex Mono', monospace; font-size:11.5px; font-weight:700; color:var(--amber-dark);
+  background:rgba(225,10,30,0.16); border-radius:6px; padding:3px 7px;
+}
+.sc-price{ font-family:'IBM Plex Mono', monospace; font-size:13px; font-weight:700; color:var(--steel-900); }
+.sc-out{ font-size:11.5px; color:var(--warn); }
+.sc-rm{
+  width:40px; height:40px; border-radius:50%; border:1.5px solid var(--line); background:transparent;
+  color:var(--steel-500); font-size:15px; cursor:pointer;
+}
+.sc-rm:active{ background:var(--steel-200); }
+.sc-actions{ display:flex; flex-direction:column; gap:10px; margin-top:16px; }
+.sc-actions .primary-btn{ margin-top:0; display:flex; align-items:center; justify-content:center; gap:8px; }
+.sc-actions .primary-btn svg{ width:18px; height:18px; }
+.sc-clear{
+  width:100%; padding:13px; border-radius:10px; border:1.5px solid var(--line); background:transparent;
+  color:var(--steel-500); font:700 13.5px 'Tajawal',sans-serif; cursor:pointer;
+}
+.sc-clear[hidden]{ display:none; }
