@@ -990,6 +990,10 @@ function renderResults(){
 
 // تأخير بسيط (debounce) قبل تشغيل البحث، لتخفيف الحمل أثناء الكتابة السريعة
 let searchDebounceTimer = null;
+document.getElementById('employeeSearchClear')?.addEventListener('click', () => {
+  const inp = document.getElementById('employeeSearchInput');
+  inp.value = ''; clearTimeout(searchDebounceTimer); renderResults(); inp.focus();
+});
 document.getElementById('employeeSearchInput')?.addEventListener('input', () => {
   clearTimeout(searchDebounceTimer);
   searchDebounceTimer = setTimeout(renderResults, 150);
