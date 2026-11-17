@@ -7,7 +7,7 @@ const ITEM_IMAGES = {
   "26": "https://www.remta.com.tr/idea/el/91/myassets/products/104/r85.jpg",
   "129": "https://uretcelik.com/wp-content/uploads/2021/05/55-Litre-Fritoz.jpg",
   "139": "https://uretcelik.com/wp-content/uploads/2021/05/Tekli-Krep-Makinesi.jpg",
-  "146": "https://uretcelik.com/wp-content/uploads/2021/05/Ciftli-Krep-Makinesi.jpg",
+  "146": "images/146.jpg",
   "171": "https://uretcelik.com/wp-content/uploads/2021/05/16-Dilim-Tost-Makinesi-1.jpg",
   "226": "https://www.remta.com.tr/idea/el/91/myassets/products/146/w16.jpg",
   "599": "https://uretcelik.com/wp-content/uploads/2021/05/55-Litre-Fritoz-4.jpg",
