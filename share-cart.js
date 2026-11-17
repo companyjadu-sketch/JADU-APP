@@ -24,7 +24,14 @@
   try { cart = (JSON.parse(localStorage.getItem(CART_KEY) || '[]') || []).map(n => String(n).trim()).filter(Boolean); } catch(e){ cart = []; }
 
   const $ = id => document.getElementById(id);
-  const enabled = () => currentViewerRole === 'employee';
+  const enabled = () => currentViewerRole === 'employee' || currentViewerRole === 'admin';
+
+  // السعر الظاهر في المشاركة: الإدارة تختار قطاعي أو جملة، والموظف قطاعي دائمًا (بغض النظر عن أي قيمة محفوظة)
+  const MODE_KEY = 'jadu_share_price_mode_v1';
+  let priceMode = 'retail';
+  try { priceMode = localStorage.getItem(MODE_KEY) === 'wholesale' ? 'wholesale' : 'retail'; } catch(e){}
+  const isWholesale = () => currentViewerRole === 'admin' && priceMode === 'wholesale';
+  const priceOf = item => isWholesale() ? item.priceWholesale : item.priceRetail;
   const inCart = n => cart.indexOf(String(n).trim()) !== -1;
   const findItem = n => ITEMS.find(it => String(it.number).trim() === n);
   const cartItems = () => cart.map(findItem).filter(Boolean);
@@ -176,7 +183,12 @@
     ctx.font = `700 44px ${FONT}`; ctx.fillStyle = INK;
     ctx.fillText(String(item.number), W - PAD - lw - 18, base);
     ctx.textAlign = 'left'; ctx.font = `900 64px ${FONT}`; ctx.fillStyle = RED;
-    ctx.fillText(formatPrice(item.priceRetail), PAD, base + 4);
+    const ptxt = formatPrice(priceOf(item));
+    ctx.fillText(ptxt, PAD, base + 4);
+    if(isWholesale()){                                           // سعر الجملة يُكتب عليه "جملة" حتى لا يُلتبس بالقطاعي
+      const pw = ctx.measureText(ptxt).width;
+      ctx.font = `700 34px ${FONT}`; ctx.fillStyle = MUTED; ctx.fillText('جملة', PAD + pw + 18, base + 2);
+    }
     return H;
   }
   async function buildSingle(item){
@@ -241,7 +253,12 @@
       const lw = ctx.measureText(label).width;
       ctx.font = `700 28px ${FONT}`; ctx.fillStyle = INK; ctx.fillText(String(item.number), tx - lw - 12, base);
       ctx.textAlign = 'left'; ctx.font = `900 38px ${FONT}`; ctx.fillStyle = RED;
-      ctx.fillText(formatPrice(item.priceRetail), x + PAD, base + 2);
+      const ptxt = formatPrice(priceOf(item));
+      ctx.fillText(ptxt, x + PAD, base + 2);
+      if(isWholesale()){
+        const pw = ctx.measureText(ptxt).width;
+        ctx.font = `700 22px ${FONT}`; ctx.fillStyle = MUTED; ctx.fillText('جملة', x + PAD + pw + 10, base + 1);
+      }
     });
     return toFile(c, fileName);
   }
@@ -249,7 +266,7 @@
   // ---------- تجهيز صور السلة مسبقًا (حتى تفتح المشاركة فورًا عند الضغط) ----------
   let prepared = null;      // { sig, files }
   let preparing = null;     // { sig, promise }
-  const cartSig = () => cartItems().map(it => `${it.number}:${it.priceRetail}:${it.name}:${it.company || ''}:${it.country || ''}:${(UPLOADED_PHOTOS[String(it.number).trim()] || {}).at || ''}`).join('|');
+  const cartSig = () => cartItems().map(it => `${it.number}:${isWholesale() ? 'w' : 'r'}${priceOf(it)}:${it.name}:${it.company || ''}:${it.country || ''}:${(UPLOADED_PHOTOS[String(it.number).trim()] || {}).at || ''}`).join('|');
   function prepareCart(){
     const sig = cartSig();
     if(prepared && prepared.sig === sig) return Promise.resolve(prepared.files);
@@ -302,8 +319,39 @@
   }
 
   // ---------- صفحة السلة ----------
+  // مفتاح قطاعي/جملة — يظهر للإدارة فقط
+  function renderMode(){
+    let row = $('scModeRow');
+    if(!row){
+      row = document.createElement('div'); row.id = 'scModeRow'; row.className = 'sc-mode';
+      $('shareCartInfo').before(row);
+      row.addEventListener('click', e => { const b = e.target.closest('button[data-m]'); if(b) setMode(b.dataset.m); });
+    }
+    row.hidden = currentViewerRole !== 'admin';
+    if(row.hidden){ row.innerHTML = ''; return; }
+    const w = isWholesale();
+    row.innerHTML = `<span class="sc-mode-t">السعر الظاهر في المشاركة</span>
+      <div class="sc-seg" role="radiogroup" aria-label="نوع السعر">
+        <button type="button" role="radio" data-m="retail" aria-checked="${!w}" class="${w ? '' : 'on'}">قطاعي</button>
+        <button type="button" role="radio" data-m="wholesale" aria-checked="${w}" class="${w ? 'on' : ''}">جملة</button>
+      </div>
+      <span class="sc-mode-h">يظهر هذا الاختيار للإدارة فقط. الموظفون يشاركون بسعر القطاعي دائمًا.</span>`;
+  }
+  function syncShareLabel(){
+    const sp = $('shareImageBtn') && $('shareImageBtn').querySelector('span');
+    if(sp) sp.textContent = (IS_MOBILE ? 'مشاركة كصورة' : 'تنزيل كصورة') + (isWholesale() ? ' (جملة)' : '');
+  }
+  function setMode(m){
+    priceMode = m === 'wholesale' ? 'wholesale' : 'retail';
+    try { localStorage.setItem(MODE_KEY, priceMode); } catch(e){}
+    prepared = null; single = null;
+    setMsg($('shareCartMsg'), '');
+    renderCart(); syncShareLabel();
+  }
+
   function renderCart(){
     const body = $('shareCartBody'); if(!body) return;
+    renderMode();
     const items = cartItems();
     const shareBtn = $('shareCartSendBtn'), clearBtn = $('shareCartClearBtn');
     shareBtn.disabled = !items.length; clearBtn.hidden = !cart.length;
@@ -317,14 +365,16 @@
       $('shareCartInfo').textContent = ''; return;
     }
     const pics = Math.ceil(items.length / PER_IMAGE);
-    $('shareCartInfo').textContent = `${items.length} صنف — ${pics === 1 ? 'صورة واحدة' : pics + ' صور'} (${PER_IMAGE} أصناف في الصورة)`;
+    const noW = isWholesale() ? items.filter(it => !(it.priceWholesale > 0)).length : 0;
+    $('shareCartInfo').textContent = `${items.length} صنف — ${pics === 1 ? 'صورة واحدة' : pics + ' صور'} (${PER_IMAGE} أصناف في الصورة)` +
+      (noW ? ` — ${noW} بدون سعر جملة (يظهر «—»)` : '');
     body.innerHTML = items.map(it => {
       const src = itemImage(it.number);
       return `<div class="sc-row">
         <span class="ir-thumb">${src ? `<img src="${escapeHtml(src)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}</span>
         <div class="sc-body">
           <div class="sc-name">${escapeHtml(it.name) || '—'}</div>
-          <div class="sc-meta"><span class="sc-num">${escapeHtml(it.number)}</span><span class="sc-price">${formatPrice(it.priceRetail)}</span>${it.totalQty > 0 ? '' : '<span class="sc-out">غير متوفر</span>'}</div>
+          <div class="sc-meta"><span class="sc-num">${escapeHtml(it.number)}</span><span class="sc-price">${formatPrice(priceOf(it))}</span>${isWholesale() ? '<span class="sc-out" style="color:var(--steel-500)">جملة</span>' : ''}${it.totalQty > 0 ? '' : '<span class="sc-out">غير متوفر</span>'}</div>
         </div>
         <button type="button" class="sc-rm" data-rm="${escapeHtml(it.number)}" aria-label="حذف ${escapeHtml(it.name)} من السلة">✕</button>
       </div>`;
@@ -361,7 +411,7 @@
 
   // ---------- الصنف المنفرد ----------
   let single = null;        // { key, promise }
-  function singleKey(item){ const n = String(item.number).trim(); return `${n}:${item.priceRetail}:${item.name}:${item.company || ''}:${item.country || ''}:${(UPLOADED_PHOTOS[n] || {}).at || ''}`; }
+  function singleKey(item){ const n = String(item.number).trim(); return `${n}:${isWholesale() ? 'w' : 'r'}${priceOf(item)}:${item.name}:${item.company || ''}:${item.country || ''}:${(UPLOADED_PHOTOS[n] || {}).at || ''}`; }
   function prepareSingle(item){
     const key = singleKey(item);
     if(single && single.key === key) return single.promise;
@@ -395,6 +445,7 @@
     const r = _afterDetail.apply(this, arguments);
     try {
       $('employeeShareImgRow').style.display = enabled() ? 'flex' : 'none';
+      syncShareLabel();
       setMsg($('shareImageMsg'), '');
       syncToggles();
       if(enabled()) prepareSingle(item).catch(() => {});     // تجهيز مسبق حتى تفتح المشاركة فورًا

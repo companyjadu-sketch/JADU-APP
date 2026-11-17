@@ -37,7 +37,7 @@ function doPost(e){
     if (!fn) throw new Error("طلب غير معروف");
     return json_({ ok: true, data: fn(req) });
   } catch (err) {
-    return json_({ ok: false, error: String(err && err.message || err) });
+    return json_({ ok: false, error: String(err && err.message || err), fatal: !!(err && err.fatal) });
   } finally {
     try { lock.releaseLock(); } catch (x) {}
   }
