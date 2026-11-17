@@ -25,6 +25,8 @@ var PH_PENDING = "بانتظار الموافقة", PH_APPROVED = "مقبولة"
 var PH_MAX_BYTES = 1200000;
 var PH_DEFAULT_REPO = "companyjadu-sketch/JADU-APP", PH_DEFAULT_BRANCH = "main";
 var PH_FOLDER_NAME = "جادو — صور بانتظار الموافقة";
+// طلب «ربط صورة موجودة»: لا ملف في Drive؛ عمود «ملف Drive» يحمل link:رقم-الصنف-المصدر
+var PH_LINK = "link:";
 // نفس رابط الشيت المنشور الذي يقرأه الموقع (للتأكد أن رقم الصنف موجود)
 var PH_SHEET_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSYJP_O-jmrABM6jSTcEGTq5WZAE1J5k-wO-deCQvnpM_5gHbZmuYR2PVR7cPSZoAQHXtk68dOzH65K/pub?gid=385150651&single=true&output=csv";
 
@@ -110,7 +112,8 @@ function photoRows_(){
   if (last < 2) return [];
   return sh.getRange(2, 1, last - 1, PH_COLS.length).getValues().map(function(r, i){
     return { row: i + 2, id: String(r[0]), itemNo: String(r[1]), itemNos: String(r[1]).split(",").filter(Boolean), itemName: r[2], by: r[3], how: r[4],
-             at: r[5] instanceof Date ? fmtDateTime_(r[5]) : String(r[5]), fileId: r[6], status: r[7] };
+             at: r[5] instanceof Date ? fmtDateTime_(r[5]) : String(r[5]), fileId: r[6], status: r[7],
+             from: String(r[6]).indexOf(PH_LINK) === 0 ? String(r[6]).slice(PH_LINK.length) : "" };
   }).filter(function(x){ return x.id; });
 }
 function photoAdd_(id, itemNo, itemName, by, how, status, fileId){
@@ -181,13 +184,25 @@ function itemImageRefs_(src){
   return out;
 }
 
+// القيمة الكاملة لصورة الصنف داخل ITEM_IMAGES (مع ?v=) أو "" إن لم توجد
+function itemImageRaw_(src, itemNo){
+  var start = src.indexOf("const ITEM_IMAGES = {");
+  if (start < 0) return "";
+  var bodyStart = src.indexOf("{", start) + 1, end = src.indexOf("\n};", bodyStart);
+  var body = src.slice(bodyStart, end < 0 ? src.length : end);
+  var m = new RegExp('(?:^|\\n)[ \\t]*"' + itemNo.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&") + '"[ \\t]*:[ \\t]*"([^"]*)"').exec(body);
+  return m ? m[1] : "";
+}
+
 // ينشر مجموعة صور في commit واحد (Git Data API): كل الملفات الجديدة + تعديل item-images.js معًا،
 // فيُعاد بناء GitHub Pages مرة واحدة فقط.
 // entries = [{ itemNos: [..], bytes }] — الصورة الواحدة تُحفظ مرة واحدة ويشير إليها كل أصنافها (بلا نسخ للملف).
 // اسم الملف: images/أول-صنف.jpg؛ لكن إن كان هذا الملف مستخدمًا لصنف آخر خارج هذه الصورة
 // (صورة مشتركة سابقة) نستعمل اسمًا جديدًا حتى لا يتغيّر شكل الصنف الآخر.
 // يرجع { رقم الصنف: "images/....jpg?v=..." }
-function publishImages_(entries, who){
+// links = [{ from, to }]: ربط صنف بصورة صنف آخر موجودة (بلا ملف جديد) — في نفس الـ commit
+function publishImages_(entries, who, links){
+  links = links || [];
   // الصنف الذي تظهر له صورتان في الدفعة: آخر واحدة تفوز؛ والصورة التي خسرت كل أصنافها تُحذف
   var owner = {};
   entries.forEach(function(e, i){ e.itemNos.forEach(function(n){ owner[n] = i; }); });
@@ -196,10 +211,10 @@ function publishImages_(entries, who){
     var mine = e.itemNos.filter(function(n){ return owner[n] === i; });
     if (mine.length) keep.push({ itemNos: mine, bytes: e.bytes });
   });
-  if (!keep.length) return {};
+  if (!keep.length && !links.length) return {};
   var cfg = ghCfg_(), stamp = Utilities.formatDate(new Date(), TZ, "yyyyMMddHHmmss");
   // 1) الصور كـ blobs (طلبات متوازية)
-  var blobSha = UrlFetchApp.fetchAll(keep.map(function(e){
+  var blobSha = !keep.length ? [] : UrlFetchApp.fetchAll(keep.map(function(e){
     return ghOpt_(cfg, "POST", "/git/blobs", { content: Utilities.base64Encode(e.bytes), encoding: "base64" });
   })).map(function(r){
     var j = ghParse_(r);
@@ -208,7 +223,8 @@ function publishImages_(entries, who){
   });
   var all = [];
   keep.forEach(function(e){ all = all.concat(e.itemNos); });
-  var msg = "إضافة " + keep.length + " صورة (" + all.length + " صنف) — " + who + "\n\nالأصناف: " + all.slice(0, 60).join("، ") + (all.length > 60 ? " …" : "");
+  var msg = (keep.length ? "إضافة " + keep.length + " صورة (" + all.length + " صنف)" : "ربط " + links.length + " صنف بصور موجودة") + " — " + who +
+    "\n\nالأصناف: " + all.concat(links.map(function(l){ return l.to + "←" + l.from; })).slice(0, 60).join("، ");
   for (var attempt = 0; attempt < 4; attempt++) {
     var ref = gh_(cfg, "GET", "/git/ref/heads/" + encodeURIComponent(cfg.branch));
     if (ref.code !== 200) throw ghFail_(ref);
@@ -228,6 +244,11 @@ function publishImages_(entries, who){
       e.itemNos.forEach(function(n){ paths[n] = file + "?v=" + stamp; js = setItemImageEntry_(js, n, paths[n]); });
       tree.push({ path: file, mode: "100644", type: "blob", sha: blobSha[i] });
     });
+    links.forEach(function(l){
+      var v = paths[l.from] || itemImageRaw_(js, l.from);
+      if (!v) throw fatal_("الصنف " + l.from + " لم تعد له صورة على الموقع — لا يمكن الربط");
+      paths[l.to] = v; js = setItemImageEntry_(js, l.to, v);
+    });
     var jsBlob = gh_(cfg, "POST", "/git/blobs", { content: js, encoding: "utf-8" });
     if (jsBlob.code !== 201) throw ghFail_(jsBlob);
     tree.push({ path: "item-images.js", mode: "100644", type: "blob", sha: jsBlob.json.sha });
@@ -245,10 +266,12 @@ function publishImages_(entries, who){
 
 // ينشر صفوفًا من السجل (ملفاتها في Drive) على دفعات من 100 صورة، ويرجع مسارات الأصناف
 function publishRows_(rows, who){
-  var paths = {};
-  for (var i = 0; i < rows.length; i += 100) {
-    var chunk = rows.slice(i, i + 100);
-    var p = publishImages_(chunk.map(function(r){ return { itemNos: r.itemNos, bytes: DriveApp.getFileById(r.fileId).getBlob().getBytes() }; }), who);
+  var paths = {}, imgs = rows.filter(function(r){ return !r.from; });
+  var links = rows.filter(function(r){ return r.from; }).map(function(r){ return { from: r.from, to: r.itemNos[0] }; });
+  if (!imgs.length) return links.length ? publishImages_([], who, links) : paths;
+  for (var i = 0; i < imgs.length; i += 100) {
+    var chunk = imgs.slice(i, i + 100);
+    var p = publishImages_(chunk.map(function(r){ return { itemNos: r.itemNos, bytes: DriveApp.getFileById(r.fileId).getBlob().getBytes() }; }), who, i ? [] : links);
     for (var k in p) paths[k] = p[k];
     chunk.forEach(function(r){ try { DriveApp.getFileById(r.fileId).setTrashed(true); } catch (e) {} });
   }
@@ -301,6 +324,29 @@ API.img_publish = function(req){
   return { count: rows.length, paths: paths };
 };
 
+// ربط صنف بصورة صنف آخر موجودة على الموقع (بدون رفع ولا نسخ الملف)
+// الإدارة: يُنشر مباشرة. الموظف: يذهب لصفحة الموافقات مثل الصور.
+API.img_link = function(req){
+  var who = photoWho_(req);
+  if (who.role === "none") throw fatal_("هذا الهاتف غير مسجّل كموظف — لا يمكنه ربط الصور");
+  var from = cleanItemNo_(req.from), to = cleanItemNo_(req.to);
+  if (from === to) throw fatal_("اختر صنفًا آخر غير نفس الصنف");
+  var known = knownItems_();
+  if (known) [from, to].forEach(function(n){ if (known.indexOf(n) === -1) throw fatal_("رقم الصنف " + n + " غير موجود في الشيت"); });
+  var id = String(req.id || "").replace(/[^\w\-]/g, "").slice(0, 40);
+  if (id.length < 8) throw fatal_("معرّف الطلب غير صالح");
+  var again = photoRows_().filter(function(x){ return x.id === id; })[0];
+  if (again) return { status: again.status === PH_PENDING ? "pending" : "published", duplicate: true };
+  var name = String(req.toName || "").replace(/\|/g, " ");
+  if (who.role === "admin") {
+    var paths = publishImages_([], who.name + " (ربط صورة)", [{ from: from, to: to }]);
+    photoAdd_(id, to, name, who.name, "ربط — إدارة", PH_PUBLISHED, PH_LINK + from);
+    return { status: "published", path: paths[to] };
+  }
+  photoAdd_(id, to, name, who.name, "ربط — موظف", PH_PENDING, PH_LINK + from);
+  return { status: "pending" };
+};
+
 function pendingRows_(){ return photoRows_().filter(function(x){ return x.status === PH_PENDING; }); }
 
 // عدد الصور المنتظرة (للجرس)
@@ -310,13 +356,14 @@ API.img_pending_count = function(req){
 };
 API.img_pending_list = function(req){
   photoAdmin_(req);
-  return { items: pendingRows_().slice(-300).map(function(x){ return { id: x.id, itemNos: x.itemNos, itemNames: String(x.itemName || "").split(" | "), by: x.by, at: x.at }; }) };
+  return { items: pendingRows_().slice(-300).map(function(x){ return { id: x.id, itemNos: x.itemNos, itemNames: String(x.itemName || "").split(" | "), by: x.by, at: x.at, from: x.from }; }) };
 };
 // الصورة نفسها لمعاينتها في صفحة الموافقات
 API.img_pending_get = function(req){
   photoAdmin_(req);
   var r = pendingRows_().filter(function(x){ return x.id === String(req.id); })[0];
   if (!r) throw fatal_("الصورة غير موجودة أو تمت معالجتها");
+  if (r.from) throw fatal_("طلب ربط — الصورة موجودة على الموقع");
   return { data: Utilities.base64Encode(DriveApp.getFileById(r.fileId).getBlob().getBytes()) };
 };
 // قرار الإدارة: approve | reject

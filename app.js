@@ -2141,7 +2141,8 @@ if ('serviceWorker' in navigator) {
       return;
     }
     // شاشات أعمق من التي نعرف كيف نفتحها (أقسام الحضور الداخلية...) تُحفظ بأقرب شاشة أب
-    if (/^att-/.test(view) && view !== 'att-admin') base.view = currentViewerRole === 'admin' || base.entry === 'admin' ? 'att-admin' : base.view;
+    if (/^att-/.test(view) && view !== 'att-admin' && view !== 'att-emp') base.view = 'att-admin';   // شاشات الحضور الإدارية الداخلية
+    if (view === 'att-emp') base.role = 'employee';
     lastBase = base; ss.set(KEY, base);
   }
   ['pagehide', 'beforeunload'].forEach(ev => window.addEventListener(ev, snapshot));
@@ -2166,7 +2167,7 @@ if ('serviceWorker' in navigator) {
     const isAdminView = s.view === 'admin' || !!ADMIN_BTN[s.view] || (s.view === 'employee' && s.entry === 'admin');
     if (isAdminView) {
       if (IS_CUSTOMER_PAGE || !(await adminReady())) return;
-    } else if (s.view === 'employee' && s.role === 'employee') {
+    } else if ((s.view === 'employee' || s.view === 'att-emp') && s.role === 'employee') {
       if (IS_CUSTOMER_PAGE || !ss.get(EMP_OK)) return;
     } else if (!(s.view === 'employee' && s.role === 'customer')) {
       return; // شاشة لا نعرف كيف نسترجعها بأمان — نبقى في الرئيسية
@@ -2175,7 +2176,12 @@ if ('serviceWorker' in navigator) {
 
     restoring = true;
     try {
-      if (s.view === 'employee') {
+      if (s.view === 'att-emp') {
+        // حضور الموظف: نرجع لقسم الموظف ثم نفتح شاشة الحضور (تجلب آخر بيانات من الخادم، فيظهر أي اعتماد من الإدارة)
+        currentViewerRole = 'employee'; employeeEntryPoint = 'gate'; activeCategoryValues = null;
+        showView('employee'); try { loadItems(); } catch(e){} goEmployeeStep('category');
+        if (window.JaduAttendance) window.JaduAttendance.openEmployeeView();
+      } else if (s.view === 'employee') {
         if (s.entry === 'admin') showView('admin');
         currentViewerRole = s.role; employeeEntryPoint = s.entry;
         activeCategoryValues = s.cat >= 0 ? CATEGORY_GROUPS[s.cat].values : null;

@@ -33,6 +33,7 @@ const ICON = {
   bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10 21a2 2 0 0 0 4 0"/></svg>',
   up: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>',
   back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
+  link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>',
   warn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l10 18H2z"/><path d="M12 10v5"/><path d="M12 18h.01"/></svg>'
 };
 
@@ -71,13 +72,18 @@ async function mock(action, d){
     if(!all.some(x => x.id === d.id)) await dbPut('demo', { id: d.id, itemNos: d.itemNos, itemNames: d.itemNames || [], by: 'حكيم سحيم', at: new Date().toLocaleString('en-GB').slice(0, 16).replace(',', ''), data: d.data });
     return { status: 'pending' };
   }
+  if(action === 'img_link'){
+    if(DEMO_ROLE === 'admin') return { status: 'published', path: itemImage(d.from) };
+    if(!all.some(x => x.id === d.id)) await dbPut('demo', { id: d.id, itemNos: [d.to], itemNames: [d.toName || ''], from: d.from, by: 'حكيم سحيم', at: new Date().toLocaleString('en-GB').slice(0, 16).replace(',', '') });
+    return { status: 'pending' };
+  }
   if(DEMO_ROLE !== 'admin'){ const e = new Error('هذه العملية للإدارة العامة فقط'); e.fatal = true; throw e; }
   if(action === 'img_publish'){ const n = stagedDemo.size; stagedDemo.clear(); return { count: n, paths: {} }; }
   if(action === 'img_decide_batch'){ for(const id of d.ids) await dbDel('demo', id); return { done: d.ids, paths: {} }; }
   if(action === 'img_pending_count') return { count: all.length };
-  if(action === 'img_pending_list') return { items: all.map(x => ({ id: x.id, itemNos: x.itemNos, itemNames: x.itemNames, by: x.by, at: x.at })) };
+  if(action === 'img_pending_list') return { items: all.map(x => ({ id: x.id, itemNos: x.itemNos, itemNames: x.itemNames, by: x.by, at: x.at, from: x.from || '' })) };
   if(action === 'img_pending_get'){ const x = all.find(y => y.id === d.id); if(!x){ const e = new Error('غير موجودة'); e.fatal = true; throw e; } return { data: x.data }; }
-  if(action === 'img_decide'){ await dbDel('demo', d.id); return { status: d.decision === 'approve' ? 'approved' : 'rejected', path: 'images/demo.jpg' }; }
+  if(action === 'img_decide'){ const x = all.find(y => y.id === d.id); await dbDel('demo', d.id); return { status: d.decision === 'approve' ? 'approved' : 'rejected', path: x && x.from ? itemImage(x.from) : 'images/demo.jpg' }; }
   throw new Error('طلب غير معروف');
 }
 
@@ -286,7 +292,7 @@ function mkRow(it){
     <div class="pu-main">
       <div class="pu-top-line"><span class="pu-fn"></span><button type="button" class="pu-rm" aria-label="حذف الصورة">✕</button></div>
       <div class="pu-link" hidden></div>
-      <div class="pu-find"><input type="text" class="pu-q" placeholder="ابحث بالاسم أو رقم الصنف…" autocomplete="off" aria-label="بحث عن الصنف"><div class="pu-res" hidden></div></div>
+      <div class="pu-find"><span class="pu-qw"><input type="text" class="pu-q" placeholder="ابحث بالاسم أو رقم الصنف…" autocomplete="off" aria-label="بحث عن الصنف"><button type="button" class="pu-clr" aria-label="مسح نص البحث">×</button></span><div class="pu-res" hidden></div></div>
       <div class="pu-st"></div>
     </div>`;
   $('.pu-fn', el).textContent = it.name || '';
@@ -301,6 +307,7 @@ function mkRow(it){
   el.addEventListener('click', e => {
     const b = e.target.closest('button'); if(!b) return;
     if(b.classList.contains('pu-rm')) removeRow(it);
+    else if(b.classList.contains('pu-clr')){ const i = $('.pu-q', el); i.value = ''; it.q = ''; saveSoon(it); rt(it).open = false; renderResults(it); i.focus(); }
     else if(b.dataset.n) linkItem(it, findItem(b.dataset.n));
     else if(b.dataset.x){ unlinkItem(it, b.dataset.x); }
     else if(b.classList.contains('ok')){ it.st = 'ready'; it.sugg = false; persist(it); refresh(it); }
@@ -652,6 +659,7 @@ function renderPending(){
   if(!PENDING.length){ body.innerHTML = '<div class="empty-note">لا توجد صور بانتظار الموافقة</div>'; return; }
   const plain = PENDING.filter(p => !pHasPrev(p)).length;
   body.innerHTML = PENDING.map(p => {
+    if(p.from) return linkCard(p);
     const nos = pNos(p), names = pNames(p), prevNos = nos.filter(hasPrev), prev = prevNos.length > 0;
     // كل الأصناف المرتبطة بالصورة، والتي لها صورة سابقة موسومة
     const list = nos.map((n, i) => { const it = findItem(n); return `<div class="meta"><b>${esc(n)}</b> ${esc((it && it.name) || names[i] || '—')}${hasPrev(n) ? ' <span class="pu-tag">استبدال</span>' : ' <span class="pu-tag new">أولى</span>'}</div>`; }).join('');
@@ -670,6 +678,26 @@ function renderPending(){
       <div class="msg" role="status"></div></div>`;
   }).join('') + `<button type="button" class="pu-allbtn" id="apAll" ${plain ? '' : 'disabled'}>قبول الكل (بدون الاستبدالات)${plain ? ` — ${plain}` : ''}</button>`;
   fillPendImgs(body);
+}
+// طلب «ربط صورة موجودة» من موظف: الصورة موجودة أصلًا على الموقع (صورة الصنف المصدر)
+function linkCard(p){
+  const to = pNos(p)[0], src = (() => { try { return itemImage(p.from); } catch(e){ return ''; } })(), prev = hasPrev(to);
+  const fromIt = findItem(p.from), toIt = findItem(to), old = prev ? itemImage(to) : '';
+  return `<div class="pu-ap link${prev ? ' replace' : ''}" data-id="${esc(p.id)}">
+    <div class="top">
+      ${prev ? '' : `<button type="button" class="big" aria-label="تكبير الصورة" data-src="${esc(src)}">${src ? `<img src="${esc(src)}" alt="">` : 'لا توجد صورة'}</button>`}
+      <div><span class="pu-tag link">طلب ربط صورة موجودة</span>
+      <div class="meta">من: ${esc(p.by)} · ${esc(p.at)}</div></div>
+    </div>
+    <div class="pu-lst">
+      <div class="meta">صورة الصنف: <b>${esc(p.from)}</b> ${esc((fromIt && fromIt.name) || '—')}</div>
+      <div class="meta">تُستخدم أيضًا للصنف: <b>${esc(to)}</b> ${esc((toIt && toIt.name) || pNames(p)[0] || '—')}</div>
+    </div>
+    ${prev ? `<span class="pu-tag" style="align-self:flex-start">ربط + استبدال — للصنف صورة من قبل</span>
+      <div class="pu-pair pair"><figure><div class="im" data-src="${esc(old)}"><img src="${esc(old)}" alt="الصورة الحالية"></div><figcaption>الحالية</figcaption></figure>
+      <figure><div class="im new" data-src="${esc(src)}">${src ? `<img src="${esc(src)}" alt="الصورة الجديدة">` : '—'}</div><figcaption class="new">الجديدة</figcaption></figure></div>` : ''}
+    <div class="act"><button type="button" class="ok" data-d="approve">${prev ? 'قبول واستبدال' : 'قبول'}</button><button type="button" class="no" data-d="reject">رفض</button></div>
+    <div class="msg" role="status"></div></div>`;
 }
 async function decide(p, decision, card){
   const btns = card ? card.querySelectorAll('button') : [], msg = card && $('.msg', card);
@@ -726,6 +754,91 @@ const apBody = () => $('#apBody');
 // =====================================================================
 // الأزرار
 // =====================================================================
+// =====================================================================
+// ربط صنف بصورة صنف آخر موجودة على الموقع (بدون رفع ولا نسخ الملف)
+// =====================================================================
+const hostedImage = n => { try { return typeof ITEM_IMAGES !== 'undefined' && ITEM_IMAGES[String(n).trim()] || ''; } catch(e){ return ''; } };
+const lkModal = document.createElement('div');
+lkModal.className = 'pu-modal pu-sheet'; lkModal.setAttribute('role', 'dialog'); lkModal.setAttribute('aria-modal', 'true');
+document.body.appendChild(lkModal);
+let LK = null;   // { to, from, q }
+function closeLink(){ lkModal.classList.remove('open'); LK = null; }
+try { registerBackLayer(lkModal, closeLink); } catch(e){}
+function openLink(toNo){
+  const to = findItem(toNo); if(!to) return;
+  LK = { to: String(to.number).trim(), from: '', q: '' };
+  lkModal.innerHTML = `<div class="pu-card lk">
+    <div class="lk-h"><h3><span>استخدام صورة صنف آخر</span></h3><button type="button" class="lk-x" aria-label="إغلاق">×</button></div>
+    <p>للصنف: <b>${esc(LK.to)}</b> ${esc(to.name || '')}</p>
+    <label class="lk-lb">ابحث عن الصنف الذي له الصورة</label>
+    <div class="pu-find"><span class="pu-qw"><input type="text" class="pu-q" id="lkQ" placeholder="الاسم أو رقم الصنف…" autocomplete="off" aria-label="بحث عن الصنف الذي له الصورة"><button type="button" class="pu-clr" aria-label="مسح نص البحث">×</button></span></div>
+    <div class="lk-res" id="lkRes"><div class="none">اكتب للبحث — تظهر فقط الأصناف التي لها صورة</div></div>
+    <div class="lk-prev" id="lkPrev" hidden></div>
+    <div class="msg" id="lkMsg" role="status"></div>
+    <div class="btns"><button type="button" class="main" id="lkGo" disabled>${ROLE === 'admin' ? 'ربط الصورة' : 'إرسال للموافقة'}</button><button type="button" id="lkCancel">إلغاء</button></div>
+  </div>`;
+  lkModal.classList.add('open');
+  const q = $('#lkQ', lkModal);
+  q.addEventListener('input', () => { LK.q = q.value; renderLink(); });
+  setTimeout(() => q.focus(), 60);
+}
+function renderLink(){
+  if(!LK) return;
+  const box = $('#lkRes', lkModal), q = (LK.q || '').trim();
+  if(!q){ box.innerHTML = '<div class="none">اكتب للبحث — تظهر فقط الأصناف التي لها صورة</div>'; }
+  else {
+    const found = searchItems(q, 400).filter(f => String(f.number).trim() !== LK.to && hostedImage(f.number)).slice(0, 40);
+    box.innerHTML = found.length ? found.map(f => { const n = String(f.number).trim(); return `<button type="button" data-from="${esc(n)}" class="${n === LK.from ? 'on' : ''}"><img src="${esc(hostedImage(n))}" alt="" loading="lazy"><span><b>${esc(n)}</b> ${esc(f.name || '')}${[f.company, f.country].filter(Boolean).length ? `<small>${esc([f.company, f.country].filter(Boolean).join(' · '))}</small>` : ''}</span></button>`; }).join('')
+      : '<div class="none">لا توجد أصناف لها صورة بهذا الاسم</div>';
+  }
+  const pv = $('#lkPrev', lkModal);
+  if(LK.from){ pv.hidden = false; pv.innerHTML = `<img src="${esc(hostedImage(LK.from))}" alt="معاينة الصورة المختارة"><small>ستُستخدم نفس الصورة للصنفين — بدون رفع أو نسخ</small>`; }
+  else { pv.hidden = true; pv.innerHTML = ''; }
+  $('#lkGo', lkModal).disabled = !LK.from;
+}
+lkModal.addEventListener('click', async e => {
+  if(e.target === lkModal){ closeLink(); return; }
+  const b = e.target.closest('button'); if(!b || !LK) return;
+  if(b.classList.contains('lk-x') || b.id === 'lkCancel'){ closeLink(); return; }
+  if(b.classList.contains('pu-clr')){ const q = $('#lkQ', lkModal); q.value = ''; LK.q = ''; LK.from = ''; renderLink(); q.focus(); return; }
+  if(b.dataset.from){ LK.from = b.dataset.from; renderLink(); return; }
+  if(b.id === 'lkGo') await submitLink();
+});
+async function submitLink(){
+  const go = $('#lkGo', lkModal), msg = $('#lkMsg', lkModal), { to, from } = LK, toIt = findItem(to);
+  if(ROLE === 'admin' && hasPrev(to) && !await showConfirm('هذا الصنف له صورة من قبل، هل تريد استبدالها بصورة الصنف ' + from + '؟', { title: 'استبدال الصورة', okText: 'نعم، استبدل' })) return;
+  go.disabled = true; msg.className = 'msg'; msg.innerHTML = '<span class="spinner"></span> جارِ الحفظ…';
+  try {
+    const r = await api('img_link', { id: uid(), from, to, toName: (toIt && toIt.name) || '' });
+    if(r.status === 'published'){
+      setLocalImage(to, r.path || hostedImage(from));
+      closeLink();
+      try { if(typeof currentItem !== 'undefined' && currentItem && String(currentItem.number).trim() === to) openItemDetail(to); } catch(e){}
+      try { await showAlert('تم ربط الصورة — تظهر للجميع خلال دقيقة تقريبًا.', { title: 'تم', okText: 'حسنًا' }); } catch(e){}
+    } else {
+      closeLink();
+      try { await showAlert('أُرسل طلب الربط للإدارة، ويظهر بعد موافقتها.', { title: 'تم الإرسال', okText: 'حسنًا' }); } catch(e){}
+    }
+  } catch(e){
+    msg.className = 'msg err'; msg.textContent = e.network ? 'تحقق من الإنترنت وحاول مرة أخرى' : e.message; go.disabled = false;
+  }
+}
+// زر «استخدام صورة صنف آخر» في صفحة صنف بلا صورة — للموظفين والإدارة فقط (لا يظهر للزبون)
+function addLinkBtn(no){
+  const card = document.getElementById('employeeItemCard'); if(!card) return;
+  const old = $('.lk-empty', card); if(old) old.remove();
+  if(ROLE === 'none' || (typeof currentViewerRole !== 'undefined' && currentViewerRole === 'customer')) return;
+  if(hasPrev(no)) return;
+  card.insertAdjacentHTML('afterbegin', `<div class="lk-empty"><span>لا توجد صورة لهذا الصنف بعد</span>
+    <button type="button" class="lk-open" data-to="${esc(no)}">${ICON.link}<span>استخدام صورة صنف آخر</span></button>
+    <small>أو ارفع صورة جديدة من «إضافة صور»</small></div>`);
+}
+document.addEventListener('click', e => { const b = e.target.closest('.lk-open'); if(b) openLink(b.dataset.to); });
+if(typeof window.openItemDetail === 'function'){
+  const _openItemDetail = window.openItemDetail;
+  window.openItemDetail = function(n){ const r = _openItemDetail.apply(this, arguments); try { addLinkBtn(String(n).trim()); } catch(e){} return r; };
+}
+
 async function openUpload(){
   showView('photo-upload');
   setMsg(''); await ensureItems(); LIST.forEach(refresh);
