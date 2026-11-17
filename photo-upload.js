@@ -128,9 +128,11 @@ function setRole(role, name){
   if(ROLE === 'admin') pollCount();
   else setCount(0);
 }
+let accessResolve; const accessReady = new Promise(r => { accessResolve = r; });
 async function refreshAccess(){
   try { const r = await api('img_whoami'); setRole(r.role, r.name); }
   catch(e){ if(!e.network) setRole('none'); }            // بدون إنترنت: نُبقي آخر حالة معروفة
+  accessResolve(ROLE);
 }
 
 // =====================================================================
@@ -428,9 +430,17 @@ function renderChrome(){
   note.textContent = ROLE === 'staff' ? 'الصور تذهب للإدارة للموافقة قبل ظهورها في الموقع' : ROLE === 'admin' ? 'تظهر الصورة للجميع خلال دقيقة تقريبًا من النشر' : '';
   renderTop();
 }
+// زر «إضافة صور» والجرس لا يظهران في الواجهة الرئيسية ولا في وضع الزبون —
+// فقط بعد الدخول لقسم الموظف أو الإدارة العامة
+function inStaffArea(){
+  const v = document.querySelector('.view.active');
+  if(!v || v.id === 'view-gate') return false;
+  if(v.id === 'view-employee' && typeof currentViewerRole !== 'undefined' && currentViewerRole === 'customer') return false;
+  return true;
+}
 function renderTop(){
   const c = counts(), busy = RUNNING || c.queued;
-  top.hidden = ROLE === 'none' || $('#view-photo-upload').classList.contains('active') || $('#view-photo-approvals').classList.contains('active');
+  top.hidden = ROLE === 'none' || !inStaffArea() || $('#view-photo-upload').classList.contains('active') || $('#view-photo-approvals').classList.contains('active');
   $('#puBell').hidden = ROLE !== 'admin';
   $('#puOpen').classList.toggle('busy', !!busy);
   $('#puOpenTx').textContent = busy ? `رفع ${c.batchDone}/${c.batch}` : 'إضافة صور';
@@ -721,6 +731,10 @@ async function openUpload(){
   setMsg(''); await ensureItems(); LIST.forEach(refresh);
 }
 $('#puOpen').addEventListener('click', openUpload);
+// يستعمله app.js لإعادة فتح شاشة الرفع/الموافقات بعد تحديث الصفحة
+window.JADU_PU = { openUpload, openApprovals, ready: accessReady };
+// إظهار/إخفاء الزر مع كل تنقّل بين الشاشات
+document.querySelectorAll('.view').forEach(v => new MutationObserver(renderTop).observe(v, { attributes: true, attributeFilter: ['class'] }));
 $('#puBell').addEventListener('click', openApprovals);
 $('#puBack').addEventListener('click', () => history.back());
 $('#apBack').addEventListener('click', () => history.back());

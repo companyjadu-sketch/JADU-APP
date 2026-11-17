@@ -468,6 +468,7 @@ function updateDots(){
 }
 function checkPin(){
   if (entered === PINS[currentRole]) {
+    if (currentRole === "employee") { try { sessionStorage.setItem('jadu_emp_ok', '1'); } catch(e){} } // يسمح باسترجاع شاشة الموظف بعد تحديث الصفحة (لنفس التبويب فقط)
     closeOverlay();
     showView(currentRole);
     if (currentRole === "employee") {
@@ -2097,4 +2098,110 @@ if ('serviceWorker' in navigator) {
     const btn = e.target.closest('#icPhotoBtn'); if(!btn) return;
     const im = btn.querySelector('img'); if(im) openLightbox(im.src, im.alt);
   });
+})();
+
+// =====================================================================
+// البقاء في نفس الشاشة بعد تحديث الصفحة
+// =====================================================================
+// نحفظ الشاشة الحالية (ومعها التصنيف ونص البحث والصنف المفتوح) في sessionStorage،
+// وعند تحديث الصفحة نعيد فتحها بدل الرجوع للواجهة الرئيسية. sessionStorage يخص
+// هذا التبويب فقط ويُمسح بإغلاقه. الشاشات المحمية لا تُسترجع إلا بصلاحيتها:
+// الموظف = أدخل رمزه في هذا التبويب، الإدارة = دخول Firebase ما زال قائمًا.
+(function(){
+  const KEY = 'jadu_nav_v1', EMP_OK = 'jadu_emp_ok';
+  const OVERLAYS = ['photo-upload', 'photo-approvals', 'share-cart'];
+  // شاشات الإدارة الفرعية -> الزر الذي يفتحها من قائمة الإدارة
+  const ADMIN_BTN = {
+    'admin-overview': '#adminOverviewBtn', 'admin-capital': '#adminCapitalBtn',
+    'admin-pricelist': '#adminPriceListBtn', 'admin-pricelog': '#adminPriceLogBtn',
+    'admin-photos': '#adminPhotosBtn', 'admin-settings': '[data-go="admin-settings"]',
+    'att-admin': '#adminAttBtn'
+  };
+  const ss = {
+    get(k){ try { return JSON.parse(sessionStorage.getItem(k)); } catch(e){ return null; } },
+    set(k, v){ try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, JSON.stringify(v)); } catch(e){} }
+  };
+  let restoring = false, lastBase = ss.get(KEY);
+
+  function activeView(){ const v = document.querySelector('.view.active'); return v ? v.id.replace(/^view-/, '') : 'gate'; }
+  function snapshot(){
+    if (restoring) return;
+    const view = activeView();
+    if (view === 'gate') { ss.set(KEY, null); ss.set(EMP_OK, null); lastBase = null; return; }
+    const input = document.getElementById('employeeSearchInput');
+    const base = {
+      view, step: employeeStep, role: currentViewerRole, entry: employeeEntryPoint,
+      cat: CATEGORY_GROUPS.findIndex(g => g.values === activeCategoryValues),
+      q: input ? input.value : '', item: currentItem ? currentItem.number : null,
+      y: Math.round(window.scrollY || 0)
+    };
+    if (OVERLAYS.includes(view)) {
+      if (!lastBase || OVERLAYS.includes(lastBase.view)) return;
+      ss.set(KEY, Object.assign({}, lastBase, { overlay: view }));
+      return;
+    }
+    // شاشات أعمق من التي نعرف كيف نفتحها (أقسام الحضور الداخلية...) تُحفظ بأقرب شاشة أب
+    if (/^att-/.test(view) && view !== 'att-admin') base.view = currentViewerRole === 'admin' || base.entry === 'admin' ? 'att-admin' : base.view;
+    lastBase = base; ss.set(KEY, base);
+  }
+  ['pagehide', 'beforeunload'].forEach(ev => window.addEventListener(ev, snapshot));
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') snapshot(); });
+  window.addEventListener('popstate', () => setTimeout(snapshot, 0));
+  document.querySelectorAll('.view').forEach(v => new MutationObserver(() => setTimeout(snapshot, 0)).observe(v, { attributes: true, attributeFilter: ['class'] }));
+
+  function adminReady(){
+    return new Promise(res => {
+      if (typeof auth === 'undefined' || !auth) return res(false);
+      let done = false;
+      const finish = ok => { if (!done) { done = true; res(ok); } };
+      const off = auth.onAuthStateChanged(u => { finish(!!(u && isAdminEmail(u.email))); try { off(); } catch(e){} });
+      setTimeout(() => finish(!!(auth.currentUser && isAdminEmail(auth.currentUser.email))), 5000);
+    });
+  }
+  const click = sel => { const b = document.querySelector(sel); if (b) b.click(); return !!b; };
+
+  async function restore(){
+    const s = ss.get(KEY);
+    if (!s || !s.view || s.view === 'gate') return;
+    const isAdminView = s.view === 'admin' || !!ADMIN_BTN[s.view] || (s.view === 'employee' && s.entry === 'admin');
+    if (isAdminView) {
+      if (IS_CUSTOMER_PAGE || !(await adminReady())) return;
+    } else if (s.view === 'employee' && s.role === 'employee') {
+      if (IS_CUSTOMER_PAGE || !ss.get(EMP_OK)) return;
+    } else if (!(s.view === 'employee' && s.role === 'customer')) {
+      return; // شاشة لا نعرف كيف نسترجعها بأمان — نبقى في الرئيسية
+    }
+    if (activeView() !== 'gate') return; // المستخدم تحرّك بنفسه أثناء الانتظار
+
+    restoring = true;
+    try {
+      if (s.view === 'employee') {
+        if (s.entry === 'admin') showView('admin');
+        currentViewerRole = s.role; employeeEntryPoint = s.entry;
+        activeCategoryValues = s.cat >= 0 ? CATEGORY_GROUPS[s.cat].values : null;
+        showView('employee'); try { loadItems(); } catch(e){} goEmployeeStep('category');
+        if (s.step === 'search' || s.step === 'detail') {
+          document.getElementById('employeeSearchInput').value = s.q || '';
+          goEmployeeStep('search'); renderResults();
+          if (s.step === 'detail' && s.item && ITEMS.some(it => it.number === s.item)) openItemDetail(s.item);
+        }
+      } else {
+        showView('admin');
+        if (s.view !== 'admin') click(ADMIN_BTN[s.view]);
+      }
+    } finally { restoring = false; }
+
+    lastBase = Object.assign({}, s); delete lastBase.overlay;
+    if (s.overlay === 'share-cart') click('#shareCartOpen');
+    else if (s.overlay && window.JADU_PU) {
+      const role = await window.JADU_PU.ready;
+      if (role !== 'none' && activeView() === lastBase.view) {
+        if (s.overlay === 'photo-upload') window.JADU_PU.openUpload();
+        else if (s.overlay === 'photo-approvals' && role === 'admin') window.JADU_PU.openApprovals();
+      }
+    }
+    if (!s.overlay && s.y) requestAnimationFrame(() => setTimeout(() => window.scrollTo(0, s.y), 60));
+    snapshot();
+  }
+  document.addEventListener('DOMContentLoaded', () => setTimeout(restore, 0));
 })();
