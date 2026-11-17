@@ -98,6 +98,7 @@ const ITEM_IMAGES = {
   "1717": "images/surbisa/1717.jpg",  // SURBISA 61012
   "1718": "images/surbisa/1718.jpg",  // SURBISA 61101
   "1729": "images/surbisa/1729.jpg",  // SURBISA 61115
+  "148": "images/148.jpg?v=20261117204107",
 };
 
 // صور حسب الموديل المكتوب في اسم الصنف (مثل "مريول 236")
