@@ -68,14 +68,14 @@ async function mock(action, d){
   if(action === 'img_upload'){
     if(FLAKY && (++flakyN % 4 === 0)){ const e = new Error('لا يوجد اتصال بالإنترنت'); e.network = true; throw e; }
     if(DEMO_ROLE === 'admin'){ stagedDemo.add(d.id); return { status: 'staged' }; }
-    if(!all.some(x => x.id === d.id)) await dbPut('demo', { id: d.id, itemNo: d.itemNo, itemName: d.itemName || '', by: 'حكيم سحيم', at: new Date().toLocaleString('en-GB').slice(0, 16).replace(',', ''), data: d.data });
+    if(!all.some(x => x.id === d.id)) await dbPut('demo', { id: d.id, itemNos: d.itemNos, itemNames: d.itemNames || [], by: 'حكيم سحيم', at: new Date().toLocaleString('en-GB').slice(0, 16).replace(',', ''), data: d.data });
     return { status: 'pending' };
   }
   if(DEMO_ROLE !== 'admin'){ const e = new Error('هذه العملية للإدارة العامة فقط'); e.fatal = true; throw e; }
   if(action === 'img_publish'){ const n = stagedDemo.size; stagedDemo.clear(); return { count: n, paths: {} }; }
   if(action === 'img_decide_batch'){ for(const id of d.ids) await dbDel('demo', id); return { done: d.ids, paths: {} }; }
   if(action === 'img_pending_count') return { count: all.length };
-  if(action === 'img_pending_list') return { items: all.map(x => ({ id: x.id, itemNo: x.itemNo, itemName: x.itemName, by: x.by, at: x.at })) };
+  if(action === 'img_pending_list') return { items: all.map(x => ({ id: x.id, itemNos: x.itemNos, itemNames: x.itemNames, by: x.by, at: x.at })) };
   if(action === 'img_pending_get'){ const x = all.find(y => y.id === d.id); if(!x){ const e = new Error('غير موجودة'); e.fatal = true; throw e; } return { data: x.data }; }
   if(action === 'img_decide'){ await dbDel('demo', d.id); return { status: d.decision === 'approve' ? 'approved' : 'rejected', path: 'images/demo.jpg' }; }
   throw new Error('طلب غير معروف');
@@ -220,11 +220,19 @@ const persist = it => { const rec = Object.assign({}, it); delete rec._; return 
 let saveTimers = {};
 const saveSoon = it => { clearTimeout(saveTimers[it.id]); saveTimers[it.id] = setTimeout(() => persist(it), 400); };
 const uid = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6);
-const isDup = it => {
-  if(!it.itemNo || (it.st !== 'ready' && it.st !== 'suggest' && it.st !== 'new')) return false;
-  const i = LIST.indexOf(it);
-  return LIST.some((o, j) => j < i && o.itemNo === it.itemNo && o.st !== 'skipped' && o.st !== 'error' && o.st !== 'done');
+// الصورة الواحدة قد تُربط بأكثر من صنف: it.items = [{ no, name }]
+const nosOf = it => (it.items || []).map(x => x.no);
+// مكرر = أحد أصناف الصورة مربوط أيضًا بصورة سابقة في القائمة لم تُرفع بعد (يُرجع رقم الصنف المكرر)
+const dupNo = it => {
+  if(!it.items || !it.items.length || (it.st !== 'ready' && it.st !== 'suggest' && it.st !== 'new')) return '';
+  const i = LIST.indexOf(it), mine = nosOf(it);
+  for(let j = 0; j < i; j++){
+    const o = LIST[j]; if(o.st === 'skipped' || o.st === 'error' || o.st === 'done') continue;
+    const hit = nosOf(o).find(n => mine.includes(n)); if(hit) return hit;
+  }
+  return '';
 };
+const isDup = it => !!dupNo(it);
 const thumbSrc = it => { const r = rt(it); if(!r.url && it.blob) r.url = URL.createObjectURL(it.blob); return r.url || it.thumb || ''; };
 
 // ---------- الواجهة: عناصر ثابتة ----------
@@ -276,56 +284,86 @@ function mkRow(it){
     <div class="pu-main">
       <div class="pu-top-line"><span class="pu-fn"></span><button type="button" class="pu-rm" aria-label="حذف الصورة">✕</button></div>
       <div class="pu-link" hidden></div>
-      <div class="pu-find"><input type="text" class="pu-q" placeholder="ابحث بالاسم أو رقم الصنف…" autocomplete="off" aria-label="بحث عن الصنف"><div class="pu-res"></div></div>
+      <div class="pu-find"><input type="text" class="pu-q" placeholder="ابحث بالاسم أو رقم الصنف…" autocomplete="off" aria-label="بحث عن الصنف"><div class="pu-res" hidden></div></div>
       <div class="pu-st"></div>
     </div>`;
   $('.pu-fn', el).textContent = it.name || '';
   const q = $('.pu-q', el); q.value = it.q || '';
-  q.addEventListener('input', () => { it.q = q.value; saveSoon(it); renderResults(it); });
-  q.addEventListener('keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); const f = searchItems(q.value, 1)[0]; if(f) linkItem(it, f); } });
+  const open = () => { rt(it).open = true; renderResults(it); };
+  q.addEventListener('focus', () => { open(); setTimeout(() => { try { q.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch(e){} }, 250); });
+  q.addEventListener('input', () => { it.q = q.value; saveSoon(it); open(); });
+  q.addEventListener('keydown', e => {
+    if(e.key === 'Escape'){ rt(it).open = false; renderResults(it); }
+    if(e.key === 'Enter'){ e.preventDefault(); const f = searchItems(q.value, 1)[0]; if(f) linkItem(it, f); }
+  });
   el.addEventListener('click', e => {
     const b = e.target.closest('button'); if(!b) return;
     if(b.classList.contains('pu-rm')) removeRow(it);
     else if(b.dataset.n) linkItem(it, findItem(b.dataset.n));
+    else if(b.dataset.x){ unlinkItem(it, b.dataset.x); }
     else if(b.classList.contains('ok')){ it.st = 'ready'; it.sugg = false; persist(it); refresh(it); }
-    else if(b.classList.contains('chg')){ it.itemNo = ''; it.itemName = ''; it.sugg = false; it.st = 'new'; persist(it); refresh(it); $('.pu-q', el).focus(); }
+    else if(b.classList.contains('more')){ rt(it).adding = true; it.q = ''; refresh(it); const i = $('.pu-q', el); i.value = ''; i.focus(); }
+    else if(b.classList.contains('cancel')){ rt(it).adding = false; rt(it).open = false; it.q = ''; refresh(it); }
     else if(b.classList.contains('retry')){ it.st = 'queued'; it.tries = 0; it.msg = ''; it.b = true; persist(it); refresh(it); runQueue(); }
   });
   rowEls.set(it.id, el);
   refresh(it);
   return el;
 }
+// نغلق قائمة النتائج عند الضغط خارجها (لا عند فقدان التركيز، حتى لا تُغلق أثناء التمرير داخلها)
+document.addEventListener('pointerdown', e => {
+  LIST.forEach(it => {
+    const r = rt(it); if(!r.open) return;
+    const el = rowEls.get(it.id), f = el && $('.pu-find', el);
+    if(!f || !f.contains(e.target)){ r.open = false; renderResults(it); }
+  });
+}, true);
 function linkItem(it, item){
   if(!item) return;
-  it.itemNo = String(item.number).trim(); it.itemName = item.name || ''; it.sugg = false; it.st = 'ready'; it.q = '';
+  const no = String(item.number).trim();
+  if(!(it.items || (it.items = [])).some(x => x.no === no)) it.items.push({ no, name: item.name || '' });
+  it.sugg = false; if(it.st === 'new' || it.st === 'suggest') it.st = 'ready'; it.q = '';
+  rt(it).adding = false; rt(it).open = false;
   const el = rowEls.get(it.id); if(el) $('.pu-q', el).value = '';
+  persist(it); refresh(it);
+}
+function unlinkItem(it, no){
+  it.items = (it.items || []).filter(x => x.no !== no);
+  if(!it.items.length){ it.st = 'new'; it.sugg = false; }
   persist(it); refresh(it);
 }
 function renderResults(it){
   const el = rowEls.get(it.id); if(!el) return;
   const box = $('.pu-res', el), q = (it.q || '').trim();
-  if(!q || it.itemNo){ box.innerHTML = ''; return; }
-  const found = searchItems(q, 4);
-  box.innerHTML = found.length ? found.map(f => `<button type="button" data-n="${esc(String(f.number).trim())}"><b>${esc(f.number)}</b><span>${esc(f.name)}</span>${[f.company, f.country].filter(Boolean).length ? `<small>${esc([f.company, f.country].filter(Boolean).join(' · '))}</small>` : ''}${hasPrev(f.number) ? '<small>· له صورة</small>' : ''}</button>`).join('') : '<div class="none">لا توجد نتائج</div>';
+  if(!rt(it).open || !q){ box.hidden = true; box.innerHTML = ''; return; }
+  const found = searchItems(q, 40), have = nosOf(it);
+  box.hidden = false;
+  box.innerHTML = found.length
+    ? `<div class="cnt">${found.length >= 40 ? 'أول 40 نتيجة — اكتب أكثر لتضييق البحث' : found.length + ' نتيجة'}</div>` + found.map(f => { const n = String(f.number).trim(); return `<button type="button" data-n="${esc(n)}"${have.includes(n) ? ' disabled' : ''}><b>${esc(f.number)}</b><span>${esc(f.name)}</span>${[f.company, f.country].filter(Boolean).length ? `<small>${esc([f.company, f.country].filter(Boolean).join(' · '))}</small>` : ''}${hasPrev(n) ? '<small>· له صورة</small>' : ''}</button>`; }).join('')
+    : '<div class="none">لا توجد نتائج</div>';
 }
 function refresh(it){
   const el = rowEls.get(it.id); if(!el) return;
   const busy = it.st === 'queued' || it.st === 'uploading' || it.st === 'staged', fin = it.st === 'done' || it.st === 'skipped';
-  const dup = isDup(it);
+  const dupN = dupNo(it), dup = !!dupN, has = !!(it.items && it.items.length);
   el.className = 'pu-row' + (it.st === 'ready' && !dup ? ' is-ready' : '') + (it.st === 'suggest' ? ' is-sug' : '') + (dup ? ' is-dup' : '') + (it.st === 'error' ? ' is-error' : '') + (fin ? ' is-done' : '');
   const img = $('.pu-th', el), s = thumbSrc(it); if(img.getAttribute('src') !== s) img.src = s;
   $('.pu-rm', el).disabled = it.st === 'uploading' || it.st === 'staged';
-  const link = $('.pu-link', el), find = $('.pu-find', el), st = $('.pu-st', el);
-  if(it.itemNo){
-    link.hidden = false; find.hidden = true;
-    link.innerHTML = `<b>${esc(it.itemNo)}</b><span class="nm">${esc(it.itemName)}</span>` +
+  const link = $('.pu-link', el), find = $('.pu-find', el), st = $('.pu-st', el), adding = !!rt(it).adding && !busy && !fin;
+  if(has){
+    link.hidden = false;
+    link.innerHTML = it.items.map(x => `<span class="pu-ch"><b>${esc(x.no)}</b><span class="nm">${esc(x.name)}</span>${busy || fin ? '' : `<button type="button" class="x" data-x="${esc(x.no)}" aria-label="حذف الصنف ${esc(x.no)}">×</button>`}</span>`).join('') +
       (it.st === 'suggest' ? `<span class="pu-tag">اقتراح — راجِع</span><button type="button" class="ok main">تأكيد</button>` : '') +
-      (busy || fin ? '' : `<button type="button" class="chg">تغيير</button>`);
-  } else { link.hidden = true; link.innerHTML = ''; find.hidden = false; renderResults(it); }
-  const prev = it.itemNo && !fin && hasPrev(it.itemNo);
+      (busy || fin || adding ? '' : `<button type="button" class="more">+ صنف آخر</button>`);
+    find.hidden = !adding;
+    if(adding && !$('.cancel', find)) find.insertAdjacentHTML('beforeend', '<button type="button" class="cancel">إلغاء</button>');
+    if(!adding){ const c = $('.cancel', find); if(c) c.remove(); }
+  } else { link.hidden = true; link.innerHTML = ''; find.hidden = false; const c = $('.cancel', find); if(c) c.remove(); }
+  renderResults(it);
+  const prevNos = (!fin && has) ? nosOf(it).filter(hasPrev) : [];
   let h = '';
-  if(dup) h = `<span class="err">مكرر — نفس الصنف مربوط بصورة أخرى</span>`;
-  else if(it.st === 'new') h = it.q ? '' : 'لم يُحدَّد بعد';
+  if(dup) h = `<span class="err">مكرر — الصنف ${esc(dupN)} مربوط بصورة أخرى</span>`;
+  else if(it.st === 'new') h = it.q ? 'اضغط خانة البحث لعرض الأصناف' : 'لم يُحدَّد بعد';
   else if(it.st === 'suggest') h = '';
   else if(it.st === 'ready') h = `<span class="ok">✓ جاهز</span>`;
   else if(it.st === 'queued') h = it.msg ? esc(it.msg) : 'بالانتظار في الطابور…';
@@ -334,7 +372,10 @@ function refresh(it){
   else if(it.st === 'done') h = `<span class="ok">${esc(it.msg || '✓ تم')}</span>`;
   else if(it.st === 'skipped') h = esc(it.msg || 'تم التجاوز');
   else if(it.st === 'error') h = `<span class="err">${esc(it.msg || 'فشل الرفع')}</span><button type="button" class="retry">إعادة المحاولة</button>`;
-  if(prev) h += `<span class="pu-tag">${ROLE === 'admin' ? 'له صورة من قبل — سيُطلب التأكيد' : 'له صورة من قبل — تُرسل كاستبدال'}</span>`;
+  if(prevNos.length){
+    const which = it.items.length > 1 ? ` (${prevNos.join('، ')})` : '';
+    h += `<span class="pu-tag">${ROLE === 'admin' ? 'له صورة من قبل' + which + ' — سيُطلب التأكيد' : 'له صورة من قبل' + which + ' — تُرسل كاستبدال'}</span>`;
+  }
   st.innerHTML = h;
   renderChrome();
 }
@@ -345,7 +386,7 @@ function refresh(it){
 const counts = () => {
   const c = { total: LIST.length, linked: 0, sug: 0, ready: 0, queued: 0, staged: 0, done: 0, err: 0, skipped: 0, batch: 0, batchDone: 0 };
   LIST.forEach(it => {
-    if(it.itemNo) c.linked++;
+    if(it.items && it.items.length) c.linked++;
     if(it.st === 'suggest') c.sug++;
     if(it.st === 'ready' && !isDup(it)) c.ready++;
     if(it.st === 'queued' || it.st === 'uploading') c.queued++;
@@ -429,8 +470,8 @@ async function addFiles(files){
     try {
       const { blob, thumb } = await compress(f);
       const a = analyzeName(f.name);
-      const it = { id: uid(), name: f.name, blob, thumb, order: Date.now() * 1000 + LIST.length, itemNo: '', itemName: '', q: '', st: 'new', sugg: false, msg: '', tries: 0, b: false };
-      if(a.itemNo){ const item = findItem(a.itemNo); it.itemNo = a.itemNo; it.itemName = item ? item.name : ''; it.st = 'suggest'; it.sugg = true; }
+      const it = { id: uid(), name: f.name, blob, thumb, order: Date.now() * 1000 + LIST.length, items: [], q: '', st: 'new', sugg: false, msg: '', tries: 0, b: false };
+      if(a.itemNo){ const item = findItem(a.itemNo); it.items = [{ no: a.itemNo, name: item ? item.name : '' }]; it.st = 'suggest'; it.sugg = true; }
       else if(a.query) it.q = a.query;
       LIST.push(it);
       await persist(it);
@@ -457,12 +498,13 @@ function removeRow(it){
 // =====================================================================
 // تأكيد الاستبدال (الإدارة)
 // =====================================================================
-function askReplace(it, idx, total){
+// يُسأل عن كل صنف على حدة (الصورة الواحدة قد تضم عدة أصناف)
+function askReplace(it, x, idx, total){
   return new Promise(res => {
-    const item = findItem(it.itemNo), old = (() => { try { return itemImage(it.itemNo); } catch(e){ return ''; } })();
+    const item = findItem(x.no), old = (() => { try { return itemImage(x.no); } catch(e){ return ''; } })();
     modal.innerHTML = `<div class="pu-card">
       <h3>${ICON.warn}<span>هذا الصنف له صورة من قبل</span></h3>
-      <p>${esc((item && item.name) || it.itemName)} · رقم ${esc(it.itemNo)} — هل أنت متأكد أنك تريد استبدال الصورة؟${total > 1 ? `<br><small>(${idx} من ${total})</small>` : ''}</p>
+      <p>${esc((item && item.name) || x.name)} · رقم ${esc(x.no)} — هل أنت متأكد أنك تريد استبدال الصورة؟${total > 1 ? `<br><small>(${idx} من ${total})</small>` : ''}${it.items.length > 1 ? `<br><small>الصورة مربوطة بـ ${it.items.length} أصناف؛ رفضك هنا يستثني هذا الصنف فقط.</small>` : ''}</p>
       <div class="pu-pair">
         <figure><div class="im">${old ? `<img src="${esc(old)}" alt="الصورة الحالية">` : 'الصورة الحالية'}</div><figcaption>الحالية</figcaption></figure>
         <figure><div class="im new"><img src="${esc(thumbSrc(it))}" alt="الصورة الجديدة"></div><figcaption class="new">الجديدة</figcaption></figure>
@@ -482,12 +524,14 @@ async function startUpload(){
   if(!ready.length){ LIST.forEach(it => { if(it.st === 'staged') it.msg = ''; }); runQueue(); return; }   // لا جديد: إعادة محاولة نشر المرفوع
   LIST.forEach(it => { if(it.st === 'done' || it.st === 'skipped' || it.st === 'error') it.b = false; });
   if(ROLE === 'admin'){
-    const needAsk = ready.filter(it => hasPrev(it.itemNo)); let i = 0;
+    let total = 0, i = 0;
+    ready.forEach(it => it.items.forEach(x => { if(hasPrev(x.no)) total++; }));
     for(const it of ready){
-      if(hasPrev(it.itemNo)){
-        const ok = await askReplace(it, ++i, needAsk.length);
-        if(!ok){ it.st = 'skipped'; it.msg = 'أُبقيت الصورة الحالية'; persist(it); refresh(it); continue; }
+      for(const x of [...it.items]){
+        if(!hasPrev(x.no)) continue;
+        if(!await askReplace(it, x, ++i, total)) it.items = it.items.filter(y => y.no !== x.no);   // رُفض استبدال هذا الصنف: يخرج من الربط
       }
+      if(!it.items.length){ it.st = 'skipped'; it.msg = 'أُبقيت الصور الحالية'; persist(it); refresh(it); continue; }
       it.st = 'queued'; it.b = true; it.tries = 0; it.msg = ''; await persist(it); refresh(it);
     }
   } else {
@@ -514,7 +558,7 @@ async function publishStaged(){
       await api('img_publish');
       for(const it of staged){
         it.st = 'done'; it.msg = '✓ نُشرت — تظهر للجميع خلال دقيقة';
-        if(it.blob) setLocalImage(it.itemNo, URL.createObjectURL(it.blob));
+        if(it.blob){ const lu = URL.createObjectURL(it.blob); nosOf(it).forEach(n => setLocalImage(n, lu)); }
         delete it.blob; const u = rt(it).url; if(u){ rt(it).url = ''; try { URL.revokeObjectURL(u); } catch(e){} }
         await persist(it); refresh(it);
       }
@@ -537,7 +581,7 @@ async function runQueue(){
       it.st = 'uploading'; refresh(it);
       try {
         if(!it.blob) throw Object.assign(new Error('الصورة المحفوظة غير متوفرة — أعد اختيارها'), { fatal: true });
-        const r = await api('img_upload', { id: it.id, itemNo: it.itemNo, itemName: it.itemName, data: await blobToB64(it.blob) });
+        const r = await api('img_upload', { id: it.id, itemNos: nosOf(it), itemNames: it.items.map(x => x.name), data: await blobToB64(it.blob) });
         if(r.status === 'staged'){ it.st = 'staged'; it.msg = 'بانتظار النشر مع الدفعة'; }   // نبقي الصورة محليًا إلى أن تُنشر
         else {
           it.st = 'done'; it.msg = r.status === 'published' ? '✓ نُشرت — تظهر للجميع خلال دقيقة' : '✓ أُرسلت للإدارة للمراجعة';
@@ -561,10 +605,16 @@ window.addEventListener('online', () => { if(ROLE !== 'none') runQueue(); });
 // =====================================================================
 let PENDING = [];
 const PIMG = new Map();                                  // id -> data URL (معاينة)
+const pNos = p => p.itemNos && p.itemNos.length ? p.itemNos : (p.itemNo ? [p.itemNo] : []);
+const pNames = p => p.itemNames && p.itemNames.length ? p.itemNames : (p.itemName ? [p.itemName] : []);
+const pHasPrev = p => pNos(p).some(hasPrev);
 let imgQ = [], imgBusy = 0;
+const INFLIGHT = new Map();
 function loadPendImg(id){
   if(PIMG.has(id)) return Promise.resolve(PIMG.get(id));
-  return new Promise(res => { imgQ.push({ id, res }); pump(); });
+  if(INFLIGHT.has(id)) return INFLIGHT.get(id);
+  const pr = new Promise(res => { imgQ.push({ id, res }); pump(); }).then(u => { INFLIGHT.delete(id); return u; });
+  INFLIGHT.set(id, pr); return pr;
 }
 function pump(){
   while(imgBusy < 2 && imgQ.length){
@@ -590,18 +640,22 @@ async function loadPending(){
 function renderPending(){
   const body = $('#apBody');
   if(!PENDING.length){ body.innerHTML = '<div class="empty-note">لا توجد صور بانتظار الموافقة</div>'; return; }
-  const plain = PENDING.filter(p => !hasPrev(p.itemNo)).length;
+  const plain = PENDING.filter(p => !pHasPrev(p)).length;
   body.innerHTML = PENDING.map(p => {
-    const item = findItem(p.itemNo), prev = hasPrev(p.itemNo), old = prev ? itemImage(p.itemNo) : '';
-    const name = (item && item.name) || p.itemName || '—';
+    const nos = pNos(p), names = pNames(p), prevNos = nos.filter(hasPrev), prev = prevNos.length > 0;
+    // كل الأصناف المرتبطة بالصورة، والتي لها صورة سابقة موسومة
+    const list = nos.map((n, i) => { const it = findItem(n); return `<div class="meta"><b>${esc(n)}</b> ${esc((it && it.name) || names[i] || '—')}${hasPrev(n) ? ' <span class="pu-tag">استبدال</span>' : ' <span class="pu-tag new">أولى</span>'}</div>`; }).join('');
+    const pairs = prevNos.map(n => { const old = itemImage(n), it = findItem(n); return `<div class="pu-pair pair"><figure><div class="im" data-src="${esc(old)}"><img src="${esc(old)}" alt="الصورة الحالية"></div><figcaption>الحالية — ${esc(n)}${it ? ' · ' + esc(it.name) : ''}</figcaption></figure>
+        <figure><div class="im new" data-pimg="${esc(p.id)}"><span class="spinner"></span></div><figcaption class="new">الجديدة</figcaption></figure></div>`; }).join('');
     return `<div class="pu-ap${prev ? ' replace' : ''}" data-id="${esc(p.id)}">
       <div class="top">
         ${prev ? '' : `<button type="button" class="big" data-pimg="${esc(p.id)}" aria-label="تكبير الصورة"><span class="spinner"></span></button>`}
-        <div><div class="nm">${esc(name)}</div><div class="meta">رقم ${esc(p.itemNo)} · من: ${esc(p.by)} · ${esc(p.at)}</div>
-        <span class="pu-tag ${prev ? '' : 'new'}" style="display:inline-block;margin-top:6px">${prev ? 'استبدال — للصنف صورة من قبل' : 'صورة أولى للصنف'}</span></div>
+        <div><div class="nm">${nos.length > 1 ? `صورة واحدة لـ ${nos.length} أصناف` : esc(((findItem(nos[0]) || {}).name) || names[0] || '—')}</div>
+        <div class="meta">من: ${esc(p.by)} · ${esc(p.at)}</div></div>
       </div>
-      ${prev ? `<div class="pu-pair pair"><figure><div class="im" data-src="${esc(old)}"><img src="${esc(old)}" alt="الصورة الحالية"></div><figcaption>الحالية</figcaption></figure>
-        <figure><div class="im new" data-pimg="${esc(p.id)}"><span class="spinner"></span></div><figcaption class="new">الجديدة</figcaption></figure></div>` : ''}
+      ${nos.length > 1 || prev ? `<div class="pu-lst">${list}</div>` : `<div class="meta">رقم ${esc(nos[0])}</div>`}
+      <span class="pu-tag ${prev ? '' : 'new'}" style="align-self:flex-start">${prev ? 'استبدال — ' + (nos.length > 1 ? 'لبعض الأصناف صورة من قبل' : 'للصنف صورة من قبل') : (nos.length > 1 ? 'صورة أولى لكل الأصناف' : 'صورة أولى للصنف')}</span>
+      ${pairs}
       <div class="act"><button type="button" class="ok" data-d="approve">${prev ? 'قبول واستبدال' : 'قبول'}</button><button type="button" class="no" data-d="reject">رفض</button></div>
       <div class="msg" role="status"></div></div>`;
   }).join('') + `<button type="button" class="pu-allbtn" id="apAll" ${plain ? '' : 'disabled'}>قبول الكل (بدون الاستبدالات)${plain ? ` — ${plain}` : ''}</button>`;
@@ -613,7 +667,7 @@ async function decide(p, decision, card){
   if(msg){ msg.className = 'msg'; msg.innerHTML = '<span class="spinner"></span> جارِ الحفظ…'; }
   try {
     const r = await api('img_decide', { id: p.id, decision });
-    if(decision === 'approve') setLocalImage(p.itemNo, PIMG.get(p.id) || r.path);
+    if(decision === 'approve') pNos(p).forEach(n => setLocalImage(n, PIMG.get(p.id) || r.paths && r.paths[n] || r.path));
     PENDING = PENDING.filter(x => x.id !== p.id); PIMG.delete(p.id);
     if(card) card.remove();
     setCount(PENDING.length);
@@ -632,12 +686,15 @@ apView.addEventListener('click', async e => {
     const card = b.closest('.pu-ap'), p = PENDING.find(x => x.id === card.dataset.id); if(!p) return;
     if(b.dataset.d === 'reject' && !await showConfirm('رفض هذه الصورة؟', { title: 'رفض الصورة', okText: 'رفض' })) return;
     await decide(p, b.dataset.d, card);
-    if(!PENDING.length) renderPending(); else { const all = $('#apAll'); if(all){ const n = PENDING.filter(x => !hasPrev(x.itemNo)).length; all.disabled = !n; all.textContent = 'قبول الكل (بدون الاستبدالات)' + (n ? ` — ${n}` : ''); } }
+    if(!PENDING.length) renderPending(); else { const all = $('#apAll'); if(all){ const n = PENDING.filter(x => !pHasPrev(x)).length; all.disabled = !n; all.textContent = 'قبول الكل (بدون الاستبدالات)' + (n ? ` — ${n}` : ''); } }
     return;
   }
   if(e.target.closest('#apAll')){
     const all = $('#apAll'), seen = new Set(), todo = [];
-    PENDING.forEach(p => { if(!hasPrev(p.itemNo) && !seen.has(p.itemNo)){ seen.add(p.itemNo); todo.push(p); } });   // صنف مكرر في الانتظار: الأولى فقط، والثانية تبقى استبدالًا
+    PENDING.forEach(p => {                              // صنف مشترك بين صورتين منتظرتين: الأولى فقط، والثانية تبقى استبدالًا لقرارك
+      const nos = pNos(p);
+      if(!pHasPrev(p) && !nos.some(n => seen.has(n))){ nos.forEach(n => seen.add(n)); todo.push(p); }
+    });
     const skip = PENDING.length - todo.length;
     if(!todo.length) return;
     if(!await showConfirm(`قبول ${todo.length} صورة جديدة؟ تُنشر كلها في commit واحد.` + (skip ? `\nالاستبدالات (${skip}) لن تُقبل تلقائيًا — تبقى لقرارك.` : ''), { title: 'قبول الكل', okText: 'قبول' })) return;
@@ -646,7 +703,7 @@ apView.addEventListener('click', async e => {
     try {
       for(let i = 0; i < todo.length; i += 100){
         const chunk = todo.slice(i, i + 100), r = await api('img_decide_batch', { ids: chunk.map(p => p.id), decision: 'approve' });
-        (r.done || []).forEach(id => { const p = PENDING.find(x => x.id === id); if(p) setLocalImage(p.itemNo, PIMG.get(id) || (r.paths || {})[p.itemNo]); });
+        (r.done || []).forEach(id => { const p = PENDING.find(x => x.id === id); if(p) pNos(p).forEach(n => setLocalImage(n, PIMG.get(id) || (r.paths || {})[n])); });
         PENDING = PENDING.filter(x => !(r.done || []).includes(x.id)); setCount(PENDING.length);
       }
     } catch(e){ fail = e.network ? 'تحقق من الإنترنت وحاول مرة أخرى' : e.message; }
@@ -685,7 +742,11 @@ $('#puClearAll').addEventListener('click', async () => {
   if(cached && cached.role && !DEMO){ ROLE = cached.role; ROLE_NAME = cached.name || ''; }
   try {
     const saved = (await dbAll('items')).sort((a, b) => a.order - b.order);
-    saved.forEach(it => { if(it.st === 'uploading') it.st = 'queued'; LIST.push(it); });
+    saved.forEach(it => {
+      if(it.st === 'uploading') it.st = 'queued';
+      if(!it.items) it.items = it.itemNo ? [{ no: it.itemNo, name: it.itemName || '' }] : [];   // ترحيل الصيغة القديمة (صنف واحد)
+      LIST.push(it);
+    });
     await ensureItemsQuiet();
     LIST.forEach(it => $('#puList').appendChild(mkRow(it)));
   } catch(e){}

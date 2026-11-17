@@ -1229,7 +1229,7 @@ function photoRows_(){
   var sh = photoSheet_(), last = sh.getLastRow();
   if (last < 2) return [];
   return sh.getRange(2, 1, last - 1, PH_COLS.length).getValues().map(function(r, i){
-    return { row: i + 2, id: String(r[0]), itemNo: String(r[1]), itemName: r[2], by: r[3], how: r[4],
+    return { row: i + 2, id: String(r[0]), itemNo: String(r[1]), itemNos: String(r[1]).split(",").filter(Boolean), itemName: r[2], by: r[3], how: r[4],
              at: r[5] instanceof Date ? fmtDateTime_(r[5]) : String(r[5]), fileId: r[6], status: r[7] };
   }).filter(function(x){ return x.id; });
 }
@@ -1291,25 +1291,44 @@ function setItemImageEntry_(src, itemNo, value){
   return src.slice(0, bodyStart) + body + src.slice(end);
 }
 
-// ينشر مجموعة صور في commit واحد (Git Data API): كل images/رقم.jpg + تعديل item-images.js معًا،
-// فيُعاد بناء GitHub Pages مرة واحدة فقط. entries = [{ itemNo, bytes }] — لو تكرر صنف فآخر صورة تفوز.
-// يرجع { رقم الصنف: "images/رقم.jpg?v=..." } (رقم إصدار في الرابط حتى لا يبقى المتصفح على الصورة القديمة)
+// خريطة الصور الحالية داخل ITEM_IMAGES: رقم الصنف ← المسار (بدون ?v=)
+function itemImageRefs_(src){
+  var start = src.indexOf("const ITEM_IMAGES = {"), out = {};
+  if (start < 0) return out;
+  var bodyStart = src.indexOf("{", start) + 1, end = src.indexOf("\n};", bodyStart);
+  var body = src.slice(bodyStart, end < 0 ? src.length : end), re = /(?:^|\n)[ \t]*"([^"]+)"[ \t]*:[ \t]*"([^"?]*)(?:\?[^"]*)?"/g, m;
+  while ((m = re.exec(body))) out[m[1]] = m[2];
+  return out;
+}
+
+// ينشر مجموعة صور في commit واحد (Git Data API): كل الملفات الجديدة + تعديل item-images.js معًا،
+// فيُعاد بناء GitHub Pages مرة واحدة فقط.
+// entries = [{ itemNos: [..], bytes }] — الصورة الواحدة تُحفظ مرة واحدة ويشير إليها كل أصنافها (بلا نسخ للملف).
+// اسم الملف: images/أول-صنف.jpg؛ لكن إن كان هذا الملف مستخدمًا لصنف آخر خارج هذه الصورة
+// (صورة مشتركة سابقة) نستعمل اسمًا جديدًا حتى لا يتغيّر شكل الصنف الآخر.
+// يرجع { رقم الصنف: "images/....jpg?v=..." }
 function publishImages_(entries, who){
-  var last = {}, order = [];
-  entries.forEach(function(e){ if (!(e.itemNo in last)) order.push(e.itemNo); last[e.itemNo] = e; });
-  if (!order.length) return {};
-  var cfg = ghCfg_(), stamp = Utilities.formatDate(new Date(), TZ, "yyyyMMddHHmmss"), paths = {};
-  order.forEach(function(n){ paths[n] = "images/" + n + ".jpg?v=" + stamp; });
+  // الصنف الذي تظهر له صورتان في الدفعة: آخر واحدة تفوز؛ والصورة التي خسرت كل أصنافها تُحذف
+  var owner = {};
+  entries.forEach(function(e, i){ e.itemNos.forEach(function(n){ owner[n] = i; }); });
+  var keep = [];
+  entries.forEach(function(e, i){
+    var mine = e.itemNos.filter(function(n){ return owner[n] === i; });
+    if (mine.length) keep.push({ itemNos: mine, bytes: e.bytes });
+  });
+  if (!keep.length) return {};
+  var cfg = ghCfg_(), stamp = Utilities.formatDate(new Date(), TZ, "yyyyMMddHHmmss");
   // 1) الصور كـ blobs (طلبات متوازية)
-  var blobRes = UrlFetchApp.fetchAll(order.map(function(n){
-    return ghOpt_(cfg, "POST", "/git/blobs", { content: Utilities.base64Encode(last[n].bytes), encoding: "base64" });
-  }));
-  var blobSha = blobRes.map(function(r, i){
+  var blobSha = UrlFetchApp.fetchAll(keep.map(function(e){
+    return ghOpt_(cfg, "POST", "/git/blobs", { content: Utilities.base64Encode(e.bytes), encoding: "base64" });
+  })).map(function(r){
     var j = ghParse_(r);
     if (j.code !== 201) throw ghFail_(j);
     return j.json.sha;
   });
-  var msg = "إضافة " + order.length + " صورة أصناف — " + who + "\n\nالأصناف: " + order.slice(0, 60).join("، ") + (order.length > 60 ? " …" : "");
+  var all = [];
+  keep.forEach(function(e){ all = all.concat(e.itemNos); });
+  var msg = "إضافة " + keep.length + " صورة (" + all.length + " صنف) — " + who + "\n\nالأصناف: " + all.slice(0, 60).join("، ") + (all.length > 60 ? " …" : "");
   for (var attempt = 0; attempt < 4; attempt++) {
     var ref = gh_(cfg, "GET", "/git/ref/heads/" + encodeURIComponent(cfg.branch));
     if (ref.code !== 200) throw ghFail_(ref);
@@ -1318,12 +1337,19 @@ function publishImages_(entries, who){
     if (commit.code !== 200) throw ghFail_(commit);
     var cur = gh_(cfg, "GET", "/contents/item-images.js?ref=" + head);
     if (cur.code !== 200) throw ghFail_(cur);
-    var text = Utilities.newBlob(Utilities.base64Decode(String(cur.json.content).replace(/\s/g, ""))).getDataAsString("UTF-8");
-    var js = text;
-    order.forEach(function(n){ js = setItemImageEntry_(js, n, paths[n]); });
+    var js = Utilities.newBlob(Utilities.base64Decode(String(cur.json.content).replace(/\s/g, ""))).getDataAsString("UTF-8");
+    var paths = {}, tree = [], used = {};
+    keep.forEach(function(e, i){
+      var file = "images/" + e.itemNos[0] + ".jpg", refs = itemImageRefs_(js), mineSet = {};
+      e.itemNos.forEach(function(n){ mineSet[n] = true; });
+      var shared = Object.keys(refs).some(function(k){ return refs[k] === file && !mineSet[k]; });
+      if (shared || used[file]) file = "images/" + e.itemNos[0] + "-" + stamp + (i ? "-" + i : "") + ".jpg";
+      used[file] = true;
+      e.itemNos.forEach(function(n){ paths[n] = file + "?v=" + stamp; js = setItemImageEntry_(js, n, paths[n]); });
+      tree.push({ path: file, mode: "100644", type: "blob", sha: blobSha[i] });
+    });
     var jsBlob = gh_(cfg, "POST", "/git/blobs", { content: js, encoding: "utf-8" });
     if (jsBlob.code !== 201) throw ghFail_(jsBlob);
-    var tree = order.map(function(n, i){ return { path: "images/" + n + ".jpg", mode: "100644", type: "blob", sha: blobSha[i] }; });
     tree.push({ path: "item-images.js", mode: "100644", type: "blob", sha: jsBlob.json.sha });
     var t = gh_(cfg, "POST", "/git/trees", { base_tree: commit.json.tree.sha, tree: tree });
     if (t.code !== 201) throw ghFail_(t);
@@ -1342,7 +1368,7 @@ function publishRows_(rows, who){
   var paths = {};
   for (var i = 0; i < rows.length; i += 100) {
     var chunk = rows.slice(i, i + 100);
-    var p = publishImages_(chunk.map(function(r){ return { itemNo: r.itemNo, bytes: DriveApp.getFileById(r.fileId).getBlob().getBytes() }; }), who);
+    var p = publishImages_(chunk.map(function(r){ return { itemNos: r.itemNos, bytes: DriveApp.getFileById(r.fileId).getBlob().getBytes() }; }), who);
     for (var k in p) paths[k] = p[k];
     chunk.forEach(function(r){ try { DriveApp.getFileById(r.fileId).setTrashed(true); } catch (e) {} });
   }
@@ -1364,19 +1390,24 @@ API.img_upload = function(req){
   if (who.role === "none") throw fatal_("هذا الهاتف غير مسجّل كموظف — لا يمكنه رفع الصور");
   var id = String(req.id || "").replace(/[^\w\-]/g, "").slice(0, 40);
   if (id.length < 8) throw fatal_("معرّف الصورة غير صالح");
-  var itemNo = cleanItemNo_(req.itemNo);
+  // الصورة الواحدة قد تخص عدة أصناف (itemNos)؛ itemNo وحده يبقى مدعومًا
+  var raw = req.itemNos && req.itemNos.length ? req.itemNos : [req.itemNo], itemNos = [];
+  if (raw.length > 12) throw fatal_("أكثر من 12 صنفًا لصورة واحدة");
+  raw.forEach(function(n){ n = cleanItemNo_(n); if (itemNos.indexOf(n) === -1) itemNos.push(n); });
   var known = knownItems_();
-  if (known && known.indexOf(itemNo) === -1) throw fatal_("رقم الصنف " + itemNo + " غير موجود في الشيت");
+  if (known) itemNos.forEach(function(n){ if (known.indexOf(n) === -1) throw fatal_("رقم الصنف " + n + " غير موجود في الشيت"); });
   var again = photoRows_().filter(function(x){ return x.id === id; })[0];
   if (again) return { status: again.status === PH_PUBLISHED ? "published" : again.status === PH_STAGED ? "staged" : "pending", duplicate: true };
-  var bytes = decodeJpeg_(req.data), name = String(req.itemName || "");
-  var file = pendingFolder_().createFile(Utilities.newBlob(bytes, "image/jpeg", itemNo + "__" + id + ".jpg"));
+  var bytes = decodeJpeg_(req.data);
+  var name = (req.itemNames && req.itemNames.length ? req.itemNames : [req.itemName || ""]).map(function(s){ return String(s).replace(/\|/g, " "); }).join(" | ");
+  var no = itemNos.join(",");
+  var file = pendingFolder_().createFile(Utilities.newBlob(bytes, "image/jpeg", itemNos[0] + "__" + id + ".jpg"));
   if (who.role === "admin") {
     // الإدارة: تُحفظ مؤقتًا ثم تُنشر كلها في commit واحد عند استدعاء img_publish (آخر الدفعة)
-    photoAdd_(id, itemNo, name, who.name, "إدارة", PH_STAGED, file.getId());
+    photoAdd_(id, no, name, who.name, "إدارة", PH_STAGED, file.getId());
     return { status: "staged" };
   }
-  photoAdd_(id, itemNo, name, who.name, "موظف", PH_PENDING, file.getId());
+  photoAdd_(id, no, name, who.name, "موظف", PH_PENDING, file.getId());
   return { status: "pending" };
 };
 
@@ -1399,7 +1430,7 @@ API.img_pending_count = function(req){
 };
 API.img_pending_list = function(req){
   photoAdmin_(req);
-  return { items: pendingRows_().slice(-300).map(function(x){ return { id: x.id, itemNo: x.itemNo, itemName: x.itemName, by: x.by, at: x.at }; }) };
+  return { items: pendingRows_().slice(-300).map(function(x){ return { id: x.id, itemNos: x.itemNos, itemNames: String(x.itemName || "").split(" | "), by: x.by, at: x.at }; }) };
 };
 // الصورة نفسها لمعاينتها في صفحة الموافقات
 API.img_pending_get = function(req){
@@ -1416,7 +1447,7 @@ API.img_decide = function(req){
   if (req.decision === "approve") {
     var paths = publishRows_([r], who + " (اعتمد صورة " + r.by + ")");
     photoDecide_(r.row, PH_APPROVED, who);
-    return { status: "approved", path: paths[r.itemNo] };
+    return { status: "approved", path: paths[r.itemNos[0]], paths: paths };
   }
   if (req.decision === "reject") {
     photoDecide_(r.row, PH_REJECTED, who);
