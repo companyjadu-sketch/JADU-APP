@@ -150,17 +150,24 @@
   }
 
   // ---------- صورة الصنف المنفرد: الصورة كاملة + شريط أبيض بالبيانات ----------
+  // سطر الشركة المصنعة · بلد الصنع (يكتب الموجود فقط، وفارغ إذا لا يوجد أي منهما)
+  const subText = item => [item.company, item.country].map(v => String(v == null ? '' : v).trim()).filter(Boolean).join(' · ');
   function drawStrip(ctx, item, W, y, dry){
     const PAD = 56, NAME = 58, LH = 78, top = 44, rowGap = 34, rowH = 84, bottom = 46;
     ctx.direction = 'rtl'; ctx.textBaseline = 'alphabetic';
     ctx.font = `900 ${NAME}px ${FONT}`;
     const lines = wrapLines(ctx, item.name || '—', W - PAD * 2, 3);
-    const H = top + lines.length * LH + rowGap + rowH + bottom;
+    const sub = subText(item), SUB_FS = 32, subH = sub ? 46 : 0;
+    const H = top + lines.length * LH + subH + rowGap + rowH + bottom;
     if(dry) return H;
     ctx.fillStyle = '#FFFFFF'; ctx.fillRect(0, y, W, H);
     ctx.fillStyle = INK; ctx.textAlign = 'right'; ctx.font = `900 ${NAME}px ${FONT}`;
     lines.forEach((ln, i) => ctx.fillText(ln, W - PAD, y + top + NAME + i * LH - 6));
-    const ry = y + top + lines.length * LH + rowGap;
+    if(sub){
+      ctx.font = `500 ${SUB_FS}px ${FONT}`; ctx.fillStyle = MUTED; ctx.textAlign = 'right';
+      ctx.fillText(wrapLines(ctx, sub, W - PAD * 2, 1)[0], W - PAD, y + top + lines.length * LH + 16);
+    }
+    const ry = y + top + lines.length * LH + subH + rowGap;
     ctx.fillStyle = RULE; ctx.fillRect(PAD, ry - rowGap / 2, W - PAD * 2, 2);
     const base = ry + 60, label = 'رقم الصنف';
     ctx.textAlign = 'right'; ctx.font = `500 34px ${FONT}`; ctx.fillStyle = MUTED;
@@ -197,7 +204,7 @@
   async function buildCollage(items, fileName){
     const [imgs] = await Promise.all([Promise.all(items.map(itemPhoto)), fontsReady()]);
     const W = 1080, COLS = 2, GAP = 2, CW = (W - GAP * (COLS - 1)) / COLS;
-    const PAD = 28, BOX = CW - PAD * 2, TEXT_H = 196, CH = PAD + BOX + TEXT_H;
+    const PAD = 28, BOX = CW - PAD * 2, TEXT_H = 196 + (items.some(subText) ? 32 : 0), CH = PAD + BOX + TEXT_H;
     const rows = Math.ceil(items.length / COLS);
     const c = document.createElement('canvas'); c.width = W; c.height = rows * CH + (rows - 1) * GAP;
     const ctx = c.getContext('2d');
@@ -222,7 +229,13 @@
       }
       const tx = x + CW - PAD, ty = by + BOX + 24;
       ctx.textAlign = 'right'; ctx.fillStyle = INK; ctx.font = `900 34px ${FONT}`;
-      wrapLines(ctx, item.name || '—', BOX, 2).forEach((ln, k) => ctx.fillText(ln, tx, ty + 34 + k * 46));
+      const nameLines = wrapLines(ctx, item.name || '—', BOX, 2);
+      nameLines.forEach((ln, k) => ctx.fillText(ln, tx, ty + 34 + k * 46));
+      const sub = subText(item);
+      if(sub){
+        ctx.font = `500 24px ${FONT}`; ctx.fillStyle = MUTED; ctx.textAlign = 'right';
+        ctx.fillText(wrapLines(ctx, sub, BOX, 1)[0], tx, ty + 34 + (nameLines.length - 1) * 46 + 38);
+      }
       const base = y + CH - 30, label = 'رقم الصنف';
       ctx.font = `500 22px ${FONT}`; ctx.fillStyle = MUTED; ctx.fillText(label, tx, base);
       const lw = ctx.measureText(label).width;
@@ -236,7 +249,7 @@
   // ---------- تجهيز صور السلة مسبقًا (حتى تفتح المشاركة فورًا عند الضغط) ----------
   let prepared = null;      // { sig, files }
   let preparing = null;     // { sig, promise }
-  const cartSig = () => cartItems().map(it => `${it.number}:${it.priceRetail}:${it.name}:${(UPLOADED_PHOTOS[String(it.number).trim()] || {}).at || ''}`).join('|');
+  const cartSig = () => cartItems().map(it => `${it.number}:${it.priceRetail}:${it.name}:${it.company || ''}:${it.country || ''}:${(UPLOADED_PHOTOS[String(it.number).trim()] || {}).at || ''}`).join('|');
   function prepareCart(){
     const sig = cartSig();
     if(prepared && prepared.sig === sig) return Promise.resolve(prepared.files);
@@ -348,7 +361,7 @@
 
   // ---------- الصنف المنفرد ----------
   let single = null;        // { key, promise }
-  function singleKey(item){ const n = String(item.number).trim(); return `${n}:${item.priceRetail}:${item.name}:${(UPLOADED_PHOTOS[n] || {}).at || ''}`; }
+  function singleKey(item){ const n = String(item.number).trim(); return `${n}:${item.priceRetail}:${item.name}:${item.company || ''}:${item.country || ''}:${(UPLOADED_PHOTOS[n] || {}).at || ''}`; }
   function prepareSingle(item){
     const key = singleKey(item);
     if(single && single.key === key) return single.promise;
