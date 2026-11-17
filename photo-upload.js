@@ -135,10 +135,24 @@ function setRole(role, name){
   else setCount(0);
 }
 let accessResolve; const accessReady = new Promise(r => { accessResolve = r; });
+// كل طلب يحمل رقمًا؛ نعتمد ردّ آخر طلب فقط (حتى لا يطغى ردّ قديم بلا دخول إدارة على ردّ أحدث)
+let accessSeq = 0;
 async function refreshAccess(){
-  try { const r = await api('img_whoami'); setRole(r.role, r.name); }
-  catch(e){ if(!e.network) setRole('none'); }            // بدون إنترنت: نُبقي آخر حالة معروفة
-  accessResolve(ROLE);
+  const my = ++accessSeq;
+  try { const r = await api('img_whoami'); if(my === accessSeq) setRole(r.role, r.name); }
+  catch(e){ if(!e.network && my === accessSeq) setRole('none'); }   // بدون إنترنت: نُبقي آخر حالة معروفة
+  if(my === accessSeq) accessResolve(ROLE);
+}
+// ننتظر أول حالة دخول من Firebase قبل أول سؤال للخادم، حتى يُرسل دخول الإدارة إن وُجد
+function authSettled(){
+  return new Promise(res => {
+    try {
+      if(DEMO || typeof auth === 'undefined' || !auth) return res();
+      let done = false; const fin = () => { if(!done){ done = true; res(); } };
+      const off = auth.onAuthStateChanged(() => { fin(); try { off(); } catch(e){} });
+      setTimeout(fin, 4000);
+    } catch(e){ res(); }
+  });
 }
 
 // =====================================================================
@@ -878,8 +892,9 @@ $('#puClearAll').addEventListener('click', async () => {
     LIST.forEach(it => $('#puList').appendChild(mkRow(it)));
   } catch(e){}
   renderChrome();
+  await authSettled();
   refreshAccess();
-  try { if(typeof auth !== 'undefined' && auth) auth.onAuthStateChanged(() => refreshAccess()); } catch(e){}
+  try { if(typeof auth !== 'undefined' && auth) { let first = true; auth.onAuthStateChanged(() => { if(first){ first = false; return; } refreshAccess(); }); } } catch(e){}
   if(DEMO){ const t = document.createElement('div'); t.style.cssText = 'position:fixed;bottom:6px;left:6px;z-index:60;background:#C9962B;color:#000;font:700 11px Tajawal,sans-serif;padding:3px 8px;border-radius:6px;opacity:.9;pointer-events:none'; t.textContent = 'معاينة تجريبية — الحساب: ' + (DEMO_ROLE === 'admin' ? 'إدارة' : DEMO_ROLE === 'staff' ? 'موظف' : 'غير مسجّل'); document.body.appendChild(t); }
 })();
 async function ensureItemsQuiet(){ try { if(typeof loadItems === 'function') loadItems(); } catch(e){} }

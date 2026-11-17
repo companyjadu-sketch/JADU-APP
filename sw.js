@@ -3,7 +3,7 @@
 // مباشرة من كود الصفحة نفسها (مع نسخة احتياطية محليًا عبر localStorage)،
 // هذا الملف مسؤول فقط عن تخزين "هيكل" التطبيق (الصفحة، الصور، المكتبات) عشان يفتح بدون إنترنت.
 
-const CACHE_NAME = 'jadu-app-v11';
+const CACHE_NAME = 'jadu-app-v12';
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -51,7 +51,7 @@ self.addEventListener('fetch', event => {
   // طلب فتح الصفحة نفسها: جرّب الشبكة أول (عشان آخر تحديث)، ولو ما فيه إنترنت ارجع للنسخة المخزنة
   if (req.mode === 'navigate') {
     event.respondWith(
-      fetch(req)
+      fetch(req, { cache: 'no-cache' })
         .then(res => {
           const copy = res.clone();
           caches.open(CACHE_NAME).then(cache => cache.put(req, copy));
@@ -69,7 +69,7 @@ self.addEventListener('fetch', event => {
   const url = new URL(req.url);
   if (url.origin === self.location.origin && /\.(js|css)$/.test(url.pathname)) {
     event.respondWith(
-      fetch(req)
+      fetch(req, { cache: 'no-cache' })
         .then(res => {
           if (res && res.ok) { const copy = res.clone(); caches.open(CACHE_NAME).then(cache => cache.put(req, copy)); }
           return res;
