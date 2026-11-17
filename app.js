@@ -1048,6 +1048,11 @@ function modelImage(n){
 //          فتصل الدفعة كاملة كإشعار واحد (photo_batches)، والإدارة تعتمدها أو ترفضها، وبعدها فقط تظهر للجميع.
 // item_photos/{رقم}: الصورة الكاملة المعتمدة — تُقرأ فقط عند فتح الصنف
 // photo_index/s0..s19: فهرس المصغّرات المعتمدة لكل الأصناف — يُقرأ مرة كل ساعة (20 قراءة فقط)
+// مفتاح إخفاء نظام الصور القديم (Firebase: سلة الصور + دفعات الموافقة).
+// اتركه true حتى تنجح التجربة الحقيقية لنظام «إضافة صور» الجديد، ثم غيّره إلى false.
+// الصور القديمة المنشورة تبقى ظاهرة للجميع في الحالتين — الإخفاء يشمل أزرار الإضافة والموافقة فقط.
+const LEGACY_PHOTOS_ENABLED = true;
+
 let UPLOADED_PHOTOS = {};
 const PHOTO_SHARDS = 20, PHOTO_INDEX_KEY = 'jadu_photo_index_v1', PHOTO_INDEX_TTL = 60 * 60 * 1000;
 const PHOTO_BASKET_KEY = 'jadu_photo_basket_v1';
@@ -1161,7 +1166,7 @@ function loadFullPhoto_(n){
 
 function afterItemDetailRender_(item){
   const n = String(item.number).trim();
-  const canUpload = currentViewerRole !== 'customer';
+  const canUpload = LEGACY_PHOTOS_ENABLED && currentViewerRole !== 'customer';
   const row = document.getElementById('photoUploadRow');
   row.hidden = !canUpload;
   if(canUpload){
@@ -1195,7 +1200,7 @@ document.getElementById('photoDeleteBtn')?.addEventListener('click', async () =>
 function updateBasketBar(){
   const bar = document.getElementById('photoBasketBar'); if(!bar) return;
   const onEmployee = document.getElementById('view-employee').classList.contains('active');
-  bar.hidden = !(onEmployee && currentViewerRole === 'employee' && photoBasket.length);
+  bar.hidden = !(LEGACY_PHOTOS_ENABLED && onEmployee && currentViewerRole === 'employee' && photoBasket.length);
   document.getElementById('photoBasketCount').textContent = String(photoBasket.length);
 }
 function renderBasket(){
@@ -1233,7 +1238,7 @@ document.getElementById('sendBasketBtn')?.addEventListener('click', async () => 
 
 // ===== الإدارة: دفعات الصور بانتظار الموافقة =====
 function refreshPhotoEventsBadge(){
-  if(!firebaseReady || !db) return;
+  if(!LEGACY_PHOTOS_ENABLED || !firebaseReady || !db) return;
   const u = auth && auth.currentUser; if(!u || !isAdminEmail(u.email)) return;
   db.collection('photo_batches').where('status', '==', 'pending').limit(99).get().then(s => {
     const b = document.getElementById('photoEventsBadge'); if(!b) return;
@@ -1308,6 +1313,7 @@ async function renderPhotoEvents(){
   }
 }
 document.getElementById('adminPhotosBtn')?.addEventListener('click', () => { showView('admin-photos'); renderPhotoEvents(); });
+if(!LEGACY_PHOTOS_ENABLED){ const b = document.getElementById('adminPhotosBtn'); if(b) b.style.display = 'none'; }
 
 let currentItem = null;
 function openItemDetail(number){

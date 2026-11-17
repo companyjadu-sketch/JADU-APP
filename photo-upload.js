@@ -59,6 +59,7 @@ async function api(action, data){
 
 // خادم تجريبي داخل المتصفح (للمعاينة فقط — لا يلمس أي شيء حقيقي)
 let flakyN = 0;
+const stagedDemo = new Set();
 async function mock(action, d){
   await sleep(220 + Math.random() * 300);
   const all = await dbAll('demo');
@@ -66,11 +67,13 @@ async function mock(action, d){
   if(DEMO_ROLE === 'none'){ const e = new Error('هذا الهاتف غير مسجّل كموظف'); e.fatal = true; throw e; }
   if(action === 'img_upload'){
     if(FLAKY && (++flakyN % 4 === 0)){ const e = new Error('لا يوجد اتصال بالإنترنت'); e.network = true; throw e; }
-    if(DEMO_ROLE === 'admin') return { status: 'published', path: 'images/' + d.itemNo + '.jpg?v=demo' };
+    if(DEMO_ROLE === 'admin'){ stagedDemo.add(d.id); return { status: 'staged' }; }
     if(!all.some(x => x.id === d.id)) await dbPut('demo', { id: d.id, itemNo: d.itemNo, itemName: d.itemName || '', by: 'حكيم سحيم', at: new Date().toLocaleString('en-GB').slice(0, 16).replace(',', ''), data: d.data });
     return { status: 'pending' };
   }
   if(DEMO_ROLE !== 'admin'){ const e = new Error('هذه العملية للإدارة العامة فقط'); e.fatal = true; throw e; }
+  if(action === 'img_publish'){ const n = stagedDemo.size; stagedDemo.clear(); return { count: n, paths: {} }; }
+  if(action === 'img_decide_batch'){ for(const id of d.ids) await dbDel('demo', id); return { done: d.ids, paths: {} }; }
   if(action === 'img_pending_count') return { count: all.length };
   if(action === 'img_pending_list') return { items: all.map(x => ({ id: x.id, itemNo: x.itemNo, itemName: x.itemName, by: x.by, at: x.at })) };
   if(action === 'img_pending_get'){ const x = all.find(y => y.id === d.id); if(!x){ const e = new Error('غير موجودة'); e.fatal = true; throw e; } return { data: x.data }; }
@@ -307,11 +310,11 @@ function renderResults(it){
 }
 function refresh(it){
   const el = rowEls.get(it.id); if(!el) return;
-  const busy = it.st === 'queued' || it.st === 'uploading', fin = it.st === 'done' || it.st === 'skipped';
+  const busy = it.st === 'queued' || it.st === 'uploading' || it.st === 'staged', fin = it.st === 'done' || it.st === 'skipped';
   const dup = isDup(it);
   el.className = 'pu-row' + (it.st === 'ready' && !dup ? ' is-ready' : '') + (it.st === 'suggest' ? ' is-sug' : '') + (dup ? ' is-dup' : '') + (it.st === 'error' ? ' is-error' : '') + (fin ? ' is-done' : '');
   const img = $('.pu-th', el), s = thumbSrc(it); if(img.getAttribute('src') !== s) img.src = s;
-  $('.pu-rm', el).disabled = it.st === 'uploading';
+  $('.pu-rm', el).disabled = it.st === 'uploading' || it.st === 'staged';
   const link = $('.pu-link', el), find = $('.pu-find', el), st = $('.pu-st', el);
   if(it.itemNo){
     link.hidden = false; find.hidden = true;
@@ -327,6 +330,7 @@ function refresh(it){
   else if(it.st === 'ready') h = `<span class="ok">✓ جاهز</span>`;
   else if(it.st === 'queued') h = it.msg ? esc(it.msg) : 'بالانتظار في الطابور…';
   else if(it.st === 'uploading') h = '<span class="spinner"></span> جارِ الرفع…';
+  else if(it.st === 'staged') h = `<span class="ok">✓ رُفعت</span> ${esc(it.msg || 'بانتظار النشر مع الدفعة')}`;
   else if(it.st === 'done') h = `<span class="ok">${esc(it.msg || '✓ تم')}</span>`;
   else if(it.st === 'skipped') h = esc(it.msg || 'تم التجاوز');
   else if(it.st === 'error') h = `<span class="err">${esc(it.msg || 'فشل الرفع')}</span><button type="button" class="retry">إعادة المحاولة</button>`;
@@ -339,16 +343,17 @@ function refresh(it){
 // أعلى الصفحة وأسفلها
 // =====================================================================
 const counts = () => {
-  const c = { total: LIST.length, linked: 0, sug: 0, ready: 0, queued: 0, done: 0, err: 0, skipped: 0, batch: 0, batchDone: 0 };
+  const c = { total: LIST.length, linked: 0, sug: 0, ready: 0, queued: 0, staged: 0, done: 0, err: 0, skipped: 0, batch: 0, batchDone: 0 };
   LIST.forEach(it => {
     if(it.itemNo) c.linked++;
     if(it.st === 'suggest') c.sug++;
     if(it.st === 'ready' && !isDup(it)) c.ready++;
     if(it.st === 'queued' || it.st === 'uploading') c.queued++;
+    if(it.st === 'staged') c.staged++;
     if(it.st === 'done') c.done++;
     if(it.st === 'skipped') c.skipped++;
     if(it.st === 'error') c.err++;
-    if(it.b){ c.batch++; if(it.st === 'done' || it.st === 'skipped' || it.st === 'error') c.batchDone++; }
+    if(it.b){ c.batch++; if(it.st === 'done' || it.st === 'skipped' || it.st === 'error' || it.st === 'staged') c.batchDone++; }
   });
   return c;
 };
@@ -365,7 +370,9 @@ function renderChrome(){
   const go = $('#puGo'), note = $('#puNote'), prog = $('#puProg');
   const label = ROLE === 'staff' ? 'إرسال للمراجعة' : 'حفظ ونشر الصور المربوطة';
   if(RUNNING || c.queued){
-    go.disabled = true; go.textContent = `جارِ الرفع… ${c.batchDone} / ${c.batch}`;
+    go.disabled = true; go.textContent = c.queued ? `جارِ الرفع… ${c.batchDone} / ${c.batch}` : 'جارِ النشر…';
+  } else if(c.staged && !c.ready){
+    go.disabled = false; go.textContent = `إعادة محاولة النشر (${c.staged})`;
   } else {
     go.disabled = !c.ready; go.textContent = c.ready ? `${label} (${c.ready})` : label;
   }
@@ -374,6 +381,7 @@ function renderChrome(){
     prog.hidden = false;
     $('#puProgBar').style.width = Math.round(c.batchDone / c.batch * 100) + '%';
     $('#puProgTx').textContent = c.queued ? `${c.batchDone} من ${c.batch} — يُحفظ التقدم تلقائيًا، يمكنك إغلاق الصفحة والمتابعة لاحقًا`
+      : c.staged ? (RUNNING ? 'جارِ نشر الدفعة كلها دفعة واحدة…' : `رُفعت ${c.staged} صورة وبانتظار النشر — اضغط «إعادة محاولة النشر»`)
       : (c.err ? `اكتمل ${c.batchDone - c.err} من ${c.batch} — ${c.err} فشلت (اضغط «إعادة المحاولة» بجانبها)` : `✓ اكتمل ${c.batch} من ${c.batch}`);
   } else prog.hidden = true;
   note.textContent = ROLE === 'staff' ? 'الصور تذهب للإدارة للموافقة قبل ظهورها في الموقع' : ROLE === 'admin' ? 'تظهر الصورة للجميع خلال دقيقة تقريبًا من النشر' : '';
@@ -471,7 +479,7 @@ function askReplace(it, idx, total){
 // =====================================================================
 async function startUpload(){
   const ready = LIST.filter(it => it.st === 'ready' && !isDup(it));
-  if(!ready.length) return;
+  if(!ready.length){ LIST.forEach(it => { if(it.st === 'staged') it.msg = ''; }); runQueue(); return; }   // لا جديد: إعادة محاولة نشر المرفوع
   LIST.forEach(it => { if(it.st === 'done' || it.st === 'skipped' || it.st === 'error') it.b = false; });
   if(ROLE === 'admin'){
     const needAsk = ready.filter(it => hasPrev(it.itemNo)); let i = 0;
@@ -497,9 +505,30 @@ function setLocalImage(itemNo, src){
   try { if(typeof ITEM_IMAGES !== 'undefined' && src) ITEM_IMAGES[String(itemNo)] = src; } catch(e){}
   try { if(typeof renderResults === 'function') renderResults(); } catch(e){}
 }
+// الإدارة: الصور المرفوعة (staged) تُنشر كلها دفعة واحدة = commit واحد في GitHub (فلا يُعاد بناء الموقع مئات المرات)
+async function publishStaged(){
+  for(let attempt = 0; attempt < 6; attempt++){
+    const staged = LIST.filter(it => it.st === 'staged');
+    if(!staged.length || ROLE !== 'admin') return;
+    try {
+      await api('img_publish');
+      for(const it of staged){
+        it.st = 'done'; it.msg = '✓ نُشرت — تظهر للجميع خلال دقيقة';
+        if(it.blob) setLocalImage(it.itemNo, URL.createObjectURL(it.blob));
+        delete it.blob; const u = rt(it).url; if(u){ rt(it).url = ''; try { URL.revokeObjectURL(u); } catch(e){} }
+        await persist(it); refresh(it);
+      }
+      return;
+    } catch(e){
+      if(e.network){ await waitOnline(6000); continue; }
+      staged.forEach(it => { it.msg = e.message; refresh(it); });
+      return;                                            // خطأ نهائي (مثل مفتاح GitHub): تبقى الصور محفوظة وتظهر «إعادة محاولة النشر»
+    }
+  }
+}
 async function runQueue(){
   if(RUNNING || ROLE === 'none') return;
-  if(!LIST.some(it => it.st === 'queued' || it.st === 'uploading')) return;
+  if(!LIST.some(it => it.st === 'queued' || it.st === 'uploading' || (it.st === 'staged' && ROLE === 'admin'))) return;
   RUNNING = true; renderChrome();
   try {
     for(;;){
@@ -509,10 +538,12 @@ async function runQueue(){
       try {
         if(!it.blob) throw Object.assign(new Error('الصورة المحفوظة غير متوفرة — أعد اختيارها'), { fatal: true });
         const r = await api('img_upload', { id: it.id, itemNo: it.itemNo, itemName: it.itemName, data: await blobToB64(it.blob) });
-        it.st = 'done'; it.msg = r.status === 'published' ? '✓ نُشرت — تظهر للجميع خلال دقيقة' : '✓ أُرسلت للإدارة للمراجعة';
-        if(r.status === 'published') setLocalImage(it.itemNo, URL.createObjectURL(it.blob));
-        it.thumb = it.thumb || ''; delete it.blob;           // نوفّر مساحة الجهاز بعد النجاح (المصغّرة تبقى للعرض)
-        const u = rt(it).url; if(u){ rt(it).url = ''; try { URL.revokeObjectURL(u); } catch(e){} }
+        if(r.status === 'staged'){ it.st = 'staged'; it.msg = 'بانتظار النشر مع الدفعة'; }   // نبقي الصورة محليًا إلى أن تُنشر
+        else {
+          it.st = 'done'; it.msg = r.status === 'published' ? '✓ نُشرت — تظهر للجميع خلال دقيقة' : '✓ أُرسلت للإدارة للمراجعة';
+          delete it.blob;                                    // نوفّر مساحة الجهاز بعد النجاح (المصغّرة تبقى للعرض)
+          const u = rt(it).url; if(u){ rt(it).url = ''; try { URL.revokeObjectURL(u); } catch(e){} }
+        }
       } catch(e){
         if(e.network){ it.st = 'queued'; it.msg = 'انقطع الاتصال — سيُستأنف تلقائيًا'; refresh(it); await persist(it); await waitOnline(6000); continue; }
         if(e.fatal){ it.st = 'error'; it.msg = e.message; }
@@ -520,6 +551,7 @@ async function runQueue(){
       }
       await persist(it); refresh(it);
     }
+    await publishStaged();
   } finally { RUNNING = false; renderChrome(); if(ROLE === 'admin') pollCount(); }
 }
 window.addEventListener('online', () => { if(ROLE !== 'none') runQueue(); });
@@ -604,18 +636,22 @@ apView.addEventListener('click', async e => {
     return;
   }
   if(e.target.closest('#apAll')){
-    const all = $('#apAll'), todo = PENDING.filter(p => !hasPrev(p.itemNo)), skip = PENDING.length - todo.length;
+    const all = $('#apAll'), seen = new Set(), todo = [];
+    PENDING.forEach(p => { if(!hasPrev(p.itemNo) && !seen.has(p.itemNo)){ seen.add(p.itemNo); todo.push(p); } });   // صنف مكرر في الانتظار: الأولى فقط، والثانية تبقى استبدالًا
+    const skip = PENDING.length - todo.length;
     if(!todo.length) return;
-    if(!await showConfirm(`قبول ${todo.length} صورة جديدة؟` + (skip ? `\nالاستبدالات (${skip}) لن تُقبل تلقائيًا — تبقى لقرارك.` : ''), { title: 'قبول الكل', okText: 'قبول' })) return;
-    all.disabled = true; let n = 0, fail = 0;
-    for(const p of todo){
-      if(hasPrev(p.itemNo)) continue;                    // صار استبدالًا بعد قبول صورة سابقة لنفس الصنف
-      all.textContent = `جارِ القبول… ${++n} / ${todo.length}`;
-      const card = apBody().querySelector(`.pu-ap[data-id="${CSS.escape(p.id)}"]`);
-      if(!await decide(p, 'approve', card)){ fail++; if(!navigator.onLine) break; }
-    }
+    if(!await showConfirm(`قبول ${todo.length} صورة جديدة؟ تُنشر كلها في commit واحد.` + (skip ? `\nالاستبدالات (${skip}) لن تُقبل تلقائيًا — تبقى لقرارك.` : ''), { title: 'قبول الكل', okText: 'قبول' })) return;
+    all.disabled = true; all.textContent = `جارِ نشر ${todo.length} صورة دفعة واحدة…`;
+    let fail = '';
+    try {
+      for(let i = 0; i < todo.length; i += 100){
+        const chunk = todo.slice(i, i + 100), r = await api('img_decide_batch', { ids: chunk.map(p => p.id), decision: 'approve' });
+        (r.done || []).forEach(id => { const p = PENDING.find(x => x.id === id); if(p) setLocalImage(p.itemNo, PIMG.get(id) || (r.paths || {})[p.itemNo]); });
+        PENDING = PENDING.filter(x => !(r.done || []).includes(x.id)); setCount(PENDING.length);
+      }
+    } catch(e){ fail = e.network ? 'تحقق من الإنترنت وحاول مرة أخرى' : e.message; }
     renderPending();
-    if(fail){ const m = document.createElement('div'); m.className = 'msg err'; m.textContent = `تعذّر قبول ${fail} صورة — حاول مرة أخرى`; $('#apBody').prepend(m); }
+    if(fail){ const m = document.createElement('div'); m.className = 'msg err'; m.textContent = fail; $('#apBody').prepend(m); }
   }
 });
 const apBody = () => $('#apBody');

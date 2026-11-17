@@ -275,7 +275,7 @@
     for(let i = 0; i < items.length; i += PER_IMAGE) chunks.push(items.slice(i, i + PER_IMAGE));
     const promise = (async () => {
       const files = [];
-      for(let i = 0; i < chunks.length; i++) files.push(await buildCollage(chunks[i], chunks.length > 1 ? `jadu-share-${i + 1}.jpg` : 'jadu-share.jpg'));
+      for(let i = 0; i < chunks.length; i++) files.push(await buildCollage(chunks[i], 'jadu-' + chunks[i].map(it => String(it.number).trim().replace(/[^\w-]/g, '_')).join('-') + '.jpg'));   // مثل jadu-146-723-704.jpg
       if(cartSig() === sig) prepared = { sig, files };
       return files;
     })();
