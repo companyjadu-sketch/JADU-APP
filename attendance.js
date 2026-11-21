@@ -740,7 +740,7 @@ function openRangeSheet(kind){
   const intro = { trip: "إذا كنت مسافرًا في مهمة للشركة، اختر بداية ونهاية السفر. تُحسب كل الأيام أيام عمل كاملة بدون خصم، ولا تُحسب من عطلك. يُرسل الطلب للإدارة ولا يُعتمد إلا بموافقتها.",
     admin_trip: "يُعتمد مباشرة بدون طلب. تُحسب الأيام أيام عمل كاملة بدون خصم، ولا تُحسب عطلة.",
     closure: "لكل الموظفين: لا يُحسب غيابًا ولا عطلة ولا خصمًا، ولا يُطلب تسجيل الحضور في هذه الأيام. الموظف الذي سجّل حضوره فعلًا في أحد هذه الأيام يبقى سجله كما هو." }[kind];
-  const emps = admin ? ADM.employees.filter(e => e.active) : [];
+  const emps = admin ? ADM.employees.filter(e => e.active && e.counted !== false) : [];
   const dateIn = (id, label, v) => `<div class="att-field"><label for="${id}">${label}</label><input type="date" id="${id}" value="${v}" style="font-family:'IBM Plex Mono',monospace;direction:ltr;text-align:center;color-scheme:dark"></div>`;
   openSheet(`<h2>${title}</h2><p>${intro}</p>
     ${kind === "admin_trip" ? `<div class="att-field"><label for="attRgEmp">الموظف</label><select id="attRgEmp">${emps.map(e => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join("")}</select></div>` : ""}
@@ -1076,7 +1076,7 @@ function heatGrid(d, rules){
   const [y, m] = d.month.split("-").map(Number);
   const days = new Date(y, m, 0).getDate();
   const today = d.now.date;
-  const emps = d.employees.filter(e => e.active || d.records.some(r => r.emp === e.name)).map(e => e.name);
+  const emps = d.employees.filter(e => e.counted !== false && (e.active || d.records.some(r => r.emp === e.name))).map(e => e.name);
   const byKey = {}; d.records.forEach(r => { byKey[r.emp + "|" + r.date] = r; });
   let head = '<tr><th class="name">اليوم</th>';
   for (let i = 1; i <= days; i++) head += `<th>${i}</th>`;
@@ -1230,7 +1230,7 @@ function openRecordAdmin(id, empName, dateStr){
 function renderRules(){
   const body = $("#attRulesBody");
   if (!ADM) { body.innerHTML = '<div class="att-empty">افتح الحضور والانصراف أولًا</div>'; return; }
-  const r = attMergeRules(ADM.rules), emps = ADM.employees.filter(e => e.active).map(e => e.name);
+  const r = attMergeRules(ADM.rules), emps = ADM.employees.filter(e => e.active && e.counted !== false).map(e => e.name);
   const num = (k, step) => `<div class="att-field"><label for="r_${k}">${esc(ATT_RULE_LABELS[k])}</label><input type="number" id="r_${k}" step="${step || 1}" value="${esc(r[k])}"></div>`;
   const time = k => `<div class="att-field"><label for="r_${k}">${esc(ATT_RULE_LABELS[k])}</label><input type="time" id="r_${k}" value="${esc(r[k])}"></div>`;
   const wd = String(r.workdays).split(",");
@@ -1322,6 +1322,8 @@ function renderStaff(){
   const row = e => `<div class="att-emp-row" data-id="${esc(e.id || "")}"><input type="text" class="nm" value="${esc(e.name || "")}" placeholder="اسم الموظف">
     <input type="number" class="hr" min="1" max="16" step="0.5" value="${esc(e.hours || "")}" placeholder="${def}" aria-label="ساعات العمل اليومية">
     <label><input type="checkbox" class="ac" ${e.active !== false ? "checked" : ""}>نشط</label>
+    <select class="rl" aria-label="الدور" ${ADM.canEditRoles ? "" : "disabled"}>${["أدمن", "إدارة", "موظف"].map(r => `<option value="${r}" ${(e.role || "موظف") === r ? "selected" : ""}>${r}</option>`).join("")}</select>
+    ${(e.role || "") === "إدارة" ? `<div class="att-hint" style="margin:4px 0 0">لا يدخل في الحضور والغياب والخصومات ولا في أي تقرير</div>` : ""}
     ${e.id ? `<div class="att-emp-dev">${e.device ? `📱 هاتف مسجّل <button type="button" class="att-link" data-reset="${esc(e.id)}" data-name="${esc(e.name)}">إلغاء ربط الهاتف</button>` : "لم يسجّل هاتفه بعد"}</div>` : ""}</div>`;
   body.innerHTML = `<div class="att-box"><div class="att-hint" style="margin:0 0 12px">الأسماء تظهر للموظفين في قائمة "من أنت؟". الخانة الثانية = ساعات العمل اليومية (فارغة = ${def} ساعات). الموظف الموقوف لا يظهر ولا يقدر يسجّل.</div>
       <div id="attEmpRows">${ADM.employees.map(row).join("")}</div>
@@ -1336,7 +1338,7 @@ function renderStaff(){
   });
   $("#attStaffSave").onclick = async () => {
     const list = [...body.querySelectorAll(".att-emp-row")].map(el => ({ id: el.dataset.id, name: el.querySelector(".nm").value.trim(),
-      hours: el.querySelector(".hr").value.trim(), active: el.querySelector(".ac").checked })).filter(x => x.name);
+      hours: el.querySelector(".hr").value.trim(), active: el.querySelector(".ac").checked, role: el.querySelector(".rl").value })).filter(x => x.name);
     const msg = $("#attStaffMsg");
     try { await call("admin_employees_save", { employees: list }); CONFIG = null; await loadAdmin(); showView("att-staff"); renderStaff();
       $("#attStaffMsg").textContent = "تم الحفظ"; $("#attStaffMsg").className = "msg ok"; }

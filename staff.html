@@ -35,10 +35,11 @@
 <script src="item-images.js"></script>
 <script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
 
-<link rel="stylesheet" href="app.css?v=20261117b">
-<link rel="stylesheet" href="attendance.css?v=20261117b">
-<link rel="stylesheet" href="share-cart.css?v=20261117b">
-<link rel="stylesheet" href="photo-upload.css?v=20261117b">
+<link rel="stylesheet" href="app.css?v=20261121q">
+<link rel="stylesheet" href="attendance.css?v=20261121q">
+<link rel="stylesheet" href="share-cart.css?v=20261121q">
+<link rel="stylesheet" href="photo-upload.css?v=20261121q">
+<link rel="stylesheet" href="qr-tool.css?v=20261121q">
 </head>
 <body data-page="staff">
 
@@ -231,6 +232,15 @@
         <div class="list-text"><strong>قائمة تغيير الأسعار <span class="list-badge" id="priceCartBadge" style="display:none;">0</span></strong><span>مراجعة التغييرات المضافة ومشاركتها</span></div>
         <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
       </button>
+      <button class="list-btn" id="adminQrBtn">
+        <div class="list-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h3M20 17v4"/>
+          </svg>
+        </div>
+        <div class="list-text"><strong>مولّد QR للأصناف</strong><span>رمز QR برابط مباشر لصنف أو دفعة، وملصقات للطباعة</span></div>
+        <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
       <button class="list-btn" id="adminPriceLogBtn">
         <div class="list-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -281,6 +291,26 @@
         مشاركة أخرى
       </button>
     </div>
+  </div>
+
+  <!-- ============ الإدارة العامة — مولّد QR للأصناف ============ -->
+  <div class="view" id="view-admin-qr">
+    <div class="back-row">
+      <button class="back-btn" data-back="admin" aria-label="رجوع">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <h2>مولّد QR للأصناف</h2>
+    </div>
+    <label for="qrInput" class="section-label">أرقام الأصناف</label>
+    <textarea id="qrInput" dir="ltr" placeholder="146"></textarea>
+    <div class="qr-hint">رقم واحد، أو عدة أرقام بفواصل، أو مجال مثل 100-110، أو كلمة «الكل». الرابط: companyjadu-sketch.github.io/JADU-APP/?item=الرقم</div>
+    <button class="primary-btn" id="qrGenBtn" type="button">توليد</button>
+    <div class="msg" id="qrMsg" role="status"></div>
+    <div class="qr-actions" id="qrActions" hidden>
+      <button class="primary-btn" id="qrZipBtn" type="button">تنزيل PNG</button>
+      <button class="primary-btn" id="qrPrintBtn" type="button">طباعة ملصقات</button>
+    </div>
+    <div class="qr-grid" id="qrPreview"></div>
   </div>
 
   <!-- ============ الإدارة العامة — سجل تغيير الأسعار ============ -->
@@ -459,10 +489,13 @@
     <button type="button" class="lb-btn" id="lbIn" aria-label="تكبير">+</button>
   </div>
 </div>
-<script src="app.js?v=20261117b"></script>
-<script src="share-cart.js?v=20261117b"></script>
-<script src="attendance-core.js?v=20261117b"></script>
-<script src="attendance.js?v=20261117b"></script>
-<script src="photo-upload.js?v=20261117b"></script>
+<script src="app.js?v=20261121q"></script>
+<script src="share-cart.js?v=20261121q"></script>
+<script src="attendance-core.js?v=20261121q"></script>
+<script src="attendance.js?v=20261121q"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="photo-upload.js?v=20261121q"></script>
+<script src="qr-tool.js?v=20261121q"></script>
 </body>
 </html>

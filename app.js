@@ -7,6 +7,14 @@
 // =====================================================================
 const IS_CUSTOMER_PAGE = document.body.dataset.page === 'customer';
 
+// الرابط المباشر للصنف: ?item=رقم (يأتي من QR على الماكينة). as=customer يمنع التحويل لشاشة الموظف.
+const LINK_PARAMS = new URLSearchParams(location.search);
+const DEEP_LINK_ITEM = (LINK_PARAMS.get('item') || '').trim().slice(0, 40);
+const DEEP_LINK_FORCE_CUSTOMER = LINK_PARAMS.get('as') === 'customer';
+const JADU_SITE_HOST = 'companyjadu-sketch.github.io';
+// نفس رابط Apps Script الموجود في attendance.js (ATT_API_URL) — صفحة الزبون لا تحمّل ملف الحضور
+const DEEPLINK_API_URL = "https://script.google.com/macros/s/AKfycbwu4D9_kR2wWv7EVFQ7UA06IvILceQSRb-7q6wO1H521ErCtoRxfaXKjtD6GWfKm4lTdQ/exec";
+
 /* مقدمة الشعار: تُعرض مرة واحدة فقط لكل جلسة متصفح (لتوفير البيانات على إنترنت ضعيف)،
    وبعدها تظهر الصورة الثابتة مباشرة. إن تعذّر التشغيل أو كان الجهاز بوضع توفير البيانات تظهر الصورة الثابتة فورًا */
 (function(){
@@ -1321,10 +1329,15 @@ document.getElementById('adminPhotosBtn')?.addEventListener('click', () => { sho
 if(!LEGACY_PHOTOS_ENABLED){ const b = document.getElementById('adminPhotosBtn'); if(b) b.style.display = 'none'; }
 
 let currentItem = null;
-function openItemDetail(number){
+// شاشة الصنف الواصلة من رابط QR للزبون: اسم + صورة + سعر قطاعي + متوفر/غير متوفر فقط (opts.qr)
+// ملاحظة: هذا إخفاء في الواجهة فقط — بيانات الشيت العام نفسها لم تتغير.
+let currentDetailQr = false;
+function openItemDetail(number, opts){
   const item = ITEMS.find(it => it.number === number);
   if(!item) return;
   currentItem = item;
+  const qrOnly = !!(opts && opts.qr) && currentViewerRole === 'customer';
+  currentDetailQr = qrOnly;
 
   const branchKeys = Object.keys(item.branches);
   const branchCells = branchKeys.map(k => `
@@ -1340,14 +1353,14 @@ function openItemDetail(number){
       <img class="ic-photo" src="${escapeHtml(photo)}" alt="${escapeHtml(item.name)}" referrerpolicy="no-referrer" onerror="this.closest('.ic-photo-wrap').remove()">
       <span class="ic-zoom-hint" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3M11 8v6M8 11h6"/></svg></span>
     </button>` : ''}
-    <div class="ic-num">${escapeHtml(item.number)}</div>
+    ${qrOnly ? '' : `<div class="ic-num">${escapeHtml(item.number)}</div>`}
     <h3>${escapeHtml(item.name) || '—'}</h3>
     <div class="ic-price">${formatPrice(item.priceRetail)}</div>
     <div class="stat-grid">
       ${isAdminContext ? `<div class="stat wide"><span class="k">سعر الجملة</span><span class="v big">${formatPrice(item.priceWholesale)}</span></div>` : ''}
-      <div class="stat"><span class="k">الشركة المصنعة</span><span class="v">${escapeHtml(item.company) || '—'}</span></div>
+      ${qrOnly ? '' : `<div class="stat"><span class="k">الشركة المصنعة</span><span class="v">${escapeHtml(item.company) || '—'}</span></div>
       <div class="stat"><span class="k">بلد الصنع</span><span class="v">${escapeHtml(item.country) || '—'}</span></div>
-      ${item.color ? `<div class="stat"><span class="k">اللون</span><span class="v">${escapeHtml(item.color)}</span></div>` : ''}
+      ${item.color ? `<div class="stat"><span class="k">اللون</span><span class="v">${escapeHtml(item.color)}</span></div>` : ''}`}
       ${showQty ? `<div class="stat wide"><span class="k">الكمية الإجمالية (كل الفروع)</span><span class="v big">${formatNum(item.totalQty)}</span></div>` : ''}
       ${currentViewerRole === "customer" ? `<div class="stat wide ${item.totalQty > 0 ? 'avail-in' : 'avail-out'}"><span class="k">التوفر</span><span class="v big">${item.totalQty > 0 ? '✓ متوفر' : '✕ غير متوفر'}</span></div>` : ''}
     </div>
@@ -1881,8 +1894,21 @@ function getZxingReader(){
   return zxingReader;
 }
 
+// الباركود قد يكون رقمًا صرفًا (ملصقات قديمة) أو رابط جادو فيه item=الرقم (ملصقات QR الجديدة)
+function extractScanItem_(raw){
+  const t = String(raw == null ? '' : raw).trim();
+  if(/^https?:\/\//i.test(t)){
+    try {
+      const u = new URL(t);
+      const v = u.searchParams.get('item');
+      if(v && v.trim() && (u.host === JADU_SITE_HOST || u.host === location.host)) return v.trim();
+    } catch(e){}
+  }
+  return t;
+}
 function handleScanResult(text){
-  if(scanResultHandled) return; // نتيجة ثانية من المحرك الآخر بعد ما عالجنا نتيجة سابقة — نتجاهلها
+  if(scanResultHandled) return;
+  text = extractScanItem_(text); // نتيجة ثانية من المحرك الآخر بعد ما عالجنا نتيجة سابقة — نتجاهلها
   scanResultHandled = true;
   closeCamera();
   // نجمع كل الأصناف المطابقة (مو أول واحد بس) لاكتشاف حالة تكرار نفس الكود بأكثر من صنف
@@ -2119,7 +2145,7 @@ if ('serviceWorker' in navigator) {
     'admin-overview': '#adminOverviewBtn', 'admin-capital': '#adminCapitalBtn',
     'admin-pricelist': '#adminPriceListBtn', 'admin-pricelog': '#adminPriceLogBtn',
     'admin-photos': '#adminPhotosBtn', 'admin-settings': '[data-go="admin-settings"]',
-    'att-admin': '#adminAttBtn'
+    'att-admin': '#adminAttBtn', 'admin-qr': '#adminQrBtn'
   };
   const ss = {
     get(k){ try { return JSON.parse(sessionStorage.getItem(k)); } catch(e){ return null; } },
@@ -2136,7 +2162,7 @@ if ('serviceWorker' in navigator) {
     const base = {
       view, step: employeeStep, role: currentViewerRole, entry: employeeEntryPoint,
       cat: CATEGORY_GROUPS.findIndex(g => g.values === activeCategoryValues),
-      q: input ? input.value : '', item: currentItem ? currentItem.number : null,
+      q: input ? input.value : '', item: currentItem ? currentItem.number : null, qr: !!currentDetailQr,
       y: Math.round(window.scrollY || 0)
     };
     if (OVERLAYS.includes(view)) {
@@ -2166,6 +2192,7 @@ if ('serviceWorker' in navigator) {
   const click = sel => { const b = document.querySelector(sel); if (b) b.click(); return !!b; };
 
   async function restore(){
+    if (DEEP_LINK_ITEM) return; // الرابط المباشر له الأولوية على الشاشة المحفوظة (يعالجه الكود في آخر الملف)
     const s = ss.get(KEY);
     if (!s || !s.view || s.view === 'gate') return;
     const isAdminView = s.view === 'admin' || !!ADMIN_BTN[s.view] || (s.view === 'employee' && s.entry === 'admin');
@@ -2193,7 +2220,7 @@ if ('serviceWorker' in navigator) {
         if (s.step === 'search' || s.step === 'detail') {
           document.getElementById('employeeSearchInput').value = s.q || '';
           goEmployeeStep('search'); renderResults();
-          if (s.step === 'detail' && s.item && ITEMS.some(it => it.number === s.item)) openItemDetail(s.item);
+          if (s.step === 'detail' && s.item && ITEMS.some(it => it.number === s.item)) openItemDetail(s.item, { qr: !!s.qr });
         }
       } else {
         showView('admin');
@@ -2214,4 +2241,100 @@ if ('serviceWorker' in navigator) {
     snapshot();
   }
   document.addEventListener('DOMContentLoaded', () => setTimeout(restore, 0));
+})();
+
+// =====================================================================
+// الرابط المباشر للصنف (?item=رقم)
+// - هاتف معتمد في ورقة «الأجهزة» (Apps Script)، أو دخول الإدارة بالإيميل: شاشة الموظف على الصنف مباشرة بلا PIN
+// - غير ذلك: شاشة الزبون على الصنف
+// - بعد الفتح يُنظَّف الرابط بـ history.replaceState فلا يعيد التحديث فتحه
+// =====================================================================
+(function deepLink(){
+  if(!DEEP_LINK_ITEM) return;
+  const num = DEEP_LINK_ITEM;
+  let veil = null;
+  function showVeil(){
+    veil = document.createElement('div'); veil.id = 'deepLinkVeil'; veil.setAttribute('role', 'status');
+    veil.innerHTML = '<span class="spinner"></span> جارِ فتح الصنف…';
+    document.body.appendChild(veil);
+  }
+  function hideVeil(){ if(veil){ veil.remove(); veil = null; } }
+  function cleanUrl(){
+    try {
+      const u = new URL(location.href);
+      u.searchParams.delete('item'); u.searchParams.delete('as');
+      history.replaceState(history.state, '', u.pathname + u.search + u.hash);
+    } catch(e){}
+  }
+  // أثر دخول إدارة سابق على هذا المتصفح (للتحويل السريع فقط — صفحة الموظف تتحقق فعليًا بنفسها)
+  function adminHint(){
+    try {
+      for(let i = 0; i < localStorage.length; i++){
+        const k = localStorage.key(i);
+        if(k && k.indexOf('firebase:authUser:') === 0){
+          const v = JSON.parse(localStorage.getItem(k) || 'null');
+          if(v && isAdminEmail(v.email)) return true;
+        }
+      }
+    } catch(e){}
+    return false;
+  }
+  async function deviceApproved(){
+    let id = '';
+    try { id = localStorage.getItem('jadu_att_device') || ''; } catch(e){}
+    if(id.length < 8) return false;
+    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 6000);
+    try {
+      const res = await fetch(DEEPLINK_API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'device_check', deviceId: id }), signal: ctl.signal });
+      const b = await res.json();
+      return !!(b && b.ok && b.data && b.data.ok);
+    } catch(e){ return false; } finally { clearTimeout(t); }
+  }
+  function adminAuthed(){
+    return new Promise(resolve => {
+      if(typeof auth === 'undefined' || !auth) return resolve(false);
+      let done = false;
+      const fin = ok => { if(!done){ done = true; resolve(ok); } };
+      const off = auth.onAuthStateChanged(u => { fin(!!(u && isAdminEmail(u.email))); try { off(); } catch(e){} });
+      setTimeout(() => fin(!!(auth.currentUser && isAdminEmail(auth.currentUser.email))), 5000);
+    });
+  }
+  async function openAs(role){
+    currentViewerRole = role; employeeEntryPoint = 'gate'; activeCategoryValues = null;
+    showView('employee'); loadItems();
+    const t0 = Date.now(); let found = null;
+    // ننتظر تحميل البيانات: الصنف قد يكون جديدًا وغير موجود بالنسخة المحفوظة، فلا نحكم بعدم وجوده قبل انتهاء الجلب
+    while(Date.now() - t0 < 20000){
+      found = ITEMS.find(it => String(it.number) === num) || null;
+      if(found || !itemsFetching) break;
+      await new Promise(r => setTimeout(r, 120));
+    }
+    if(!found) found = ITEMS.find(it => String(it.number) === num) || null;
+    const input = document.getElementById('employeeSearchInput'); if(input) input.value = '';
+    goEmployeeStep('search'); renderResults();
+    hideVeil();
+    if(found) openItemDetail(found.number, { qr: true });
+    else if(!ITEMS.length) showAlert('تعذّر تحميل بيانات الأصناف الآن. تأكد من الإنترنت وحاول مرة أخرى.', { title: 'تعذّر فتح الصنف' });
+    else showAlert('الصنف رقم ' + num + ' غير موجود. يمكنك البحث عنه من هنا.', { title: 'الصنف غير موجود' });
+    cleanUrl();
+  }
+  async function run(){
+    showVeil();
+    try {
+      if(IS_CUSTOMER_PAGE){
+        if(!DEEP_LINK_FORCE_CUSTOMER && (adminHint() || await deviceApproved())){
+          location.replace('staff.html?item=' + encodeURIComponent(num)); return;
+        }
+        await openAs('customer');
+      } else {
+        // صفحة الموظف: لا نتجاوز الـPIN إلا بعد تحقق فعلي (جهاز معتمد أو دخول إدارة)
+        const ok = (await deviceApproved()) || (await adminAuthed());
+        if(!ok){ location.replace('index.html?item=' + encodeURIComponent(num) + '&as=customer'); return; }
+        try { sessionStorage.setItem('jadu_emp_ok', '1'); } catch(e){}
+        await openAs('employee');
+      }
+    } catch(e){ console.warn('تعذّر فتح الرابط المباشر', e); hideVeil(); cleanUrl(); }
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run); else run();
 })();
