@@ -1332,7 +1332,6 @@ let currentItem = null;
 // شاشة الصنف الواصلة من رابط QR للزبون: اسم + صورة + سعر قطاعي + متوفر/غير متوفر فقط (opts.qr)
 // ملاحظة: هذا إخفاء في الواجهة فقط — بيانات الشيت العام نفسها لم تتغير.
 let currentDetailQr = false;
-let deepOpenedItem = null; // رقم الصنف الذي فُتح من الرابط المباشر ولم يغادره المستخدم بعد
 function openItemDetail(number, opts){
   const item = ITEMS.find(it => it.number === number);
   if(!item) return;
@@ -2159,12 +2158,6 @@ if ('serviceWorker' in navigator) {
     if (restoring) return;
     const view = activeView();
     if (view === 'gate') { ss.set(KEY, null); ss.set(EMP_OK, null); lastBase = null; return; }
-    // صنف فُتح من رابط QR: لا نحفظ هذه الشاشة، فالتحديث لا يعيد فتحه تلقائيًا (يرجع للرئيسية).
-    // إن تركه المستخدم (رجوع للبحث أو فتح صنف آخر) تعود الشاشة للحفظ العادي.
-    if (deepOpenedItem) {
-      if (view === 'employee' && employeeStep === 'detail' && currentItem && currentItem.number === deepOpenedItem) { ss.set(KEY, null); lastBase = null; return; }
-      deepOpenedItem = null;
-    }
     const input = document.getElementById('employeeSearchInput');
     const base = {
       view, step: employeeStep, role: currentViewerRole, entry: employeeEntryPoint,
@@ -2321,7 +2314,7 @@ if ('serviceWorker' in navigator) {
     const input = document.getElementById('employeeSearchInput'); if(input) input.value = '';
     goEmployeeStep('search'); renderResults();
     hideVeil();
-    if(found){ openItemDetail(found.number, { qr: true }); deepOpenedItem = found.number; }
+    if(found) openItemDetail(found.number, { qr: true });
     else if(!ITEMS.length) showAlert('تعذّر تحميل بيانات الأصناف الآن. تأكد من الإنترنت وحاول مرة أخرى.', { title: 'تعذّر فتح الصنف' });
     else showAlert('الصنف رقم ' + num + ' غير موجود. يمكنك البحث عنه من هنا.', { title: 'الصنف غير موجود' });
     cleanUrl();
