@@ -1,0 +1,23 @@
+/* مولّد QR (للأدمن) + ملصقات الطباعة */
+#qrInput{ width:100%; min-height:74px; padding:12px; border-radius:12px; border:1px solid var(--steel-200, #444); background:transparent; color:inherit; font:inherit; direction:ltr; text-align:left; }
+.qr-hint{ font-size:12.5px; opacity:.75; margin:6px 2px 12px; line-height:1.6; }
+.qr-actions{ display:flex; gap:8px; flex-wrap:wrap; margin:12px 0; }
+.qr-actions button{ flex:1 1 140px; }
+.qr-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:10px; margin-top:6px; }
+.qr-card{ border:1px solid rgba(255,255,255,.12); border-radius:14px; padding:10px; text-align:center; }
+.qr-card .qr-img{ width:100%; height:auto; border-radius:8px; background:#fff; }
+.qr-card .qr-name{ font-size:12.5px; margin-top:6px; min-height:2.6em; line-height:1.3; overflow:hidden; }
+.qr-card .qr-num{ font-family:'IBM Plex Mono',monospace; font-weight:700; margin:2px 0 6px; }
+.qr-card .qr-dl{ width:100%; padding:7px; border-radius:10px; border:1px solid rgba(255,255,255,.2); background:transparent; color:inherit; font:inherit; cursor:pointer; }
+
+#qrPrintArea{ display:none; }
+@media print{
+  body.printing-qr > *:not(#qrPrintArea){ display:none !important; }
+  body.printing-qr{ background:#fff !important; }
+  body.printing-qr #qrPrintArea{ display:grid; grid-template-columns:repeat(3, 1fr); gap:6mm; padding:8mm; direction:rtl; }
+  .qr-label{ border:1px dashed #999; border-radius:3mm; padding:4mm; text-align:center; break-inside:avoid; color:#000; background:#fff; }
+  .qr-label img{ width:38mm; height:38mm; display:block; margin:0 auto 2mm; }
+  .qr-label .ql-name{ font-size:10pt; line-height:1.35; max-height:2.7em; overflow:hidden; font-family:'Tajawal',sans-serif; }
+  .qr-label .ql-num{ font-size:13pt; font-weight:700; font-family:'IBM Plex Mono',monospace; margin-top:1mm; }
+  @page{ size:A4; margin:6mm; }
+}

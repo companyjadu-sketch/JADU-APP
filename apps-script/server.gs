@@ -12,6 +12,10 @@ var TZ = "Africa/Tripoli";
 var FIREBASE_API_KEY = "AIzaSyBQ1xn1HKghA63Q4Qb0Yo40weBBi84l8Gk";
 var ADMIN_EMAILS = ["abdofakroun20@gmail.com", "no3y.fakroun20@gmail.com", "islam.aljhani@gmail.com"];
 var SH_EMP = "الموظفون", SH_RULES = "القواعد", SH_LOG = "سجل التعديلات", SH_DEV = "الأجهزة";
+// الأدوار: أدمن (يُحسب حضوره) / إدارة (لا يدخل في الحضور والغياب والخصومات ولا في أي تقرير) / موظف (يُحسب)
+var ROLE_ADMIN = "أدمن", ROLE_MGMT = "إدارة", ROLE_STAFF = "موظف";
+var ROLE_EDITORS = ["islam.aljhani@gmail.com"]; // وحده من يعدّل الأدوار (والتحقق هنا في الخادم وليس في الواجهة)
+function normRole_(v){ v = String(v || "").trim(); return (v === ROLE_ADMIN || v === ROLE_MGMT) ? v : ROLE_STAFF; }
 var DEV_OK = "معتمد", DEV_PENDING = "بانتظار الموافقة", DEV_REJECTED = "مرفوض", DEV_OLD = "ملغى";
 
 // أعمدة ورقة الشهر — الترتيب ثابت
@@ -46,10 +50,20 @@ function doGet(){ return json_({ ok: true, data: "خادم الحضور يعمل
 function json_(o){ return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
 
 var API = {
+  // فحص خفيف للقراءة فقط: هل هذا الهاتف معتمد في ورقة «الأجهزة»؟ (يفتح به الرابط المباشر شاشة الموظف)
+  // لا يرجع اسمًا ولا بيانات — فقط نعم/لا والدور. يشمل «الإدارة» لأنهم يستعملون الموقع وإن لم يخضعوا للحضور.
+  device_check: function(req){
+    var id = String(req.deviceId || "");
+    if (id.length < 8) return { ok: false };
+    var dev = getDevices_().filter(function(d){ return d.deviceId === id && d.status === DEV_OK; })[0];
+    var emp = dev ? getEmployees_().filter(function(x){ return String(x.id) === String(dev.empId) && x.active; })[0] : null;
+    return emp ? { ok: true, role: emp.role } : { ok: false };
+  },
+
   config: function(){
     var rules = getRules_();
     var taken = getDevices_().filter(function(d){ return d.status === DEV_OK; }).map(function(d){ return String(d.empId); });
-    return { employees: getEmployees_().filter(function(x){ return x.active; }).map(function(x){
+    return { employees: getEmployees_().filter(function(x){ return x.active && x.counted; }).map(function(x){
                return { id: x.id, name: x.name, taken: taken.indexOf(String(x.id)) !== -1 }; }),
              rules: publicRules_(rules), now: nowParts_() };
   },
@@ -61,6 +75,7 @@ var API = {
     if (deviceId.length < 8) throw new Error("معرّف الجهاز غير صالح");
     var emp = getEmployees_().filter(function(x){ return String(x.id) === String(req.empId) && x.active; })[0];
     if (!emp) throw new Error("الموظف غير موجود أو موقوف");
+    if (!emp.counted) throw new Error("هذا الحساب لا يخضع للحضور");
     var devs = getDevices_();
     var mine = devs.filter(function(d){ return d.deviceId === deviceId && d.status === DEV_OK; })[0];
     if (mine && String(mine.empId) === String(emp.id)) return { status: "approved", status_data: API.emp_status({ deviceId: deviceId }) };
@@ -228,15 +243,20 @@ var API = {
 
   // ---------------- الإدارة ----------------
   admin_month: function(req){
-    authAdmin_(req);
+    var who = authAdmin_(req);
     var mk = req.month || nowParts_().date.slice(0, 7);
     if (isDirty_(mk)) recalcMonth_(mk);
     var rules = getRules_();
     var res = attComputeMonth(readMonth_(mk), rules);
     var devs = getDevices_();
-    return { month: mk, records: res.records, summary: res.summary, rules: rules,
+    // «الإدارة» خارج كل تقارير الحضور والغياب والخصومات حتى لو وُجدت لهم سجلات قديمة
+    var mgmt = {};
+    getEmployees_().forEach(function(x){ if (!x.counted) mgmt[x.name] = true; });
+    var recs = res.records.filter(function(r){ return !mgmt[r.emp]; });
+    var summ = {}; Object.keys(res.summary || {}).forEach(function(k){ if (!mgmt[k]) summ[k] = res.summary[k]; });
+    return { month: mk, records: recs, summary: summ, rules: rules, canEditRoles: ROLE_EDITORS.indexOf(who) !== -1,
              employees: getEmployees_().map(function(x){
-               return { id: x.id, name: x.name, hours: x.hours, active: x.active,
+               return { id: x.id, name: x.name, hours: x.hours, active: x.active, role: x.role, counted: x.counted,
                         device: devs.some(function(d){ return String(d.empId) === String(x.id) && d.status === DEV_OK; }) }; }),
              dayFlags: res.dayFlags,
              months: listMonths_(), now: nowParts_(),
@@ -370,6 +390,7 @@ var API = {
     var who = authAdmin_(req), rules = getRules_(), now = nowParts_();
     var emp = getEmployees_().filter(function(x){ return String(x.id) === String(req.empId); })[0];
     if (!emp) throw new Error("اختر الموظف");
+    if (!emp.counted) throw new Error("هذا الحساب لا يخضع للحضور");
     var reason = String(req.reason || "").trim().slice(0, 200);
     if (!reason) throw new Error("اكتب الوجهة أو سبب السفر");
     var days = rangeDays_(req.from, req.to, rules, now, -60, 120);
@@ -388,7 +409,7 @@ var API = {
     var reason = String(req.reason || "").trim().slice(0, 200);
     if (!reason) throw new Error("اكتب سبب الإغلاق");
     var days = rangeDays_(req.from, req.to, rules, now, -60, 120);
-    var emps = getEmployees_().filter(function(e){ return e.active; });
+    var emps = getEmployees_().filter(function(e){ return e.active && e.counted; });
     var res = writeRange_(days, emps, function(rec){
       if (rec.inTime) return false;
       rec.inStatus = ATT_STATUS.CLOSED; rec.pending = ""; rec.note = "إغلاق الشركة — " + reason;
@@ -448,18 +469,30 @@ var API = {
   admin_employees_save: function(req){
     var who = authAdmin_(req);
     var list = req.employees || [], sh = sheet_(SH_EMP), cur = getEmployees_();
+    var canRoles = ROLE_EDITORS.indexOf(who) !== -1;
+    // تحقق مسبق من كل التغييرات في الدور قبل أي كتابة، حتى لا يُحفظ نصف الطلب
+    list.forEach(function(e){
+      if (e.role === undefined || e.role === null || e.role === "") return;
+      var r = String(e.role).trim();
+      if (r !== ROLE_ADMIN && r !== ROLE_MGMT && r !== ROLE_STAFF) throw new Error("دور غير صالح");
+      var old = cur.filter(function(c){ return String(c.id) === String(e.id); })[0];
+      var oldRole = old ? old.role : ROLE_STAFF;
+      if (r !== oldRole && !canRoles) throw new Error("تعديل الدور للأدمن فقط");
+    });
     list.forEach(function(e){
       var name = String(e.name || "").trim(); if (!name) return;
       var ex = cur.filter(function(c){ return String(c.id) === String(e.id); })[0];
+      var newRole = (e.role === undefined || e.role === null || e.role === "") ? null : String(e.role).trim();
       if (ex) {
         var row = ex.row;
+        if (newRole && newRole !== ex.role) { sh.getRange(row, 5).setValue(newRole); log_(who, "تعديل الدور", name + ": " + ex.role, newRole, ""); }
         if (ex.name !== name) { log_(who, "تعديل موظف", ex.name, name, ""); sh.getRange(row, 2).setValue(name); }
         var nh = Number(e.hours) > 0 ? Number(e.hours) : "";
         if (String(nh) !== String(ex.hours)) { sh.getRange(row, 3).setValue(nh); log_(who, "تعديل ساعات العمل", name + ": " + (ex.hours || "الافتراضي"), nh || "الافتراضي", ""); }
         if (!!e.active !== ex.active) { sh.getRange(row, 4).setValue(e.active ? "نشط" : "موقوف"); log_(who, e.active ? "تفعيل موظف" : "إيقاف موظف", name, "", ""); }
       } else {
         var id = cur.reduce(function(m, c){ return Math.max(m, Number(c.id) || 0); }, 0) + 1;
-        sh.appendRow([id, name, Number(e.hours) > 0 ? Number(e.hours) : "", "نشط"]);
+        sh.appendRow([id, name, Number(e.hours) > 0 ? Number(e.hours) : "", "نشط", newRole || ROLE_STAFF]);
         log_(who, "إضافة موظف", "", name, "");
       }
     });
@@ -476,6 +509,7 @@ function authEmployee_(req){
   if (!dev) throw new Error("هذا الهاتف غير مسجّل — اختر اسمك");
   var emp = getEmployees_().filter(function(x){ return String(x.id) === String(dev.empId) && x.active; })[0];
   if (!emp) throw new Error("الموظف موقوف — تواصل مع الإدارة");
+  if (!emp.counted) throw new Error("هذا الحساب لا يخضع للحضور");
   return emp;
 }
 
@@ -520,7 +554,8 @@ function readEmployees_(){
   var vals = sheet_(SH_EMP).getDataRange().getValues();
   var out = [];
   for (var i = 1; i < vals.length; i++) if (vals[i][1])
-    out.push({ row: i + 1, id: vals[i][0], name: String(vals[i][1]).trim(), hours: Number(vals[i][2]) || "", active: vals[i][3] !== "موقوف" });
+    out.push({ row: i + 1, id: vals[i][0], name: String(vals[i][1]).trim(), hours: Number(vals[i][2]) || "", active: vals[i][3] !== "موقوف",
+               role: normRole_(vals[i][4]), counted: normRole_(vals[i][4]) !== ROLE_MGMT });
   return out;
 }
 function getRules_(){
@@ -723,7 +758,7 @@ function markAbsences(){
   if (!attIsWorkday(now.date, rules)) return;
   var mk = now.date.slice(0, 7);
   var rows = readMonth_(mk).filter(function(r){ return r.date === now.date; });
-  getEmployees_().filter(function(e){ return e.active; }).forEach(function(e){
+  getEmployees_().filter(function(e){ return e.active && e.counted; }).forEach(function(e){
     if (rows.some(function(r){ return r.emp === e.name; })) return;
     writeRecord_({ id: Utilities.getUuid().slice(0, 8), date: now.date, day: attDayName(now.date), emp: e.name,
                    inStatus: ATT_STATUS.ABSENT, note: "سُجّل تلقائيًا" });
@@ -738,8 +773,8 @@ function setup(){
   var ss = ss_();
   if (!ss.getSheetByName(SH_EMP)) {
     var e = ss.insertSheet(SH_EMP); e.setRightToLeft(true);
-    e.getRange(1, 1, 1, 4).setValues([["رقم","اسم الموظف","ساعات العمل اليومية (فارغ = 8)","الحالة"]]).setFontWeight("bold");
-    e.getRange(2, 1, 3, 4).setValues([[1,"إسلام الجهاني","","نشط"],[2,"حكيم سحيم","","نشط"],[3,"أنس الترهوني","","نشط"]]);
+    e.getRange(1, 1, 1, 5).setValues([["رقم","اسم الموظف","ساعات العمل اليومية (فارغ = 8)","الحالة","الدور"]]).setFontWeight("bold");
+    e.getRange(2, 1, 3, 5).setValues([[1,"إسلام الجهاني","","نشط",ROLE_ADMIN],[2,"حكيم سحيم","","نشط",ROLE_STAFF],[3,"أنس الترهوني","","نشط",ROLE_STAFF]]);
   }
   else ss.getSheetByName(SH_EMP).getRange(1, 3).setValue("ساعات العمل اليومية (فارغ = 8)");
   if (!ss.getSheetByName(SH_RULES)) {
@@ -825,4 +860,18 @@ function describe_(r){
 function decisionLabel_(d){
   return { approve: "موافقة", reject: "رفض", excuse: "موافقة كعذر طارئ", absent_excused: "غياب بعذر",
            absent: "غياب بدون عذر", stay_points: "منح نقاط بقاء", stay_no: "رفض نقاط بقاء" }[d] || d;
+}
+
+// تشغيل يدوي مرة واحدة بعد نشر هذا الإصدار: يضيف عمود «الدور» ويضبط الأدوار الحالية
+// (إسلام = أدمن، حكيم وأنس = موظف). أي شخص آخر بلا قيمة يُعتبر موظفًا. «الإدارة» تُضبط من صفحة الموظفين.
+function migrateRoles(){
+  var sh = sheet_(SH_EMP);
+  if (!String(sh.getRange(1, 5).getValue() || "").trim()) sh.getRange(1, 5).setValue("الدور").setFontWeight("bold");
+  var vals = sh.getDataRange().getValues();
+  for (var i = 1; i < vals.length; i++) {
+    if (!vals[i][1] || String(vals[i][4] || "").trim()) continue;
+    var n = String(vals[i][1]).trim();
+    sh.getRange(i + 1, 5).setValue(/^إسلام/.test(n) ? ROLE_ADMIN : ROLE_STAFF);
+  }
+  bust_();
 }
