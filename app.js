@@ -1603,15 +1603,19 @@ document.getElementById('shareWhatsappBtn')?.addEventListener('click', async ()=
   window.open(`https://wa.me/?text=${text}`, '_blank');
 });
 
-if(navigator.share){
+// زر «مشاركة» الأصلي للهاتف: يظهر فقط إن وُجد العنصر في الصفحة (موجود في staff.html، وليس في index.html)
+// الحراسة مهمة: أي null هنا يوقف app.js كله على الهواتف التي تدعم navigator.share (Android Chrome)
+try {
   const moreBtn = document.getElementById('shareMoreBtn');
-  moreBtn.style.display = "flex";
-  moreBtn.addEventListener('click', async ()=>{
-    if(!currentItem) return;
-    if(!(await confirmShareIfOutOfStock(currentItem))) return;
-    navigator.share({ text: buildShareText(currentItem) }).catch(()=>{});
-  });
-}
+  if(navigator.share && moreBtn){
+    moreBtn.style.display = "flex";
+    moreBtn.addEventListener('click', async ()=>{
+      if(!currentItem) return;
+      if(!(await confirmShareIfOutOfStock(currentItem))) return;
+      navigator.share({ text: buildShareText(currentItem) }).catch(()=>{});
+    });
+  }
+} catch(e){ console.warn('تعذّر تفعيل زر المشاركة', e); }
 
 // =====================================================================
 // قائمة تغيير الأسعار (الإدارة العامة) — تُخزّن محليًا بالمتصفح (localStorage)
@@ -1804,14 +1808,17 @@ document.getElementById('shareCartWhatsappBtn')?.addEventListener('click', async
   afterPriceCartShared();
 });
 
-if(navigator.share){
+// زر مشاركة قائمة الأسعار: موجود في staff.html فقط. على index.html لا يوجد، فنتخطاه بلا خطأ
+try {
   const cartMoreBtn = document.getElementById('shareCartMoreBtn');
-  cartMoreBtn.style.display = "flex";
-  cartMoreBtn.addEventListener('click', async ()=>{
-    if(!priceCart.items.length){ await showAlert("القائمة فارغة — أضف تغييرات أولًا"); return; }
-    navigator.share({ text: buildPriceCartShareText() }).then(afterPriceCartShared).catch(()=>{});
-  });
-}
+  if(navigator.share && cartMoreBtn){
+    cartMoreBtn.style.display = "flex";
+    cartMoreBtn.addEventListener('click', async ()=>{
+      if(!priceCart.items.length){ await showAlert("القائمة فارغة — أضف تغييرات أولًا"); return; }
+      navigator.share({ text: buildPriceCartShareText() }).then(afterPriceCartShared).catch(()=>{});
+    });
+  }
+} catch(e){ console.warn('تعذّر تفعيل زر مشاركة القائمة', e); }
 
 // فتح/إغلاق نموذج تغيير السعر بشاشة تفاصيل الصنف
 document.getElementById('openPriceChangeBtn')?.addEventListener('click', ()=>{
