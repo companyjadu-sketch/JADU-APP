@@ -14,6 +14,8 @@ const DEEP_LINK_FORCE_CUSTOMER = LINK_PARAMS.get('as') === 'customer';
 const JADU_SITE_HOST = 'companyjadu-sketch.github.io';
 // نفس رابط Apps Script الموجود في attendance.js (ATT_API_URL) — صفحة الزبون لا تحمّل ملف الحضور
 const DEEPLINK_API_URL = "https://script.google.com/macros/s/AKfycbwu4D9_kR2wWv7EVFQ7UA06IvILceQSRb-7q6wO1H521ErCtoRxfaXKjtD6GWfKm4lTdQ/exec";
+// إيميل الإدارة المسجَّل على هذا المتصفح، يكتبه staff.html عند دخول الإدارة ويمسحه عند الخروج (يقرأه index.html للتحويل)
+const ADMIN_HINT_KEY = 'jadu_admin_hint';
 
 /* مقدمة الشعار: تُعرض مرة واحدة فقط لكل جلسة متصفح (لتوفير البيانات على إنترنت ضعيف)،
    وبعدها تظهر الصورة الثابتة مباشرة. إن تعذّر التشغيل أو كان الجهاز بوضع توفير البيانات تظهر الصورة الثابتة فورًا */
@@ -156,6 +158,10 @@ function initFirebase(){
       if (user && !isAdminEmail(user.email)) { auth.signOut(); return; }
       const el = document.getElementById('adminUserEmail');
       if (el) el.textContent = user ? user.email : "";
+      try {
+        if (user) localStorage.setItem(ADMIN_HINT_KEY, String(user.email || '').trim().toLowerCase());
+        else localStorage.removeItem(ADMIN_HINT_KEY);
+      } catch(e){}
       // لو خرج المستخدم وهو داخل شاشات الإدارة، نرجعه للواجهة الرئيسية
       if (!user) {
         const active = document.querySelector('.view.active');
@@ -2249,10 +2255,56 @@ if ('serviceWorker' in navigator) {
 // - غير ذلك: شاشة الزبون على الصنف
 // - بعد الفتح يُنظَّف الرابط بـ history.replaceState فلا يعيد التحديث فتحه
 // =====================================================================
+// تشخيص الرابط المباشر: كل خطوة تُسجَّل في sessionStorage (تبقى عبر التحويلات بين index و staff)
+// ?debug=1 يعرض لوحة بالخطوات على الشاشة، ويمرّر debug=1 مع كل تحويل. بدونه يبقى التسجيل صامتًا.
+const DL_DEBUG = LINK_PARAMS.get('debug') === '1';
+const DL_TRACE_KEY = 'jadu_dl_trace';
+function dlTrace(){
+  try { return JSON.parse(sessionStorage.getItem(DL_TRACE_KEY) || '[]'); } catch(e){ return []; }
+}
+function dlLog(step, data){
+  try {
+    const arr = dlTrace();
+    arr.push({ t: new Date().toISOString().slice(11, 19), page: IS_CUSTOMER_PAGE ? 'index' : 'staff', step, data: data == null ? '' : String(data).slice(0, 300) });
+    sessionStorage.setItem(DL_TRACE_KEY, JSON.stringify(arr.slice(-80)));
+  } catch(e){}
+  if(DL_DEBUG) dlRenderPanel();
+}
+function dlRenderPanel(){
+  let p = document.getElementById('dlDebugPanel');
+  if(!p){
+    p = document.createElement('div'); p.id = 'dlDebugPanel';
+    p.setAttribute('dir', 'ltr');
+    p.style.cssText = 'position:fixed;left:0;right:0;bottom:0;max-height:45vh;overflow:auto;background:#111;color:#9f9;font:11px/1.4 monospace;padding:6px 8px;z-index:99999;white-space:pre-wrap;word-break:break-all;opacity:.95';
+    document.body.appendChild(p);
+  }
+  p.textContent = 'DEEPLINK TRACE (debug=1)\n' + dlTrace().map(e => e.t + ' [' + e.page + '] ' + e.step + (e.data ? ' :: ' + e.data : '')).join('\n');
+}
+// الرابط الجديد (بدون from) يبدأ سجلًا نظيفًا
+if(DEEP_LINK_ITEM && !LINK_PARAMS.get('from')){ try { sessionStorage.removeItem(DL_TRACE_KEY); } catch(e){} }
+// وسم التحويلات: يحمل item و debug معه، ويعرف الصفحة التي حوّلت منها
+function dlHref(page, extra){
+  let h = page + '?item=' + encodeURIComponent(DEEP_LINK_ITEM) + '&from=' + (IS_CUSTOMER_PAGE ? 'index' : 'staff');
+  if(DL_DEBUG) h += '&debug=1';
+  return h + (extra || '');
+}
+
 (function deepLink(){
   if(!DEEP_LINK_ITEM) return;
   const num = DEEP_LINK_ITEM;
   let veil = null;
+  // مراقبة: أي عودة للشاشة الرئيسية أثناء فتح الصنف تُسجَّل مع مصدرها (سبب «يختفي الصنف ويظهر الرئيسية»)
+  let dlWatch = false;
+  const _showView = showView;
+  showView = function(id){
+    if(dlWatch && id === 'gate') dlLog('showView(gate)', (new Error().stack || '').split('\n').slice(2, 5).map(s => s.trim()).join(' | '));
+    return _showView(id);
+  };
+  const _applyNavState = applyNavState;
+  applyNavState = function(state){
+    if(dlWatch && (!state || state.view === 'gate')) dlLog('popstate->gate', JSON.stringify(state || null));
+    return _applyNavState(state);
+  };
   function showVeil(){
     veil = document.createElement('div'); veil.id = 'deepLinkVeil'; veil.setAttribute('role', 'status');
     veil.innerHTML = '<span class="spinner"></span> جارِ فتح الصنف…';
@@ -2262,12 +2314,18 @@ if ('serviceWorker' in navigator) {
   function cleanUrl(){
     try {
       const u = new URL(location.href);
-      u.searchParams.delete('item'); u.searchParams.delete('as');
+      u.searchParams.delete('item'); u.searchParams.delete('as'); u.searchParams.delete('from');
+      if(!DL_DEBUG) u.searchParams.delete('debug'); // debug يبقى ظاهرًا مع التشخيص فقط
       history.replaceState(history.state, '', u.pathname + u.search + u.hash);
     } catch(e){}
   }
   // أثر دخول إدارة سابق على هذا المتصفح (للتحويل السريع فقط — صفحة الموظف تتحقق فعليًا بنفسها)
   function adminHint(){
+    // المفتاح الذي نكتبه بأنفسنا عند دخول الإدارة (مضمون، لا يعتمد على صيغة مفاتيح Firebase الداخلية)
+    try {
+      const hint = localStorage.getItem(ADMIN_HINT_KEY);
+      if(hint && isAdminEmail(hint)){ dlLog('adminHint', 'jadu_admin_hint=' + hint); return true; }
+    } catch(e){}
     try {
       for(let i = 0; i < localStorage.length; i++){
         const k = localStorage.key(i);
@@ -2293,7 +2351,8 @@ if ('serviceWorker' in navigator) {
   }
   function adminAuthed(){
     return new Promise(resolve => {
-      if(typeof auth === 'undefined' || !auth) return resolve(false);
+      if(typeof auth === 'undefined' || !auth){ dlLog('adminAuthed: no auth SDK on this page'); return resolve(false); }
+      if(auth.currentUser) return resolve(isAdminEmail(auth.currentUser.email)); // جاهز فورًا، لا ننتظر الـcallback
       let done = false;
       const fin = ok => { if(!done){ done = true; resolve(ok); } };
       const off = auth.onAuthStateChanged(u => { fin(!!(u && isAdminEmail(u.email))); try { off(); } catch(e){} });
@@ -2311,30 +2370,49 @@ if ('serviceWorker' in navigator) {
       await new Promise(r => setTimeout(r, 120));
     }
     if(!found) found = ITEMS.find(it => String(it.number) === num) || null;
+    dlLog('openAs(' + role + '): items=' + ITEMS.length + ' found=' + !!found + ' waited=' + (Date.now() - t0) + 'ms');
     const input = document.getElementById('employeeSearchInput'); if(input) input.value = '';
     goEmployeeStep('search'); renderResults();
     hideVeil();
     if(found) openItemDetail(found.number, { qr: true });
     else if(!ITEMS.length) showAlert('تعذّر تحميل بيانات الأصناف الآن. تأكد من الإنترنت وحاول مرة أخرى.', { title: 'تعذّر فتح الصنف' });
     else showAlert('الصنف رقم ' + num + ' غير موجود. يمكنك البحث عنه من هنا.', { title: 'الصنف غير موجود' });
+    dlLog('openAs done: detailShown=' + !!(found && currentItem && currentItem.number === found.number) + ' view=' + ((document.querySelector('.view.active') || {}).id || 'none'));
     cleanUrl();
   }
   async function run(){
+    dlWatch = true;
+    dlLog('start', 'page=' + (IS_CUSTOMER_PAGE ? 'index' : 'staff') + ' item=' + num + ' from=' + (LINK_PARAMS.get('from') || '-') + ' as=' + (LINK_PARAMS.get('as') || '-'));
     showVeil();
     try {
       if(IS_CUSTOMER_PAGE){
-        if(!DEEP_LINK_FORCE_CUSTOMER && (adminHint() || await deviceApproved())){
-          location.replace('staff.html?item=' + encodeURIComponent(num)); return;
+        if(DEEP_LINK_FORCE_CUSTOMER){ dlLog('index: forced customer (as=customer)'); }
+        else {
+          const hint = adminHint();
+          const dev = hint ? false : await deviceApproved();
+          dlLog('index: admin=' + hint + ' device=' + dev);
+          if(hint || dev){
+            dlLog('index->staff');
+            location.replace(dlHref('staff.html')); return;
+          }
         }
         await openAs('customer');
       } else {
         // صفحة الموظف: لا نتجاوز الـPIN إلا بعد تحقق فعلي (جهاز معتمد أو دخول إدارة)
-        const ok = (await deviceApproved()) || (await adminAuthed());
-        if(!ok){ location.replace('index.html?item=' + encodeURIComponent(num) + '&as=customer'); return; }
+        const dev = await deviceApproved();
+        const adm = dev ? false : await adminAuthed();
+        dlLog('staff: device=' + dev + ' admin=' + adm + ' authUser=' + ((auth && auth.currentUser && auth.currentUser.email) || 'none'));
+        const ok = dev || adm;
+        if(!ok){
+          dlLog('staff->index (as=customer)');
+          location.replace(dlHref('index.html', '&as=customer')); return;
+        }
         try { sessionStorage.setItem('jadu_emp_ok', '1'); } catch(e){}
         await openAs('employee');
       }
-    } catch(e){ console.warn('تعذّر فتح الرابط المباشر', e); hideVeil(); cleanUrl(); }
+    } catch(e){ dlLog('ERROR', (e && (e.message || e)) || 'unknown'); console.warn('تعذّر فتح الرابط المباشر', e); hideVeil(); cleanUrl(); }
+    // بعد انتهاء الفتح: مراقبة قصيرة أخيرة لأي عودة للرئيسية ثم إيقافها
+    setTimeout(() => { dlWatch = false; dlLog('done'); }, 4000);
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run); else run();
 })();
