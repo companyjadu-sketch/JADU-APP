@@ -4,6 +4,59 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>شركة جادو — قائمة الأسعار</title>
+<!-- تشخيص ?debug=1: سكربت مضمّن قبل app.js، يعمل حتى لو تعطّل app.js، ويعرض شريطًا ثابتًا فوق الصفحة -->
+<script>
+(function(){
+  var DBG_VER = 'v15 / 20261122b';
+  var sp = null, on = false;
+  try { sp = new URLSearchParams(location.search); on = sp.get('debug') === '1'; } catch(e){}
+  if (!on) return;
+  var errs = [];
+  function s(v){ return v == null ? '' : String(v); }
+  function push(msg){ errs.push(msg); if (errs.length > 12) errs.shift(); }
+  // أخطاء JavaScript (بما فيها SyntaxError في app.js) مع الملف ورقم السطر
+  window.addEventListener('error', function(e){
+    if (e.target && e.target !== window && (e.target.src || e.target.href)) {
+      push('resource: ' + s(e.target.src || e.target.href)); return;
+    }
+    push('error: ' + s(e.message) + ' @' + s(e.filename).split('/').pop() + ':' + s(e.lineno) + ':' + s(e.colno));
+  }, true);
+  window.addEventListener('unhandledrejection', function(e){
+    var r = e.reason;
+    push('rejection: ' + s(r && (r.message || r)));
+  });
+  function line(t){ return t; }
+  function render(){
+    if (!document.body) return;
+    var p = document.getElementById('dlProbe');
+    if (!p) {
+      p = document.createElement('div');
+      p.id = 'dlProbe';
+      p.setAttribute('dir', 'ltr');
+      p.style.cssText = 'position:fixed;top:0;left:0;right:0;max-height:42vh;overflow:auto;background:#000;color:#7f7;font:11px/1.45 monospace;padding:4px 6px;z-index:2147483647;white-space:pre-wrap;word-break:break-all;opacity:.93';
+      document.body.appendChild(p);
+    }
+    var hasItem = sp && sp.has('item');
+    var appLoaded = false, appItem = '-';
+    try { appLoaded = typeof DEEP_LINK_ITEM !== 'undefined'; appItem = appLoaded ? DEEP_LINK_ITEM : '-'; } catch(e){ appLoaded = false; }
+    var trace = '';
+    try { trace = (sessionStorage.getItem('jadu_dl_trace') || '').length + ' chars'; } catch(e){ trace = 'n/a'; }
+    var sw = (navigator.serviceWorker && navigator.serviceWorker.controller) ? 'yes' : 'no';
+    p.textContent = [
+      'DEBUG PROBE (' + DBG_VER + ')',
+      'href: ' + location.href,
+      'search: ' + location.search,
+      'item field present: ' + (hasItem ? 'YES value=' + sp.get('item') : 'NO'),
+      'app.js ran (DEEP_LINK_ITEM defined): ' + (appLoaded ? 'yes, item=' + appItem : 'no'),
+      'sw controlling page: ' + sw,
+      'trace: ' + trace,
+      'errors (' + errs.length + '):' + (errs.length ? '\n  ' + errs.join('\n  ') : ' none'),
+      'ua: ' + navigator.userAgent
+    ].map(line).join('\n');
+  }
+  document.addEventListener('DOMContentLoaded', function(){ render(); setInterval(render, 1000); });
+})();
+</script>
 
 <!-- ============================================================
      محركات البحث + معاينة الرابط عند المشاركة (واتساب/فيسبوك)
@@ -75,7 +128,7 @@
 <script src="item-images.js"></script>
 <script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
 
-<link rel="stylesheet" href="app.css?v=20261122a">
+<link rel="stylesheet" href="app.css?v=20261122b">
 </head>
 <body data-page="customer">
 
@@ -237,6 +290,6 @@
     <button type="button" class="lb-btn" id="lbIn" aria-label="تكبير">+</button>
   </div>
 </div>
-<script src="app.js?v=20261122a"></script>
+<script src="app.js?v=20261122b"></script>
 </body>
 </html>
