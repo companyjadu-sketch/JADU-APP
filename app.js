@@ -607,6 +607,15 @@ function enterStaffAccount(){
 function openStaffLogin(){
   if (!staffLoginOverlay || !auth) return false;
   if (staffSignedIn()) { enterStaffAccount(); return true; } // الهاتف مسجّل دخول من قبل
+  // المدير موظف أيضًا في الحضور (إسلام): يدخل شاشة الموظف بحسابه الإداري.
+  // بلا setEmpVia('account') حتى لا يُخرجه onAuthStateChanged (ذلك الشرط خاص بحسابات الموظفين).
+  if (isAdminAccount_()) {
+    try { sessionStorage.setItem('jadu_emp_ok', '1'); } catch(e){}
+    showView("employee");
+    currentViewerRole = "employee"; employeeEntryPoint = "gate"; activeCategoryValues = null;
+    loadItems(); goEmployeeStep("category");
+    return true;
+  }
   setStaffLoginMsg("");
   if (staffPasswordInput) staffPasswordInput.value = "";
   staffLoginOverlay.classList.add('open');
