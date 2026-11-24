@@ -124,10 +124,6 @@ body{
 .eye-btn.shown .eye-on{ display:none; }
 .eye-btn.shown .eye-off{ display:block; }
 .eye-btn.shown{ color:var(--amber); }
-.pin-eye-row{ display:flex; justify-content:center; margin:-8px 0 12px; }
-.pin-eye-row .eye-btn{ position:static; transform:none; width:auto; gap:6px; font-family:'Tajawal', sans-serif; font-size:12.5px; }
-.pin-dot.reveal{ width:auto; height:auto; min-width:14px; border:none; background:none !important;
-  font-family:'IBM Plex Mono', monospace; font-size:18px; font-weight:700; color:var(--steel-900); line-height:14px; }
 
 .primary-btn{
   width:100%; padding:15px; border:none; border-radius:10px;
@@ -158,7 +154,7 @@ body{
 .contact-sep{ color:var(--steel-500); opacity:.5; margin:0 4px; }
 footer{ margin-top:30px; text-align:center; font-size:11.5px; color:var(--steel-500); }
 
-/* PIN overlay */
+/* نوافذ الدخول (الاسم pin-overlay باقٍ من الرمز القديم، وتستخدمه نافذتا دخول الإدارة والموظف) */
 .pin-overlay{
   position:fixed; inset:0; background:rgba(23,22,15,0.55);
   display:none; align-items:center; justify-content:center; padding:20px; z-index:10;
@@ -170,21 +166,6 @@ footer{ margin-top:30px; text-align:center; font-size:11.5px; color:var(--steel-
 }
 .pin-card h2{ margin:0 0 4px; font-size:16px; font-weight:700; }
 .pin-card p{ margin:0 0 18px; font-size:12.5px; color:var(--steel-500); }
-.pin-dots{ display:flex; justify-content:center; gap:12px; margin-bottom:18px; direction:ltr; }
-.pin-dot{ width:14px; height:14px; border-radius:50%; border:1.5px solid var(--steel-500); background:transparent; }
-.pin-dot.filled{ background:var(--steel-900); border-color:var(--steel-900); }
-.pin-pad{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
-.pin-key{
-  padding:14px 0; border-radius:10px; border:1px solid var(--line); background:transparent;
-  font-family:'IBM Plex Mono', monospace; font-size:18px; font-weight:600; color:var(--steel-900); cursor:pointer;
-}
-.pin-key:active{ background:var(--steel-200); }
-.pin-key.ghost{ border-color:transparent; }
-.pin-error{ color:var(--warn); font-size:12px; height:16px; margin-top:10px; }
-.pin-cancel{
-  margin-top:14px; background:none; border:none; color:var(--steel-500);
-  font-size:12.5px; font-family:'Tajawal', sans-serif; cursor:pointer; text-decoration:underline;
-}
 
 /* نافذة دخول الإدارة بالإيميل */
 .login-card{ text-align:right; }
@@ -192,6 +173,7 @@ footer{ margin-top:30px; text-align:center; font-size:11.5px; color:var(--steel-
 .login-card .field input{ letter-spacing:0; direction:ltr; text-align:left; font-family:'Tajawal', sans-serif; font-size:16px; }
 .login-links{ display:flex; justify-content:space-between; gap:10px; margin-top:12px; }
 .login-links button{ background:none; border:none; color:var(--steel-500); font-size:12.5px; font-family:'Tajawal', sans-serif; cursor:pointer; text-decoration:underline; padding:0; }
+.login-hint{ font-size:11px; color:var(--steel-500); margin-top:5px; direction:ltr; text-align:left; overflow-wrap:anywhere; }
 .admin-user-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:12px; color:var(--steel-500);
   background:var(--steel-200); border-radius:8px; padding:8px 10px; margin-bottom:14px; direction:ltr; }
 .admin-user-row button{ background:none; border:1px solid var(--line); color:var(--steel-900); border-radius:7px; padding:5px 10px;

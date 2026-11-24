@@ -48,7 +48,8 @@ async function api(action, data){
   try { data.deviceId = localStorage.getItem(LS_DEV) || ''; } catch(e){ data.deviceId = ''; }
   if(DEMO) return mock(action, data);
   const u = (typeof auth !== 'undefined' && auth) ? auth.currentUser : null;
-  if(u){ try { data.idToken = await u.getIdToken(); } catch(e){} }
+  // توكن الإدارة فقط؛ حساب الموظف لا يُرسل (الخادم يعرف الموظف من الهاتف المسجّل)
+  if(u && typeof isAdminEmail === 'function' && isAdminEmail(u.email)){ try { data.idToken = await u.getIdToken(); } catch(e){} }
   let res;
   try { res = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(data) }); }
   catch(e){ const er = new Error('لا يوجد اتصال بالإنترنت'); er.network = true; throw er; }

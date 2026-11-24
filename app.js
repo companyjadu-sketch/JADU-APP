@@ -139,8 +139,29 @@ function isAdminEmail(email){
   return !!email && ADMIN_EMAILS.includes(String(email).trim().toLowerCase());
 }
 
-// الرموز الافتراضية (تُستخدم فقط إذا تعذّر الاتصال بقاعدة البيانات)
-let PINS = { employee: "1234", admin: "9999" };
+// حسابا الموظفين (حكيم وأنس) في Firebase Auth — نفس قائمة isStaff() في firestore.rules.
+// حساب الموظف لا يفتح أي ميزة إدارية: كل ميزات الإدارة تبقى مربوطة بـ isAdminEmail فقط.
+const STAFF_UIDS = ['8WkeswYmTnTwCynjfEUeVwPZkwA3', 'hfdODZQYB5TWqtBiIViTAbzvivm2'];
+// اسم العرض لصاحب دفعة الصور (by = uid)
+const STAFF_NAMES = { '8WkeswYmTnTwCynjfEUeVwPZkwA3': 'حكيم', 'hfdODZQYB5TWqtBiIViTAbzvivm2': 'أنس' };
+const STAFF_EMAIL_DOMAIN = '@jadu-app-90418.firebaseapp.com';
+// طريقة دخول شاشة الموظف في هذا التبويب: 'account' (حساب) أو فارغ (الرمز القديم)
+const EMP_VIA_KEY = 'jadu_emp_via';
+function isStaffUser(user){ return !!user && STAFF_UIDS.includes(user.uid); }
+function staffSignedIn(){ return !!auth && isStaffUser(auth.currentUser); }
+function empVia(){ try { return sessionStorage.getItem(EMP_VIA_KEY) || ''; } catch(e){ return ''; } }
+function setEmpVia(v){ try { v ? sessionStorage.setItem(EMP_VIA_KEY, v) : sessionStorage.removeItem(EMP_VIA_KEY); } catch(e){} }
+// شريط «موظف: hakim — خروج» يظهر فقط لموظف دخل بحسابه (لا للرمز القديم ولا للإدارة ولا للزبون)
+function updateStaffRow(){
+  const row = document.getElementById('staffUserRow');
+  if (!row) return;
+  const u = auth && auth.currentUser;
+  const show = currentViewerRole === 'employee' && empVia() === 'account' && isStaffUser(u);
+  row.hidden = !show;
+  const name = document.getElementById('staffUserName');
+  if (name) name.textContent = show ? 'موظف: ' + String(u.email || '').split('@')[0] : '';
+}
+
 // إعدادات إضافية للإدارة (حاليًا: سعر صرف الدولار الحالي لعرض رأس المال بالدولار)
 let SETTINGS = { usdRate: 0 };
 
@@ -155,15 +176,25 @@ function initFirebase(){
     auth = firebase.auth();
     auth.languageCode = "ar";
     auth.onAuthStateChanged(user => {
-      if (user && !isAdminEmail(user.email)) { auth.signOut(); return; }
+      // المسموح فقط: حسابات الإدارة + حسابا الموظفين. أي حساب آخر (مثل sync-bot) يُخرَج فورًا
+      if (user && !isAdminEmail(user.email) && !isStaffUser(user)) { auth.signOut(); return; }
+      const isAdmin = !!(user && isAdminEmail(user.email));
       const el = document.getElementById('adminUserEmail');
-      if (el) el.textContent = user ? user.email : "";
+      if (el) el.textContent = isAdmin ? user.email : "";
       try {
-        if (user) localStorage.setItem(ADMIN_HINT_KEY, String(user.email || '').trim().toLowerCase());
+        if (isAdmin) localStorage.setItem(ADMIN_HINT_KEY, String(user.email || '').trim().toLowerCase());
         else localStorage.removeItem(ADMIN_HINT_KEY);
       } catch(e){}
-      // لو خرج المستخدم وهو داخل شاشات الإدارة، نرجعه للواجهة الرئيسية
-      if (!user) {
+      // موظف دخل بحسابه ثم لم يعد حسابه قائمًا (خروج، أو دخول حساب آخر): نرجعه للواجهة الرئيسية
+      if (!isStaffUser(user) && empVia() === 'account') {
+        setEmpVia('');
+        try { sessionStorage.removeItem('jadu_emp_ok'); } catch(e){}
+        const act = document.querySelector('.view.active');
+        if (act && act.id === 'view-employee' && currentViewerRole === 'employee') showView('gate');
+      }
+      updateStaffRow();
+      // ليس أدمن (خرج، أو حساب موظف): لو كان داخل شاشات الإدارة نرجعه للرئيسية، وننظّف البيانات الحساسة
+      if (!isAdmin) {
         const active = document.querySelector('.view.active');
         if (active && active.id.startsWith('view-admin')) showView('gate');
         secureLoaded = false; // نظّف البيانات الحساسة من الذاكرة بعد الخروج
@@ -173,36 +204,11 @@ function initFirebase(){
         // دخول إداري معتمد — اجلب بيانات الشراء المحمية من Firestore
         loadSecureItems();
         refreshPhotoEventsBadge();
+        loadSettings(); // settings/currency للمدير والموظف بحساب فقط (القواعد) — تُقرأ بعد الدخول
       }
     });
-    loadPins();
-    loadSettings();
   } catch(e) {
     console.warn("تعذّر تشغيل Firebase — تأكد من ضبط firebaseConfig", e);
-    setSyncStatus(false, "غير متصل — يعمل بالرموز الافتراضية محليًا");
-  }
-}
-
-function setSyncStatus(ok, text){
-  const dot = document.getElementById('syncDot');
-  const label = document.getElementById('syncText');
-  if(!dot) return;
-  dot.className = "sync-dot " + (ok ? "on" : "off");
-  label.textContent = text;
-}
-
-async function loadPins(){
-  if(!db) return;
-  try {
-    const doc = await db.collection("settings").doc("pins").get();
-    if (doc.exists) {
-      const data = doc.data();
-      PINS.employee = data.employee || PINS.employee;
-    }
-    setSyncStatus(true, "متصل — الرموز متزامنة مع كل الأجهزة");
-  } catch(e) {
-    console.warn("تعذّرت قراءة الرموز من القاعدة", e);
-    setSyncStatus(false, "تعذّر الاتصال — يعمل بالرموز الافتراضية محليًا");
   }
 }
 
@@ -355,6 +361,7 @@ let employeeEntryPoint = "gate";
 let currentViewerRole = IS_CUSTOMER_PAGE ? "customer" : "employee";
 function goEmployeeStep(step){
   employeeStep = step;
+  try { updateStaffRow(); } catch(e){}
   document.getElementById('employeeCategoryScreen').style.display = step === "category" ? "block" : "none";
   document.getElementById('employeeSearchScreen').style.display = step === "search" ? "block" : "none";
   document.getElementById('employeeDetailScreen').style.display = step === "detail" ? "block" : "none";
@@ -366,7 +373,6 @@ document.getElementById('employeeBackBtn')?.addEventListener('click', ()=>{ hist
 document.querySelectorAll('[data-go]').forEach(btn=>{
   btn.addEventListener('click', ()=>{
     showView(btn.dataset.go);
-    if (btn.dataset.go === "admin-settings") fillSettingsForm();
   });
 });
 
@@ -424,16 +430,8 @@ document.getElementById('saveUsdRateBtn')?.addEventListener('click', async () =>
 });
 
 // ---------------------------------------------------------------
-// نافذة الرمز السري
+// أزرار الواجهة الرئيسية: الموظف بحسابه، والإدارة بالإيميل (لا رمز سري)
 // ---------------------------------------------------------------
-const overlay = document.getElementById('pinOverlay');
-const dotsWrap = document.getElementById('pinDots');
-const pinTitle = document.getElementById('pinTitle');
-const pinError = document.getElementById('pinError');
-let currentRole = null;
-let entered = "";
-const roleLabels = { employee: "دخول الموظف", admin: "دخول الإدارة العامة" };
-
 document.querySelectorAll('.role-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     const role = btn.dataset.role;
@@ -450,109 +448,14 @@ document.querySelectorAll('.role-btn').forEach(btn => {
       return;
     }
     if (role === "admin") { openAdminLogin(); return; }
-    currentRole = role;
-    entered = "";
-    pinTitle.textContent = roleLabels[role] || "كلمة المرور";
-    pinError.textContent = "";
-    updateDots();
-    overlay.classList.add('open');
-    openFocusTrap(overlay);
-  });
-});
-
-document.querySelectorAll('.pin-key[data-k]').forEach(key => {
-  key.addEventListener('click', () => {
-    const k = key.dataset.k;
-    if (k === "back") entered = entered.slice(0, -1);
-    else if (entered.length < 4) entered += k;
-    updateDots();
-    if (entered.length === 4) setTimeout(checkPin, 120);
-  });
-});
-document.getElementById('pinCancel')?.addEventListener('click', closeOverlay);
-
-let pinRevealed = false;
-function updateDots(){
-  dotsWrap.querySelectorAll('.pin-dot').forEach((d,i)=>{
-    const has = i < entered.length;
-    d.classList.toggle('filled', has);
-    d.classList.toggle('reveal', pinRevealed && has);
-    d.textContent = (pinRevealed && has) ? entered[i] : "";
-  });
-}
-function checkPin(){
-  if (entered === PINS[currentRole]) {
-    if (currentRole === "employee") { try { sessionStorage.setItem('jadu_emp_ok', '1'); } catch(e){} } // يسمح باسترجاع شاشة الموظف بعد تحديث الصفحة (لنفس التبويب فقط)
-    closeOverlay();
-    showView(currentRole);
-    if (currentRole === "employee") {
-      currentViewerRole = "employee";
-      employeeEntryPoint = "gate";
-      activeCategoryValues = null;
-      loadItems();
-      goEmployeeStep("category");
+    if (role === "employee" && !openStaffLogin()) {
+      showAlert("تعذّر الاتصال بخدمة الدخول — تحقق من الإنترنت وأعد فتح الصفحة", { title: "دخول الموظف" });
     }
-  } else {
-    pinError.textContent = "الرمز غير صحيح، حاول مرة أخرى";
-    entered = "";
-    updateDots();
-  }
-}
-function closeOverlay(){
-  overlay.classList.remove('open');
-  closeFocusTrap();
-  entered = "";
-  updateDots();
-}
-
-// ---------------------------------------------------------------
-// شاشة الإعدادات — تغيير الرموز
-// ---------------------------------------------------------------
-function fillSettingsForm(){
-  document.getElementById('employeePinInput').value = PINS.employee;
-  document.getElementById('settingsMsg').textContent = "";
-  document.getElementById('settingsMsg').className = "msg";
-}
-
-document.getElementById('savePinsBtn')?.addEventListener('click', async () => {
-  const empVal = document.getElementById('employeePinInput').value.trim();
-  const msg = document.getElementById('settingsMsg');
-
-  if (!/^\d{4}$/.test(empVal)) {
-    msg.textContent = "لازم يكون الرمز 4 أرقام بالضبط";
-    msg.className = "msg err";
-    return;
-  }
-
-  const newPins = { employee: empVal };
-
-  const confirmed = await showConfirm(
-    "سيتم تغيير الرمز السري للموظف لجميع الأجهزة. هل أنت متأكد من المتابعة؟",
-    { title: "تأكيد تغيير الرمز السري", okText: "نعم، تغيير الرمز" }
-  );
-  if (!confirmed) return;
-
-  if (!db) {
-    // لا يوجد اتصال بقاعدة البيانات: نحدّث محليًا فقط (لن ينعكس على باقي الأجهزة)
-    PINS = newPins;
-    msg.textContent = "تم الحفظ محليًا فقط (لا يوجد اتصال بقاعدة البيانات — لن ينعكس على باقي الأجهزة)";
-    msg.className = "msg err";
-    return;
-  }
-
-  try {
-    await db.collection("settings").doc("pins").set(newPins);
-    PINS = newPins;
-    msg.textContent = "تم الحفظ — الرمز الجديد فعّال الآن على كل الأجهزة";
-    msg.className = "msg ok";
-  } catch(e) {
-    msg.textContent = "تعذّر الحفظ، تحقق من الاتصال بالإنترنت وحاول مرة أخرى";
-    msg.className = "msg err";
-  }
+  });
 });
 
 // ---------------------------------------------------------------
-// إظهار / إخفاء الرمز السري وكلمة المرور
+// إظهار / إخفاء كلمة المرور
 // ---------------------------------------------------------------
 document.querySelectorAll('.eye-btn[data-eye]').forEach(btn=>{
   const hideLabel = btn.getAttribute('aria-label').replace('إظهار', 'إخفاء');
@@ -564,12 +467,6 @@ document.querySelectorAll('.eye-btn[data-eye]').forEach(btn=>{
     btn.classList.toggle('shown', show);
     btn.setAttribute('aria-label', show ? hideLabel : showLabel);
   });
-});
-document.getElementById('pinEyeBtn')?.addEventListener('click', ()=>{
-  pinRevealed = !pinRevealed;
-  document.getElementById('pinEyeBtn').classList.toggle('shown', pinRevealed);
-  document.getElementById('pinEyeLabel').textContent = pinRevealed ? "إخفاء الرمز" : "إظهار الرمز";
-  updateDots();
 });
 
 // ---------------------------------------------------------------
@@ -658,6 +555,108 @@ document.getElementById('loginCancel')?.addEventListener('click', ()=>{
   loginPassword.value = "";
   setLoginMsg("");
 });
+// ---------------------------------------------------------------
+// دخول الموظف (حكيم/أنس) بحساب Firebase — مرة واحدة لكل هاتف (Persistence.LOCAL)
+// الطريقة الوحيدة لدخول الموظف (أُلغي الرمز السري القديم).
+// ---------------------------------------------------------------
+const staffLoginOverlay = document.getElementById('staffLoginOverlay');
+const staffUserInput = document.getElementById('staffUser');
+const staffPasswordInput = document.getElementById('staffPassword');
+const staffLoginMsg = document.getElementById('staffLoginMsg');
+const staffLoginSubmit = document.getElementById('staffLoginSubmit');
+
+function setStaffLoginMsg(text, ok){
+  if (!staffLoginMsg) return;
+  staffLoginMsg.textContent = text || "";
+  staffLoginMsg.className = "msg" + (text ? (ok ? " ok" : " err") : "");
+}
+// اسم المستخدم كما كُتب -> الإيميل الكامل. لوحات الجوال تكبّر أول حرف، فنصغّر ونقصّ المسافات.
+function staffEmailFromInput(raw){
+  let name = String(raw || '').trim().toLowerCase();
+  if (name.endsWith(STAFF_EMAIL_DOMAIN)) name = name.slice(0, -STAFF_EMAIL_DOMAIN.length);
+  return /^[a-z0-9._-]{2,40}$/.test(name) ? name + STAFF_EMAIL_DOMAIN : '';
+}
+// رسائل لا تكشف سبب الفشل: «غير موجود» و«كلمة سر خاطئة» نفس الرسالة
+function staffAuthErrorText(e){
+  const c = (e && e.code) || "";
+  if (c.includes("network")) return "لا يوجد اتصال بالإنترنت";
+  if (c.includes("too-many-requests")) return "محاولات كثيرة — انتظر قليلًا وحاول مرة أخرى";
+  return "اسم المستخدم أو كلمة المرور غير صحيحة";
+}
+// ما يُنفَّذ بعد نجاح دخول الموظف بدل فتح شاشة التصنيفات (يضبطه الرابط المباشر ?item= لهاتف معتمد)
+let staffLoginThen = null;
+function closeStaffLogin(){
+  staffLoginThen = null;
+  if (!staffLoginOverlay) return;
+  staffLoginOverlay.classList.remove('open');
+  closeFocusTrap();
+  if (staffPasswordInput) staffPasswordInput.value = "";
+  setStaffLoginMsg("");
+}
+function enterStaffAccount(){
+  setEmpVia('account');
+  try { sessionStorage.setItem('jadu_emp_ok', '1'); } catch(e){}
+  showView("employee");
+  currentViewerRole = "employee";
+  employeeEntryPoint = "gate";
+  activeCategoryValues = null;
+  loadItems();
+  goEmployeeStep("category");
+}
+// يرجع true إذا تولّى الدخول بالحساب، و false إذا تعذّر (صفحة بلا نافذة الحساب أو Firebase غير متاح)
+function openStaffLogin(){
+  if (!staffLoginOverlay || !auth) return false;
+  if (staffSignedIn()) { enterStaffAccount(); return true; } // الهاتف مسجّل دخول من قبل
+  setStaffLoginMsg("");
+  if (staffPasswordInput) staffPasswordInput.value = "";
+  staffLoginOverlay.classList.add('open');
+  openFocusTrap(staffLoginOverlay);
+  setTimeout(()=> (staffUserInput && staffUserInput.value ? staffPasswordInput : staffUserInput)?.focus(), 50);
+  return true;
+}
+
+staffUserInput?.addEventListener('input', ()=>{
+  const hint = document.getElementById('staffUserHint');
+  if (!hint) return;
+  const v = staffUserInput.value.trim().toLowerCase();
+  hint.textContent = (v && !v.includes('@') ? v : '') + STAFF_EMAIL_DOMAIN;
+});
+staffLoginSubmit?.addEventListener('click', async ()=>{
+  const pass = staffPasswordInput.value;
+  if (!staffUserInput.value.trim() || !pass) { setStaffLoginMsg("أدخل اسم المستخدم وكلمة المرور"); return; }
+  const email = staffEmailFromInput(staffUserInput.value);
+  if (!email) { setStaffLoginMsg(staffAuthErrorText(null)); return; }
+  if (!auth) { setStaffLoginMsg("تعذّر الاتصال بخدمة الدخول — تحقق من الإنترنت"); return; }
+  staffLoginSubmit.disabled = true;
+  setStaffLoginMsg("جارِ الدخول…", true);
+  try {
+    await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+    const cred = await auth.signInWithEmailAndPassword(email, pass);
+    // حساب صحيح لكنه ليس حكيم/أنس (مثل sync-bot): نخرجه وبنفس الرسالة العامة
+    if (!isStaffUser(cred && cred.user)) { try { await auth.signOut(); } catch(e){} throw { code: 'auth/invalid-credential' }; }
+    const then = staffLoginThen;
+    closeStaffLogin();
+    if (then) then(); else enterStaffAccount();
+  } catch(e) {
+    setStaffLoginMsg(staffAuthErrorText(e));
+  } finally {
+    staffLoginSubmit.disabled = false;
+  }
+});
+staffPasswordInput?.addEventListener('keydown', e => { if (e.key === "Enter") staffLoginSubmit.click(); });
+staffUserInput?.addEventListener('keydown', e => { if (e.key === "Enter") staffPasswordInput.focus(); });
+document.getElementById('staffLoginCancel')?.addEventListener('click', closeStaffLogin);
+document.getElementById('staffLogoutBtn')?.addEventListener('click', async ()=>{
+  setEmpVia('');
+  try { sessionStorage.removeItem('jadu_emp_ok'); } catch(e){}
+  if (auth) await auth.signOut();
+  if (navDepth > 0) {
+    history.go(-navDepth);
+    // لو كانت نافذة مفتوحة (مثل «من أنت؟» للحضور) يلتقط الرجوعُ إغلاقها فقط؛ نضمن الوصول للرئيسية
+    setTimeout(() => { if (!document.getElementById('view-gate')?.classList.contains('active')) showView('gate'); }, 500);
+  } else showView('gate');
+});
+
 document.getElementById('adminLogoutBtn')?.addEventListener('click', async ()=>{
   if (auth) await auth.signOut();
   // نرجع للشاشة الرئيسية بمسح كل ما فوقها من التاريخ، حتى لا يعيد زر الرجوع شاشات الإدارة بعد الخروج
@@ -1133,6 +1132,9 @@ function permMsg_(err, fallback){
   return err && err.code === 'permission-denied' ? 'العملية مرفوضة — قاعدة الأمان للصور لم تُضف بعد في Firebase' : fallback;
 }
 
+// حساب المدير المسجّل الآن (Firebase Auth) — مستقل عن الشاشة المفتوحة
+function isAdminAccount_(){ const u = auth && auth.currentUser; return !!(u && isAdminEmail(u.email)); }
+
 async function handlePhotoFile(item, file){
   const msg = document.getElementById('photoUploadMsg');
   if(!firebaseReady || !db){ msg.textContent = 'لا يوجد اتصال بقاعدة البيانات — حاول لاحقًا'; msg.className = 'msg err'; return; }
@@ -1140,15 +1142,21 @@ async function handlePhotoFile(item, file){
   const n = String(item.number).trim();
   try {
     const { full, thumb } = await preparePhoto_(file);
-    if(currentViewerRole === 'admin'){
-      const u = auth && auth.currentUser;
-      await publishPhoto_(n, item.name, full, thumb, (u && u.email) || 'الإدارة');
+    // القرار بالحساب لا بدور الشاشة: المدير ينشر مباشرة حتى لو فتح الصنف بعرض الموظف
+    // (الرابط المباشر ?item= أو استرجاع الشاشة بعد التحديث)، ولا تدخل صورته سلة الموظفين أبدًا
+    if(isAdminAccount_()){
+      const u = auth.currentUser;
+      await publishPhoto_(n, item.name, full, thumb, u.email || 'الإدارة');
       renderResults(); openItemDetail(n);
       setPhotoMsg_('✓ تم نشر الصورة', 'ok');
     } else {
       // موظف: إلى السلة (لو الصنف موجود بالسلة نستبدل صورته)
       const old = photoBasket.find(b => b.num === n);
-      const ref = await db.collection('photo_pending').add({ num: n, name: String(item.name || ''), full, thumb, status: 'draft', at: firebase.firestore.FieldValue.serverTimestamp() });
+      const pending = { num: n, name: String(item.name || ''), full, thumb, status: 'draft', at: firebase.firestore.FieldValue.serverTimestamp() };
+      // owner = uid الموظف (مطلوب في القواعد)
+      const su = auth && auth.currentUser;
+      if (isStaffUser(su)) pending.owner = su.uid;
+      const ref = await db.collection('photo_pending').add(pending);
       if(old){ db.collection('photo_pending').doc(old.id).delete().catch(() => {}); photoBasket = photoBasket.filter(b => b.num !== n); }
       photoBasket.push({ id: ref.id, num: n, name: String(item.name || ''), thumb });
       saveBasket_();
@@ -1190,12 +1198,13 @@ function afterItemDetailRender_(item){
   row.hidden = !canUpload;
   if(canUpload){
     const inBasket = photoBasket.find(b => b.num === n);
+    const admin = isAdminAccount_();   // نفس قرار handlePhotoFile: بالحساب لا بدور الشاشة
     document.getElementById('photoUploadLabel').textContent =
-      currentViewerRole === 'admin' ? (itemImage(n) ? 'تغيير صورة الصنف' : 'إضافة صورة للصنف')
+      admin ? (itemImage(n) ? 'تغيير صورة الصنف' : 'إضافة صورة للصنف')
       : (inBasket ? 'تغيير الصورة في السلة' : 'إضافة صورة للسلة');
-    document.getElementById('photoDeleteBtn').hidden = !(currentViewerRole === 'admin' && UPLOADED_PHOTOS[n]);
+    document.getElementById('photoDeleteBtn').hidden = !(admin && UPLOADED_PHOTOS[n]);
     const m = document.getElementById('photoUploadMsg');
-    m.textContent = (currentViewerRole !== 'admin' && inBasket) ? 'صورة هذا الصنف موجودة في سلتك بانتظار الإرسال للإدارة' : '';
+    m.textContent = (!admin && inBasket) ? 'صورة هذا الصنف موجودة في سلتك بانتظار الإرسال للإدارة' : '';
     m.className = 'msg';
   }
   if(UPLOADED_PHOTOS[n]){
@@ -1247,7 +1256,10 @@ document.getElementById('sendBasketBtn')?.addEventListener('click', async () => 
   msg.innerHTML = '<span class="spinner"></span> جارِ الإرسال…'; msg.className = 'msg';
   try {
     const ids = photoBasket.map(b => b.id);
-    const bref = await db.collection('photo_batches').add({ ids, nums: photoBasket.map(b => b.num), count: ids.length, by: 'موظف', status: 'pending', at: firebase.firestore.FieldValue.serverTimestamp() });
+    // by = uid الموظف، أو بريد المدير (القواعد تتحقق أنه صاحب الحساب نفسه)
+    const u = auth && auth.currentUser;
+    const by = !u ? '' : (isAdminEmail(u.email) ? String(u.email).toLowerCase() : u.uid);
+    const bref = await db.collection('photo_batches').add({ ids, nums: photoBasket.map(b => b.num), count: ids.length, by, status: 'pending', at: firebase.firestore.FieldValue.serverTimestamp() });
     const batch = db.batch(); ids.forEach(id => batch.update(db.collection('photo_pending').doc(id), { status: 'sent', batch: bref.id }));
     await batch.commit();
     photoBasket = []; saveBasket_(); renderBasket();
@@ -1279,7 +1291,7 @@ async function renderPhotoEvents(){
       bt._items = items;
       const when = bt.at && bt.at.toDate ? bt.at.toDate().toLocaleString('ar-LY', { dateStyle:'medium', timeStyle:'short' }) : '—';
       parts.push(`<div class="pb-card" data-batch="${escapeHtml(bt.id)}">
-        <div class="pb-head"><strong>دفعة من ${escapeHtml(bt.by || 'موظف')}</strong><span class="ir-sub">${escapeHtml(when)} · ${items.length} صورة</span></div>
+        <div class="pb-head"><strong>دفعة من ${escapeHtml(STAFF_NAMES[bt.by] || bt.by || 'موظف')}</strong><span class="ir-sub">${escapeHtml(when)} · ${items.length} صورة</span></div>
         ${items.map(it => { const cur = itemImage(it.num); const itm = ITEMS.find(x => x.number === it.num); return `<div class="pb-item">
           <div class="ir-top"><span class="num-badge">${escapeHtml(it.num)}</span><span class="item-name">${escapeHtml((itm && itm.name) || it.name) || '—'}</span></div>
           ${itm ? `<div class="ir-sub">${[itm.company, itm.country, itm.color].filter(Boolean).map(escapeHtml).join(' · ')}</div>` : ''}
@@ -2081,8 +2093,8 @@ document.getElementById('camCloseBtn')?.addEventListener('click', closeCamera);
 
 // ربط كل النوافذ المنبثقة بزر الرجوع
 registerBackLayer(document.getElementById('dlgOverlay'), () => closeDialog(false));
-registerBackLayer(document.getElementById('pinOverlay'), () => closeOverlay());
 registerBackLayer(document.getElementById('loginOverlay'), () => document.getElementById('loginCancel')?.click());
+registerBackLayer(document.getElementById('staffLoginOverlay'), () => closeStaffLogin());
 registerBackLayer(document.getElementById('camOverlay'), () => closeCamera());
 
 // ---------------------------------------------------------------
@@ -2149,7 +2161,7 @@ if ('serviceWorker' in navigator) {
 // نحفظ الشاشة الحالية (ومعها التصنيف ونص البحث والصنف المفتوح) في sessionStorage،
 // وعند تحديث الصفحة نعيد فتحها بدل الرجوع للواجهة الرئيسية. sessionStorage يخص
 // هذا التبويب فقط ويُمسح بإغلاقه. الشاشات المحمية لا تُسترجع إلا بصلاحيتها:
-// الموظف = أدخل رمزه في هذا التبويب، الإدارة = دخول Firebase ما زال قائمًا.
+// الموظف = دخل بحسابه (أو جهاز معتمد) في هذا التبويب، الإدارة = دخول Firebase ما زال قائمًا.
 (function(){
   const KEY = 'jadu_nav_v1', EMP_OK = 'jadu_emp_ok';
   const OVERLAYS = ['photo-upload', 'photo-approvals', 'share-cart'];
@@ -2157,7 +2169,7 @@ if ('serviceWorker' in navigator) {
   const ADMIN_BTN = {
     'admin-overview': '#adminOverviewBtn', 'admin-capital': '#adminCapitalBtn',
     'admin-pricelist': '#adminPriceListBtn', 'admin-pricelog': '#adminPriceLogBtn',
-    'admin-photos': '#adminPhotosBtn', 'admin-settings': '[data-go="admin-settings"]',
+    'admin-photos': '#adminPhotosBtn',
     'att-admin': '#adminAttBtn', 'admin-qr': '#adminQrBtn'
   };
   const ss = {
@@ -2405,17 +2417,30 @@ function dlHref(page, extra){
         }
         await openAs('customer');
       } else {
-        // صفحة الموظف: لا نتجاوز الـPIN إلا بعد تحقق فعلي (جهاز معتمد أو دخول إدارة)
-        const dev = await deviceApproved();
-        const adm = dev ? false : await adminAuthed();
-        dlLog('staff: device=' + dev + ' admin=' + adm + ' authUser=' + ((auth && auth.currentUser && auth.currentUser.email) || 'none'));
-        const ok = dev || adm;
-        if(!ok){
+        // صفحة الموظف: بيانات الموظف (الكميات، رفع الصور، السلة) تشترط دائمًا حساب Firebase (مدير أو حكيم/أنس).
+        // الهاتف المعتمد في ورقة «الأجهزة» وحده لا يكفي: يرى الصنف كزبون، وتُفتح فوقه نافذة دخول الموظف.
+        const adm = await adminAuthed();
+        // adminAuthed انتظر استقرار حالة الدخول، فحساب الموظف (إن وُجد) جاهز الآن
+        const stf = adm ? false : staffSignedIn();
+        const dev = (adm || stf) ? false : await deviceApproved();
+        dlLog('staff: admin=' + adm + ' staff=' + stf + ' device=' + dev + ' authUser=' + ((auth && auth.currentUser && auth.currentUser.email) || 'none'));
+        const asEmployee = async () => {
+          if (staffSignedIn()) setEmpVia('account');
+          try { sessionStorage.setItem('jadu_emp_ok', '1'); } catch(e){}
+          await openAs('employee');
+        };
+        if (adm || stf) {
+          await asEmployee();
+        } else if (dev) {
+          // هاتف معتمد بلا حساب: الصنف فورًا بعرض الزبون (متوفر/غير متوفر + القطاعي)، ونافذة الدخول فوقه.
+          // نجاح الدخول يعيد فتح الصنف نفسه بعرض الموظف؛ «رجوع» يُبقيه على عرض الزبون.
+          dlLog('staff: approved device, no account -> customer view + staff login');
+          await openAs('customer');
+          if (openStaffLogin()) staffLoginThen = () => { asEmployee(); };
+        } else {
           dlLog('staff->index (as=customer)');
           location.replace(dlHref('index.html', '&as=customer')); return;
         }
-        try { sessionStorage.setItem('jadu_emp_ok', '1'); } catch(e){}
-        await openAs('employee');
       }
     } catch(e){ dlLog('ERROR', (e && (e.message || e)) || 'unknown'); console.warn('تعذّر فتح الرابط المباشر', e); hideVeil(); cleanUrl(); }
     // بعد انتهاء الفتح: مراقبة قصيرة أخيرة لأي عودة للرئيسية ثم إيقافها

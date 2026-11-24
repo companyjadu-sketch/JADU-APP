@@ -7,7 +7,7 @@
 <!-- تشخيص ?debug=1: سكربت مضمّن قبل app.js، يعمل حتى لو تعطّل app.js، ويعرض شريطًا ثابتًا فوق الصفحة -->
 <script>
 (function(){
-  var DBG_VER = 'v16 / 20261122c';
+  var DBG_VER = 'v18 / 20261124b';
   var sp = null, on = false;
   try { sp = new URLSearchParams(location.search); on = sp.get('debug') === '1'; } catch(e){}
   if (!on) return;
@@ -128,7 +128,7 @@
 <script src="item-images.js"></script>
 <script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
 
-<link rel="stylesheet" href="app.css?v=20261122c">
+<link rel="stylesheet" href="app.css?v=20261124b">
 </head>
 <body data-page="customer">
 
@@ -290,6 +290,6 @@
     <button type="button" class="lb-btn" id="lbIn" aria-label="تكبير">+</button>
   </div>
 </div>
-<script src="app.js?v=20261122c"></script>
+<script src="app.js?v=20261124b"></script>
 </body>
 </html>

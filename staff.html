@@ -35,11 +35,11 @@
 <script src="item-images.js"></script>
 <script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
 
-<link rel="stylesheet" href="app.css?v=20261122c">
-<link rel="stylesheet" href="attendance.css?v=20261122c">
-<link rel="stylesheet" href="share-cart.css?v=20261122c">
-<link rel="stylesheet" href="photo-upload.css?v=20261122c">
-<link rel="stylesheet" href="qr-tool.css?v=20261122c">
+<link rel="stylesheet" href="app.css?v=20261124b">
+<link rel="stylesheet" href="attendance.css?v=20261124b">
+<link rel="stylesheet" href="share-cart.css?v=20261124b">
+<link rel="stylesheet" href="photo-upload.css?v=20261124b">
+<link rel="stylesheet" href="qr-tool.css?v=20261124b">
 </head>
 <body data-page="staff">
 
@@ -60,7 +60,7 @@
     <div class="menu">
       <button class="role-btn" data-role="employee" data-locked="true">
         <span class="role-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
-        <span class="role-text"><strong>دخول الموظف</strong><span>بالرمز السري</span></span>
+        <span class="role-text"><strong>دخول الموظف</strong><span>باسم المستخدم وكلمة المرور</span></span>
         <svg class="role-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
       </button>
       <button class="role-btn role-admin" data-role="admin" data-locked="true">
@@ -79,6 +79,11 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
       </button>
       <h2 id="employeeHeaderTitle">اختر التصنيف</h2>
+    </div>
+    <!-- شريط حساب الموظف (يظهر فقط عند الدخول بحساب حكيم/أنس، لا عند الرمز القديم) -->
+    <div class="admin-user-row" id="staffUserRow" hidden>
+      <span id="staffUserName"></span>
+      <button id="staffLogoutBtn">خروج</button>
     </div>
 
     <!-- شاشة اختيار التصنيف -->
@@ -258,18 +263,6 @@
         <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
       </button>
     </div>
-    <div class="section-label" style="margin-top:18px;">الإعدادات</div>
-    <div class="list">
-      <button class="list-btn" data-go="admin-settings">
-        <div class="list-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-          </svg>
-        </div>
-        <div class="list-text"><strong>الإعدادات</strong><span>تغيير الرمز السري للموظف</span></div>
-        <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
-      </button>
-    </div>
   </div>
 
   <!-- ============ الإدارة العامة — قائمة تغيير الأسعار ============ -->
@@ -379,50 +372,6 @@
     <div id="adminCapitalBody" style="margin-top:16px;"><div class="empty-note"><span class="spinner"></span> جارِ تحميل البيانات…</div></div>
   </div>
 
-  <!-- ============ الإدارة العامة — الإعدادات ============ -->
-  <div class="view" id="view-admin-settings">
-    <div class="back-row">
-      <button class="back-btn" data-back="admin" aria-label="رجوع">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-      </button>
-      <h2>الإعدادات — الرموز السرية</h2>
-    </div>
-
-    <div class="sync-note">
-      <div class="sync-dot" id="syncDot"></div>
-      <span id="syncText">جارِ الاتصال بقاعدة البيانات…</span>
-    </div>
-
-    <div class="field">
-      <label>رمز دخول الموظف (4 أرقام)</label>
-      <div class="pw-wrap"><input type="password" inputmode="numeric" maxlength="4" id="employeePinInput" placeholder="••••" autocomplete="off"><button type="button" class="eye-btn" data-eye="employeePinInput" aria-label="إظهار الرمز"><svg class="eye-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg><svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 19c-7 0-11-7-11-7a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 7 11 7a18.5 18.5 0 0 1-2.16 3.19"/><path d="M1 1l22 22"/></svg></button></div>
-    </div>
-    <p style="font-size:12px; color:var(--steel-500); margin:-6px 0 18px;">دخول الإدارة العامة صار بالإيميل وكلمة المرور — تتغير كلمة المرور من رابط "نسيت كلمة المرور" بشاشة الدخول.</p>
-
-    <button class="primary-btn" id="savePinsBtn">حفظ التغييرات</button>
-    <div class="msg" id="settingsMsg"></div>
-  </div>
-
-</div>
-
-<!-- ============ نافذة إدخال الرمز السري ============ -->
-<div class="pin-overlay" id="pinOverlay">
-  <div class="pin-card">
-    <h2 id="pinTitle">كلمة المرور</h2>
-    <p>أدخل الرمز السري للمتابعة</p>
-    <div class="pin-dots" id="pinDots">
-      <div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div>
-    </div>
-    <div class="pin-eye-row"><button type="button" class="eye-btn" id="pinEyeBtn"><svg class="eye-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg><svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 19c-7 0-11-7-11-7a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 7 11 7a18.5 18.5 0 0 1-2.16 3.19"/><path d="M1 1l22 22"/></svg><span id="pinEyeLabel">إظهار الرمز</span></button></div>
-    <div class="pin-pad">
-      <button class="pin-key" data-k="1">1</button><button class="pin-key" data-k="2">2</button><button class="pin-key" data-k="3">3</button>
-      <button class="pin-key" data-k="4">4</button><button class="pin-key" data-k="5">5</button><button class="pin-key" data-k="6">6</button>
-      <button class="pin-key" data-k="7">7</button><button class="pin-key" data-k="8">8</button><button class="pin-key" data-k="9">9</button>
-      <button class="pin-key ghost"></button><button class="pin-key" data-k="0">0</button><button class="pin-key" data-k="back">⌫</button>
-    </div>
-    <div class="pin-error" id="pinError"></div>
-    <button class="pin-cancel" id="pinCancel">رجوع</button>
-  </div>
 </div>
 
 <!-- ============ نافذة دخول الإدارة العامة بالإيميل ============ -->
@@ -443,6 +392,28 @@
     <div class="login-links">
       <button id="loginForgot">نسيت كلمة المرور؟</button>
       <button id="loginCancel">رجوع</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ نافذة دخول الموظف (حساب Firebase) ============ -->
+<div class="pin-overlay" id="staffLoginOverlay">
+  <div class="pin-card login-card">
+    <h2>دخول الموظف</h2>
+    <p>أدخل اسم المستخدم وكلمة المرور</p>
+    <div class="field">
+      <label for="staffUser">اسم المستخدم</label>
+      <input type="text" id="staffUser" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="email" placeholder="hakim أو anas">
+      <div class="login-hint" id="staffUserHint">@jadu-app-90418.firebaseapp.com</div>
+    </div>
+    <div class="field">
+      <label for="staffPassword">كلمة المرور</label>
+      <div class="pw-wrap"><input type="password" id="staffPassword" autocomplete="current-password" placeholder="••••••"><button type="button" class="eye-btn" data-eye="staffPassword" aria-label="إظهار كلمة المرور"><svg class="eye-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg><svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 19c-7 0-11-7-11-7a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 7 11 7a18.5 18.5 0 0 1-2.16 3.19"/><path d="M1 1l22 22"/></svg></button></div>
+    </div>
+    <button class="primary-btn" id="staffLoginSubmit">دخول</button>
+    <div class="msg" id="staffLoginMsg"></div>
+    <div class="login-links">
+      <button id="staffLoginCancel">رجوع</button>
     </div>
   </div>
 </div>
@@ -489,13 +460,13 @@
     <button type="button" class="lb-btn" id="lbIn" aria-label="تكبير">+</button>
   </div>
 </div>
-<script src="app.js?v=20261122c"></script>
-<script src="share-cart.js?v=20261122c"></script>
-<script src="attendance-core.js?v=20261122c"></script>
-<script src="attendance.js?v=20261122c"></script>
+<script src="app.js?v=20261124b"></script>
+<script src="share-cart.js?v=20261124b"></script>
+<script src="attendance-core.js?v=20261124b"></script>
+<script src="attendance.js?v=20261124b"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="photo-upload.js?v=20261122c"></script>
-<script src="qr-tool.js?v=20261122c"></script>
+<script src="photo-upload.js?v=20261124b"></script>
+<script src="qr-tool.js?v=20261124b"></script>
 </body>
 </html>
