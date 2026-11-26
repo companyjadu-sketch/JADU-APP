@@ -2,6 +2,7 @@
 #qrInput{ width:100%; min-height:74px; padding:12px; border-radius:12px; border:1px solid var(--steel-200, #444); background:transparent; color:inherit; font:inherit; direction:ltr; text-align:left; }
 .qr-hint{ font-size:12.5px; opacity:.75; margin:6px 2px 12px; line-height:1.6; }
 .qr-actions{ display:flex; gap:8px; flex-wrap:wrap; margin:12px 0; }
+.qr-actions[hidden]{ display:none; }
 .qr-actions button{ flex:1 1 140px; }
 .qr-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:10px; margin-top:6px; }
 .qr-card{ border:1px solid rgba(255,255,255,.12); border-radius:14px; padding:10px; text-align:center; }
@@ -10,14 +11,55 @@
 .qr-card .qr-num{ font-family:'IBM Plex Mono',monospace; font-weight:700; margin:2px 0 6px; }
 .qr-card .qr-dl{ width:100%; padding:7px; border-radius:10px; border:1px solid rgba(255,255,255,.2); background:transparent; color:inherit; font:inherit; cursor:pointer; }
 
+/* تصفية + قائمة الطباعة */
+.qrf, .qrf-sel{ border:1px solid var(--line, #322F2A); border-radius:14px; padding:12px; margin:0 0 16px; background:var(--surface, #1B1917); }
+.qrf .section-label, .qrf-sel .section-label{ margin-top:0; }
+.qrf-block{ margin-bottom:12px; }
+.qrf-block:last-child{ margin-bottom:0; }
+.qrf-title{ display:block; font-size:13px; font-weight:700; margin-bottom:6px; }
+.qrf-sub{ font-size:11.5px; color:var(--steel-500, #9A9484); font-weight:400; }
+.qrf-input{ width:100%; padding:9px 11px; border-radius:10px; border:1px solid var(--line, #322F2A); background:var(--bg, #0F0E0D); color:inherit; font:inherit; font-size:14px; }
+.qrf-input:focus{ outline:none; border-color:var(--amber, #E10A1E); }
+.qrf-types{ display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; max-height:170px; overflow:auto; }
+.qrf-check{ display:inline-flex; align-items:center; gap:6px; font-size:13px; padding:6px 10px; border:1px solid var(--line, #322F2A); border-radius:999px; cursor:pointer; user-select:none; }
+.qrf-check input{ accent-color:var(--amber, #E10A1E); width:16px; height:16px; margin:0; }
+.qrf-check:has(input:checked){ border-color:var(--amber, #E10A1E); background:rgba(225,10,30,.12); }
+.qrf-stock{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+.qrf-stock .qrf-check{ flex:0 0 auto; }
+.qrf-stock select{ flex:1 1 140px; width:auto; }
+.qrf-empty{ font-size:12.5px; color:var(--steel-500, #9A9484); padding:6px 2px; }
+.qrf-count{ font-size:15px; font-weight:700; }
+.qrf-bar{ position:sticky; top:0; z-index:2; display:flex; justify-content:space-between; align-items:center; gap:8px; padding:10px 12px; margin:0 0 8px; border:1px solid var(--amber, #E10A1E); border-radius:12px; background:var(--surface, #1B1917); }
+.qrf-bar .primary-btn{ width:auto; margin:0; flex:0 0 auto; padding:10px 14px; }
+.qrf-test{ width:100%; padding:10px; margin-bottom:6px; border-radius:10px; border:1px dashed var(--amber, #E10A1E); background:transparent; color:inherit; font:inherit; font-size:14px; font-weight:700; cursor:pointer; }
+#qrTestMsg{ margin-bottom:8px; }
+.qrf-paper{ width:290px; max-width:100%; margin:6px auto; background:#fff; border-radius:7px; overflow:hidden; }
+.qrf-paper svg{ display:block; width:100%; height:auto; }
+.qrf-paper .qrf-empty{ padding:14px; text-align:center; }
+.qrf-sel-btns{ display:flex; gap:8px; margin-bottom:8px; }
+.qrf-sel-btns button{ flex:1; padding:8px; border-radius:10px; border:1px solid var(--line, #322F2A); background:transparent; color:inherit; font:inherit; font-size:13px; cursor:pointer; }
+.qrf-list{ max-height:340px; overflow:auto; border:1px solid var(--line, #322F2A); border-radius:10px; margin-bottom:10px; }
+.qrf-row{ display:grid; grid-template-columns:20px 44px minmax(0,1fr) 108px; align-items:center; gap:8px; padding:7px 10px; border-bottom:1px solid var(--line, #322F2A); font-size:13px; cursor:pointer; }
+.qrf-row.focus{ background:rgba(255,255,255,.06); }
+.qrf-step{ display:grid; grid-template-columns:30px 1fr 30px; gap:3px; direction:ltr; }
+.qrf-step button{ padding:4px 0; border-radius:8px; border:1px solid var(--line, #322F2A); background:transparent; color:inherit; font:inherit; cursor:pointer; }
+.qrf-row:last-child{ border-bottom:none; }
+.qrf-row .qrf-on{ accent-color:var(--amber, #E10A1E); width:17px; height:17px; margin:0; }
+.qrf-row .qrf-num{ font-family:'IBM Plex Mono',monospace; font-weight:700; direction:ltr; text-align:right; }
+.qrf-row .qrf-name{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.qrf-row .qrf-copies{ width:100%; padding:5px 6px; border-radius:8px; border:1px solid var(--line, #322F2A); background:var(--bg, #0F0E0D); color:inherit; font:inherit; font-size:13px; text-align:center; direction:ltr; }
+.qrf-row:has(.qrf-on:not(:checked)) .qrf-num, .qrf-row:has(.qrf-on:not(:checked)) .qrf-name{ opacity:.45; text-decoration:line-through; }
+.qrf-sel .primary-btn:disabled{ opacity:.45; cursor:default; }
+
+/* طباعة: ملصق 58×38 مم لكل صفحة، بهوامش صفر، وكسر صفحة بعد كل ملصق */
 #qrPrintArea{ display:none; }
 @media print{
+  html, body.printing-qr{ margin:0 !important; padding:0 !important; background:#fff !important; }
+  body.printing-qr{ display:block !important; min-height:0 !important; }
   body.printing-qr > *:not(#qrPrintArea){ display:none !important; }
-  body.printing-qr{ background:#fff !important; }
-  body.printing-qr #qrPrintArea{ display:grid; grid-template-columns:repeat(3, 1fr); gap:6mm; padding:8mm; direction:rtl; }
-  .qr-label{ border:1px dashed #999; border-radius:3mm; padding:4mm; text-align:center; break-inside:avoid; color:#000; background:#fff; }
-  .qr-label img{ width:38mm; height:38mm; display:block; margin:0 auto 2mm; }
-  .qr-label .ql-name{ font-size:10pt; line-height:1.35; max-height:2.7em; overflow:hidden; font-family:'Tajawal',sans-serif; }
-  .qr-label .ql-num{ font-size:13pt; font-weight:700; font-family:'IBM Plex Mono',monospace; margin-top:1mm; }
-  @page{ size:A4; margin:6mm; }
+  body.printing-qr #qrPrintArea{ display:block; }
+  .qr-label58{ width:58mm; height:38mm; overflow:hidden; background:#fff; break-after:page; page-break-after:always; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .qr-label58:last-child{ break-after:auto; page-break-after:auto; }
+  .qr-label58 svg{ display:block; width:58mm; height:38mm; }
+  @page{ size:58mm 38mm; margin:0; }
 }

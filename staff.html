@@ -35,11 +35,11 @@
 <script src="item-images.js"></script>
 <script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
 
-<link rel="stylesheet" href="app.css?v=20261124c">
-<link rel="stylesheet" href="attendance.css?v=20261124c">
-<link rel="stylesheet" href="share-cart.css?v=20261124c">
-<link rel="stylesheet" href="photo-upload.css?v=20261124c">
-<link rel="stylesheet" href="qr-tool.css?v=20261124c">
+<link rel="stylesheet" href="app.css?v=20261126a">
+<link rel="stylesheet" href="attendance.css?v=20261126a">
+<link rel="stylesheet" href="share-cart.css?v=20261126a">
+<link rel="stylesheet" href="photo-upload.css?v=20261126a">
+<link rel="stylesheet" href="qr-tool.css?v=20261126a">
 </head>
 <body data-page="staff">
 
@@ -294,15 +294,61 @@
       </button>
       <h2>مولّد QR للأصناف</h2>
     </div>
-    <label for="qrInput" class="section-label">أرقام الأصناف</label>
+
+    <!-- معاينة شكل الملصق -->
+    <div class="qrf">
+      <div class="section-label">شكل الملصق <span class="qrf-sub" id="qrLabelNum"></span></div>
+      <div class="qrf-paper" id="qrLabelPreview" dir="ltr"></div>
+      <div class="qrf-sub">مكبّر على الشاشة. المقاس 58×38 مم: QR يسارًا ورقم الصنف عموديًا يمينًا، بلا اسم.</div>
+    </div>
+
+    <!-- تصفية وطباعة جماعية (ملصقات 58×38 مم) -->
+    <div class="qrf" id="qrFilter">
+      <div class="section-label">تصفية الأصناف</div>
+      <div class="qrf-block">
+        <div class="qrf-title">الأنواع <span class="qrf-sub">(التصنيف الرئيسي)</span></div>
+        <input type="search" id="qrTypeSearch" class="qrf-input" placeholder="بحث في الأنواع…" autocomplete="off">
+        <div class="qrf-types" id="qrTypeList"><div class="qrf-empty">جارِ تحميل الأنواع…</div></div>
+      </div>
+      <div class="qrf-block">
+        <label class="qrf-title" for="qrExclude">استبعاد بالكلمات</label>
+        <input type="text" id="qrExclude" class="qrf-input" placeholder="مثال: غطاء, قطعة, مستعمل" autocomplete="off">
+        <div class="qrf-sub">يُستبعد الصنف إن ورد في اسمه أيٌّ من هذه الكلمات (افصل بفاصلة).</div>
+        <div class="qrf-sub" id="qrExNote" role="status"></div>
+      </div>
+      <div class="qrf-block">
+        <label class="qrf-title" for="qrStockSel">المخزن</label>
+        <select id="qrStockSel" class="qrf-input">
+          <option value="">بلا تصفية حسب المخزن</option>
+        </select>
+      </div>
+    </div>
+
+    <label for="qrInput" class="section-label">إضافة أرقام يدويًا (تُضاف حتى لو خالفت المرشحات)</label>
     <textarea id="qrInput" dir="ltr" placeholder="146"></textarea>
     <div class="qr-hint">رقم واحد، أو عدة أرقام بفواصل، أو مجال مثل 100-110، أو كلمة «الكل». الرابط: companyjadu-sketch.github.io/JADU-APP/?item=الرقم</div>
-    <button class="primary-btn" id="qrGenBtn" type="button">توليد</button>
+    <button class="primary-btn" id="qrGenBtn" type="button">إضافة وتوليد QR</button>
     <div class="msg" id="qrMsg" role="status"></div>
     <div class="qr-actions" id="qrActions" hidden>
       <button class="primary-btn" id="qrZipBtn" type="button">تنزيل PNG</button>
-      <button class="primary-btn" id="qrPrintBtn" type="button">طباعة ملصقات</button>
     </div>
+
+    <!-- قائمة الطباعة: نتيجة التصفية + الأرقام المكتوبة يدويًا -->
+    <div class="qrf-sel" id="qrSel">
+      <div class="section-label">قائمة الطباعة (58×38 مم)</div>
+      <div class="qrf-bar">
+        <div><div class="qrf-count" id="qrSelCount" role="status">0 صنف — 0 ملصق</div><div class="qrf-sub" id="qrSelSub"></div></div>
+        <button class="primary-btn" id="qrPrintSelBtn" type="button" disabled>طباعة الملصقات</button>
+      </div>
+      <button class="qrf-test" id="qrTestBtn" type="button">اطبع 5 ملصقات تجريبية</button>
+      <div class="qrf-sub" id="qrTestMsg" role="status"></div>
+      <div class="qrf-sel-btns">
+        <button type="button" id="qrSelAll">تحديد الكل</button>
+        <button type="button" id="qrSelNone">إلغاء الكل</button>
+      </div>
+      <div class="qrf-list" id="qrSelList"><div class="qrf-empty">اختر نوعًا أو اكتب أرقامًا.</div></div>
+    </div>
+
     <div class="qr-grid" id="qrPreview"></div>
   </div>
 
@@ -460,13 +506,13 @@
     <button type="button" class="lb-btn" id="lbIn" aria-label="تكبير">+</button>
   </div>
 </div>
-<script src="app.js?v=20261124c"></script>
-<script src="share-cart.js?v=20261124c"></script>
-<script src="attendance-core.js?v=20261124c"></script>
-<script src="attendance.js?v=20261124c"></script>
+<script src="app.js?v=20261126a"></script>
+<script src="share-cart.js?v=20261126a"></script>
+<script src="attendance-core.js?v=20261126a"></script>
+<script src="attendance.js?v=20261126a"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="photo-upload.js?v=20261124c"></script>
-<script src="qr-tool.js?v=20261124c"></script>
+<script src="photo-upload.js?v=20261126a"></script>
+<script src="qr-tool.js?v=20261126a"></script>
 </body>
 </html>
