@@ -362,13 +362,28 @@ footer{ margin-top:30px; text-align:center; font-size:11.5px; color:var(--steel-
 .cam-overlay.open{ display:flex; }
 .cam-overlay video{ width:100%; max-width:480px; }
 .cam-overlay canvas{ display:none; }
-.cam-hint{ color:#fff; font-size:13px; margin-top:16px; text-align:center; padding:0 20px; }
-/* إطار توجيه — يساعد بمحاذاة الباركود العادي (1D) اللي يحتاج يكون أفقي وواضح داخل الإطار */
+/* أسفل الشاشة: أزرار الزوم ثم النص ثم مفتاح الباركود 1D. مثبّتة حتى لا تزيح الفيديو عن منتصف الشاشة */
+.cam-controls{ position:absolute; left:0; right:0; bottom:calc(16px + env(safe-area-inset-bottom, 0px)); display:flex; flex-direction:column; align-items:center; gap:10px; padding:0 16px; }
+.cam-hint{ color:#fff; font-size:14px; text-align:center; text-shadow:0 1px 3px #000; }
+.cam-zoom{ display:flex; gap:8px; }
+.cam-zoom[hidden]{ display:none; }
+.cam-zoom button, .cam-mode{
+  min-height:36px; padding:6px 18px; border-radius:999px; border:1px solid rgba(255,255,255,.5);
+  background:rgba(0,0,0,.55); color:#fff; font-family:'Tajawal', sans-serif; font-size:13px; font-weight:700; cursor:pointer;
+}
+.cam-zoom button[aria-pressed="true"], .cam-mode[aria-pressed="true"]{ background:var(--amber); border-color:var(--amber); }
+/* مربع المسح لرموز QR — هو منطقة القراءة الوحيدة: cropScanSquare_() في app.js تقصّه من الفيديو
+   وتعطيه للمحركين معًا (BarcodeDetector و ZXing)، فلا يُقرأ أي رمز خارجه */
 .cam-frame{
   position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-  width:78%; max-width:340px; height:110px; pointer-events:none;
+  width:min(70vw, 55vh, 340px); aspect-ratio:1 / 1; height:auto; pointer-events:none;
   border:2.5px solid var(--amber); border-radius:10px;
   box-shadow:0 0 0 2000px rgba(0,0,0,0.45);
+}
+/* هاتف بالوضع الأفقي: مربع أصغر حتى لا تغطيه الأزرار */
+@media (orientation:landscape) and (max-height:500px){
+  .cam-frame{ top:38%; width:min(70vw, 46vh, 340px); }
+  .cam-controls{ gap:6px; bottom:8px; }
 }
 .cam-close{
   position:absolute; top:20px; left:20px; width:40px; height:40px; border-radius:50%;

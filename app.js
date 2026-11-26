@@ -1886,18 +1886,19 @@ document.getElementById('pcfAddBtn')?.addEventListener('click', async ()=>{
 updatePriceCartBadge();
 
 // =====================================================================
-// مسح الكود بالكاميرا — يدعم الكيو آر كود (QR) والباركود العادي (1D:
-// Code128, EAN-13, EAN-8, UPC-A/E, Code39) عبر مكتبة ZXing
+// مسح الكود بالكاميرا عبر مكتبة ZXing (+ BarcodeDetector المدمج إن وُجد)، بإطار مسح مربع
 // تُستخدم بنفس الزر في الواجهات الثلاثة (موظف / زبون / إدارة عامة) لأنها كلها
 // تعرض نفس شاشة البحث (#view-employee)
 // =====================================================================
+// الافتراضي QR فقط: أسرع وأدق (محلّل واحد لكل إطار، ولا قراءات خاطئة من باركود 1D).
+// زر #camModeBtn يضيف الباركود 1D القديم (Code128, EAN-13/8, UPC-A/E, Code39, ITF)
+let camMode1D = false;
 const camOverlay = document.getElementById('camOverlay');
 const camVideo = document.getElementById('camVideo');
 const camZoomCanvas = document.getElementById('camZoomCanvas');
 const camFrame = document.getElementById('camFrame');
 const camHint = document.getElementById('camHint');
 let zxingReader = null;
-let camControls = null;
 let camDetector = null;
 let camDetectTimer = null;
 let camScanning = false;
@@ -1905,50 +1906,65 @@ let camScanning = false;
 let scanResultHandled = false;
 
 // تُبنى عند فتح الكاميرا فقط — لو مكتبة ZXing ما تحمّلت، ما تتعطل باقي الصفحة
-function camFormatsZxing_(){ return [
-  ZXing.BarcodeFormat.QR_CODE,
-  ZXing.BarcodeFormat.CODE_128,
-  ZXing.BarcodeFormat.CODE_39,
-  ZXing.BarcodeFormat.EAN_13,
-  ZXing.BarcodeFormat.EAN_8,
-  ZXing.BarcodeFormat.UPC_A,
-  ZXing.BarcodeFormat.UPC_E,
-  ZXing.BarcodeFormat.ITF
-];}
-const CAM_FORMATS_NATIVE = ['qr_code','code_128','code_39','ean_13','ean_8','upc_a','upc_e','itf'];
+function camFormatsZxing_(){
+  const F = ZXing.BarcodeFormat;
+  return camMode1D ? [F.QR_CODE, F.CODE_128, F.CODE_39, F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.ITF]
+    : [F.QR_CODE];
+}
+function camFormatsNative_(){
+  return camMode1D ? ['qr_code','code_128','code_39','ean_13','ean_8','upc_a','upc_e','itf'] : ['qr_code'];
+}
 
+// قارئ ZXing الأساسي (بلا كاميرا خاصة به): يفك الرمز من الصورة المقصوصة من المربع فقط
 function getZxingReader(){
   if(!zxingReader){
     const hints = new Map();
     hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, camFormatsZxing_());
     hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
-    // فحص أسرع (كل 100 ملي ثانية بدل الافتراضي ~500) لزيادة فرصة التقاط باركود 1D أثناء تحريك الهاتف
-    zxingReader = new ZXing.BrowserMultiFormatReader(hints, 100);
+    zxingReader = new ZXing.MultiFormatReader();
+    zxingReader.setHints(hints);
   }
   return zxingReader;
 }
 
-// الباركود قد يكون رقمًا صرفًا (ملصقات قديمة) أو رابط جادو فيه item=الرقم (ملصقات QR الجديدة)
-function extractScanItem_(raw){
+// المقروء: رابط جادو فيه item=الرقم (ملصقات QR) = 'link'، أو رابط آخر = 'foreign'،
+// أو نص مجرد (رقم صنف / شفرة نوع / باركود) = 'code'
+function parseScan_(raw){
   const t = String(raw == null ? '' : raw).trim();
   if(/^https?:\/\//i.test(t)){
     try {
       const u = new URL(t);
-      const v = u.searchParams.get('item');
-      if(v && v.trim() && (u.host === JADU_SITE_HOST || u.host === location.host)) return v.trim();
+      const v = (u.searchParams.get('item') || '').trim();
+      if(v && (u.host === JADU_SITE_HOST || u.host === location.host)) return { kind: 'link', value: v };
     } catch(e){}
+    return { kind: 'foreign', value: t };
   }
-  return t;
+  return { kind: 'code', value: t };
 }
-function handleScanResult(text){
-  if(scanResultHandled) return;
-  text = extractScanItem_(text); // نتيجة ثانية من المحرك الآخر بعد ما عالجنا نتيجة سابقة — نتجاهلها
+// رابط جادو: برقم الصنف فقط. النص المجرد: رقم الصنف أولًا، ثم شفرة النوع إن لم يوجد رقم مطابق.
+// (أرقام كثيرة تطابق «شفرة النوع» لصنف آخر، فالبحث بالحقلين معًا كان يعطي «كود مكرر»)
+function matchScan_(scan){
+  if(scan.kind === 'foreign') return [];
+  const byNumber = ITEMS.filter(it => it.number === scan.value);
+  if(byNumber.length || scan.kind === 'link') return byNumber;
+  return ITEMS.filter(it => it.typeCode === scan.value);
+}
+function handleScanResult(raw){
+  if(scanResultHandled) return; // نتيجة ثانية من المحرك الآخر بعد ما عالجنا نتيجة سابقة — نتجاهلها
+  const scan = parseScan_(raw), text = scan.value;
   scanResultHandled = true;
   closeCamera();
   // نجمع كل الأصناف المطابقة (مو أول واحد بس) لاكتشاف حالة تكرار نفس الكود بأكثر من صنف
-  const matches = ITEMS.filter(it => it.number === text || it.typeCode === text);
+  const matches = matchScan_(scan);
+  // رمز غريب: رابط ليس لصنف من جادو، أو نص غير رقمي لا يطابق شيئًا. لا نفتحه ولا نعرض محتواه
+  if(scan.kind === 'foreign' || (!matches.length && scan.kind === 'code' && !/^\d+$/.test(text))){
+    showConfirm("هذا الرمز لا يخص أي صنف في جادو.", { title:"ليس صنفا من جادو", okText:"مسح مرة أخرى", cancelText:"حسنًا" })
+      .then(scanAgain => { if(scanAgain) openCamera(true); });
+    return;
+  }
   if(matches.length === 1){
-    openItemDetail(matches[0].number);
+    // من رابط جادو: الزبون يرى الصفحة المختصرة نفسها التي تفتحها كاميرا الهاتف (opts.qr يؤثر على الزبون فقط)
+    openItemDetail(matches[0].number, { qr: scan.kind === 'link' });
   } else if(matches.length > 1){
     // نفس الكود مسجّل بالخطأ بأكثر من صنف — نعرض القائمة ليختار المستخدم الصنف الصحيح بنفسه
     const searchInput = document.getElementById('employeeSearchInput');
@@ -1960,110 +1976,154 @@ function handleScanResult(text){
     const searchInput = document.getElementById('employeeSearchInput');
     if(searchInput){ searchInput.value = text; renderResults(); }
     showConfirm("ما فيه صنف مطابق تمامًا لهذا الكود: " + text + "\nأقرب النتائج معروضة بالقائمة تحت.", { title:"لم يُعثر على تطابق تام", okText:"مسح مرة أخرى", cancelText:"حسنًا" })
-      .then(scanAgain => { if(scanAgain) openCamera(); });
+      .then(scanAgain => { if(scanAgain) openCamera(true); });
   }
 }
 
-// تشغيل محركَي قراءة بالتوازي معًا (بدل اختيار واحد فقط) — لأن تبيّن إن بعض الأجهزة
-// عندها BarcodeDetector المدمج بالمتصفح (الدالة موجودة فعليًا) لكن محرك التعرف الحقيقي
-// خلفها (مزوّد عبر خدمات النظام) ما يدعم قراءة الباركود العادي (1D) إطلاقًا على ذاك
-// الجهاز بالذات، فتظل الكاميرا تدور بدون ما تكتشف أي شيء ولا حتى تعطي خطأ. ولأن مكتبة
-// ZXing (جافاسكربت بحتة، تعمل بنفس الطريقة على كل الأجهزة والمتصفحات) أثبتت موثوقية
-// أعلى، صارت هي المسؤولة عن طلب الكاميرا دائمًا، و BarcodeDetector (لو موجود) يشتغل
-// بالتوازي كفرصة إضافية على نفس الفيديو — وأول محرك يلقى نتيجة يفوز فورًا.
+// منطقة القراءة الوحيدة = المربع المعروض (#camFrame) مقصوصًا من الفيديو.
+// المحركان يقرآن الصورة المقصوصة نفسها: BarcodeDetector المدمج (إن وُجد ويدعم QR) ثم ZXing
+// (جافاسكربت بحتة، تعمل على كل الأجهزة). لا يُقرأ أي رمز خارج المربع.
 let camVideoTrack = null;
 
-async function tryApplyOpticalZoom(track){
-  try{
-    const caps = track.getCapabilities ? track.getCapabilities() : {};
-    if(caps && caps.zoom){
-      // نستخدم تقريبًا 2x أو منتصف المدى المتاحة أيهما أصغر — تقريب معقول يفيد الباركود
-      // الصغير بدون ما نطلع عن مدى الجهاز المسموح
-      const target = Math.min(caps.zoom.max, Math.max(caps.zoom.min, 2));
-      await track.applyConstraints({ advanced: [{ zoom: target }] });
-    }
-  }catch(e){ /* الزوم الحقيقي غير مدعوم — نعتمد على الزوم الرقمي فقط */ }
+// زوم الكاميرا: يبدأ دائمًا على 1×، وزرا 1×/2× يظهران فقط إن كان مدى الكاميرا يتسع لضعف 1×.
+// بعض الكاميرات تقيس الزوم بوحدات أخرى (مثل 100–500)، فنعتبر «1×» = القيمة 1 محصورة داخل المدى
+const camZoomBox = document.getElementById('camZoom');
+let camZoomBase = 1;
+function markZoom_(factor){
+  camZoomBox?.querySelectorAll('[data-camzoom]').forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.camzoom) === factor)));
+}
+async function setCamZoom_(factor){
+  const track = camVideoTrack;
+  if(!track) return false;
+  try {
+    await track.applyConstraints({ advanced: [{ zoom: camZoomBase * factor }] });
+    if(track === camVideoTrack) markZoom_(factor);
+    return true;
+  } catch(e){ return false; }
+}
+async function setupZoom_(track){
+  try {
+    const range = track.getCapabilities ? track.getCapabilities().zoom : null;
+    if(!range) return;
+    camZoomBase = Math.min(range.max, Math.max(range.min, 1));
+    if(await setCamZoom_(1) && track === camVideoTrack && range.max >= camZoomBase * 2 && camZoomBox) camZoomBox.hidden = false;
+  } catch(e){ /* الزوم غير مدعوم — لا أزرار */ }
+}
+camZoomBox?.addEventListener('click', e => { const b = e.target.closest('[data-camzoom]'); if(b) setCamZoom_(Number(b.dataset.camzoom)); });
+
+// التبديل بين QR فقط و QR + الباركود 1D، والكاميرا تبقى تعمل
+const camModeBtn = document.getElementById('camModeBtn');
+function updateModeUi_(){
+  camHint.textContent = camMode1D ? "ضع الباركود داخل المربع الأحمر" : "ضع رمز QR داخل المربع الأحمر";
+  if(camModeBtn){
+    camModeBtn.textContent = camMode1D ? "العودة إلى QR فقط" : "قراءة باركود 1D";
+    camModeBtn.setAttribute('aria-pressed', String(camMode1D));
+  }
+}
+// يعيد بناء المحرك المدمج للصيغ الحالية، ويتجاهل النتيجة إن تغيّر الوضع أو أُغلقت الكاميرا أثناء الانتظار
+async function refreshDetector_(){
+  const session = camSession, mode = camMode1D;
+  camDetector = null;
+  const detector = await makeNativeDetector_();
+  if(session === camSession && mode === camMode1D) camDetector = detector;
+}
+camModeBtn?.addEventListener('click', () => {
+  camMode1D = !camMode1D;
+  zxingReader = null;          // يُبنى من جديد بالصيغ الجديدة في المحاولة التالية
+  updateModeUi_();
+  refreshDetector_();
+});
+
+// يرسم ما تحت المربع المعروض بالضبط في camZoomCanvas ويرجعه (null قبل جاهزية الفيديو).
+// الفيديو معروض بنسبة أبعاده الأصلية (width:100%، ارتفاع تلقائي)، فالتحويل من بكسلات الشاشة
+// إلى بكسلات الفيديو خطي بنفس النسبة على المحورين: المربع على الشاشة = مربع في الفيديو.
+function cropScanSquare_(){
+  if(camVideo.readyState < 2 || !camVideo.videoWidth || !camFrame) return null;
+  const v = camVideo.getBoundingClientRect(), f = camFrame.getBoundingClientRect();
+  if(!v.width || !v.height) return null;
+  const kx = camVideo.videoWidth / v.width, ky = camVideo.videoHeight / v.height;
+  // حدود المربع داخل الفيديو (مع قصّ أي جزء يخرج عن الفيديو)
+  const x0 = Math.max(0, (f.left - v.left) * kx), y0 = Math.max(0, (f.top - v.top) * ky);
+  const x1 = Math.min(camVideo.videoWidth, (f.right - v.left) * kx), y1 = Math.min(camVideo.videoHeight, (f.bottom - v.top) * ky);
+  const sw = x1 - x0, sh = y1 - y0;
+  if(sw < 20 || sh < 20) return null;
+  // أثناء تدوير الهاتف قد تتأخر أبعاد الفيديو عن أبعاد العنصر لإطار أو اثنين، فتختلف النسبتان
+  // ويخرج القصّ غير مربع — نتخطى هذا الإطار فقط (القياس يُعاد كل إطار، فالتدوير لا يفسد القصّ بعده)
+  if(Math.abs(kx - ky) / Math.max(kx, ky) > 0.02) return null;
+  // تكبير معتدل يعطي الرمز الصغير تفاصيل أوضح دون إبطاء الفحص
+  const k = Math.min(1024, Math.max(Math.max(sw, sh) * 1.6, 640)) / Math.max(sw, sh);
+  camZoomCanvas.width = Math.round(sw * k);
+  camZoomCanvas.height = Math.round(sh * k);
+  const ctx = camZoomCanvas.getContext('2d', { willReadFrequently: true });
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(camVideo, x0, y0, sw, sh, 0, 0, camZoomCanvas.width, camZoomCanvas.height);
+  return camZoomCanvas;
 }
 
-// يشغّل محرك BarcodeDetector المدمج بالمتصفح (لو متوفر) بالقراءة من نفس عنصر الفيديو
-// اللي فتحته ZXing أصلًا — بدون طلب كاميرا مستقلة، فقط قراءة إضافية بالتوازي
-async function startBarcodeDetectorLoop(){
-  let formats = CAM_FORMATS_NATIVE;
-  if(typeof BarcodeDetector.getSupportedFormats === 'function'){
-    try{
-      const supported = await BarcodeDetector.getSupportedFormats();
-      const filtered = formats.filter(f => supported.includes(f));
-      if(filtered.length) formats = filtered;
-    }catch(e){ /* نكمل بالقائمة الافتراضية */ }
+// إضاءة الصورة المقصوصة لـ ZXing نحسبها بأنفسنا من getImageData.
+// لا نستخدم HTMLCanvasElementLuminanceSource: في ZXing 0.20 تعطي صورة معكوسة في كل استدعاء ثانٍ
+// (مقيس في اختبار بلا واجهة: مجموع الإضاءة يتبدّل 5050000/7700000 فالقراءة 0101…، و reset() لا يغيّر شيئًا).
+let camLumBuf = null;
+function zxingLuminance_(img){
+  const w = img.width, h = img.height;
+  const d = img.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data;
+  if(!camLumBuf || camLumBuf.length !== w * h) camLumBuf = new Uint8ClampedArray(w * h);
+  for(let i = 0, j = 0; i < d.length; i += 4, j++) camLumBuf[j] = (d[i] * 306 + d[i + 1] * 601 + d[i + 2] * 117) >> 10;
+  return new ZXing.RGBLuminanceSource(camLumBuf, w, h);
+}
+
+// محاولة قراءة واحدة من المربع: BarcodeDetector أولًا (أسرع إن وُجد)، ثم ZXing على الصورة نفسها
+async function decodeScanSquare_(){
+  const img = cropScanSquare_();
+  if(!img) return '';
+  if(camDetector){
+    try {
+      const found = await camDetector.detect(img);
+      const t = found && found.length ? String(found[0].rawValue || '').trim() : '';
+      if(t) return t;
+    } catch(e){ /* نكمل بـ ZXing */ }
   }
-  camDetector = new BarcodeDetector({ formats });
+  try {
+    const res = getZxingReader().decodeWithState(new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(zxingLuminance_(img))));
+    return res ? String(res.getText() || '').trim() : '';
+  } catch(e){ return ''; } // NotFoundException = لا رمز في المربع
+}
+
+function startScanLoop_(){
   camScanning = true;
-
-  const track = (camVideo.srcObject && camVideo.srcObject.getVideoTracks) ? camVideo.srcObject.getVideoTracks()[0] : null;
-  if(track){ camVideoTrack = track; tryApplyOpticalZoom(track); }
-
   const tick = async () => {
     if(!camScanning || scanResultHandled) return;
-    try {
-      let target = camVideo;
-      // نقص على منطقة الإطار البرتقالي فقط ونكبّرها — هذا يعطي الباركود مساحة أكبر
-      // بكثير من الصورة اللي يحللها الماسح، بنفس فكرة تكبير غوغل لنس يدويًا
-      if(camVideo.readyState >= 2 && camVideo.videoWidth && camFrame){
-        const videoRect = camVideo.getBoundingClientRect();
-        const frameRect = camFrame.getBoundingClientRect();
-        if(videoRect.width && videoRect.height){
-          const scaleX = camVideo.videoWidth / videoRect.width;
-          const scaleY = camVideo.videoHeight / videoRect.height;
-          const sx = Math.max(0, (frameRect.left - videoRect.left) * scaleX);
-          const sy = Math.max(0, (frameRect.top - videoRect.top) * scaleY);
-          const sw = Math.min(camVideo.videoWidth - sx, frameRect.width * scaleX);
-          const sh = Math.min(camVideo.videoHeight - sy, frameRect.height * scaleY);
-          if(sw > 20 && sh > 20){
-            // نكبّر المنطقة المقصوصة لعرض ثابت كبير (بدون تكبير مبالغ فيه يفقد التفاصيل)
-            const outW = Math.min(1600, Math.max(sw * 2.2, 640));
-            const outH = outW * (sh / sw);
-            camZoomCanvas.width = outW;
-            camZoomCanvas.height = outH;
-            const ctx = camZoomCanvas.getContext('2d');
-            ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = 'high';
-            ctx.drawImage(camVideo, sx, sy, sw, sh, 0, 0, outW, outH);
-            target = camZoomCanvas;
-          }
-        }
-      }
-      const barcodes = await camDetector.detect(target);
-      if(barcodes && barcodes.length){
-        const text = (barcodes[0].rawValue || '').trim();
-        if(text){ handleScanResult(text); return; }
-      }
-    } catch(e){ /* نكمل بالإطار التالي */ }
-    if(camScanning && !scanResultHandled){ camDetectTimer = setTimeout(tick, 150); }
+    const text = await decodeScanSquare_();
+    if(text){ handleScanResult(text); return; }
+    if(camScanning && !scanResultHandled) camDetectTimer = setTimeout(tick, 120);
   };
   tick();
 }
 
-// ZXing هي المسؤولة دائمًا عن طلب الكاميرا — أثبتت أنها تعمل بثبات أكبر عبر مختلف
-// الأجهزة والمتصفحات من الاعتماد فقط على BarcodeDetector المدمج
-async function openCameraWithZxing(constraints){
-  const reader = getZxingReader();
-  camControls = await reader.decodeFromConstraints(
-    constraints,
-    camVideo,
-    (result, err, controls) => {
-      if(result && result.getText){
-        handleScanResult(result.getText().trim());
-      }
+async function makeNativeDetector_(){
+  if(typeof BarcodeDetector === 'undefined') return null;
+  try {
+    let formats = camFormatsNative_();
+    if(typeof BarcodeDetector.getSupportedFormats === 'function'){
+      const supported = await BarcodeDetector.getSupportedFormats();
+      formats = formats.filter(f => supported.includes(f));
+      if(!formats.length) return null; // المحرك المدمج لا يدعم QR على هذا الجهاز — ZXing وحده
     }
-  );
+    return new BarcodeDetector({ formats });
+  } catch(e){ return null; }
 }
 
-async function openCamera(){
-  camHint.textContent = "حط الباركود داخل الإطار البرتقالي وثبّت يدك لثانية — التكبير تلقائي";
+// keepMode: «مسح مرة أخرى» يبقي الوضع الحالي، وزر المسح يبدأ دائمًا بوضع QR
+async function openCamera(keepMode){
+  if(keepMode !== true) camMode1D = false;
+  zxingReader = null;
+  updateModeUi_();
+  if(camZoomBox) camZoomBox.hidden = true;
   camOverlay.classList.add('open');
   openFocusTrap(camOverlay);
   scanResultHandled = false;
-  // دقة أعلى + تركيز تلقائي مستمر يساعدان كثيرًا بقراءة الباركود العادي (1D) اللي يحتاج وضوح بالتفاصيل الدقيقة
+  // دقة أعلى + تركيز تلقائي مستمر: تفاصيل أوضح داخل المربع المقصوص
   const constraints = {
     video: {
       facingMode: { ideal: "environment" },
@@ -2076,28 +2136,51 @@ async function openCamera(){
     camHint.textContent = "تعذّر تحميل قارئ الباركود — تحقق من الإنترنت وأعد فتح الصفحة";
     return;
   }
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    camHint.textContent = "هذا المتصفح لا يسمح بالكاميرا هنا — افتح الموقع من رابطه https في Chrome أو Safari";
+    return;
+  }
+  const session = ++camSession;
   try {
-    await openCameraWithZxing(constraints);
-    // إضافيًا وبالتوازي: لو الجهاز يدعم BarcodeDetector المدمج، نشغّله كفرصة ثانية
-    // على نفس الفيديو — أول محرك يلقى نتيجة يفوز، وما فيه ضرر لو ما لقى شيء
-    if(typeof BarcodeDetector !== 'undefined'){
-      startBarcodeDetectorLoop().catch(()=>{});
-    }
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    // أُغلقت الكاميرا (أو فُتحت من جديد) أثناء انتظار الإذن: نوقف هذا البث فورًا
+    if(session !== camSession || !camOverlay.classList.contains('open')){ stream.getTracks().forEach(t => t.stop()); return; }
+    camVideo.setAttribute('playsinline', ''); camVideo.muted = true;   // iOS: داخل الصفحة لا بملء الشاشة
+    camVideo.srcObject = stream;
+    await camVideo.play().catch(() => {});
+    const track = stream.getVideoTracks()[0];
+    if(track){ camVideoTrack = track; setupZoom_(track); }
+    await refreshDetector_();
+    if(session !== camSession) return;
+    startScanLoop_();
   } catch(e){
-    camHint.textContent = "تعذّر فتح الكاميرا — تحقق من صلاحيات المتصفح";
+    if(session === camSession) camHint.textContent = camErrorText_(e);
   }
 }
+// رسالة واضحة بدل شاشة سوداء عند فشل فتح الكاميرا
+function camErrorText_(e){
+  const n = (e && e.name) || '';
+  if(n === 'NotAllowedError' || n === 'SecurityError') return "لم يُسمح للموقع باستخدام الكاميرا. اسمح بالكاميرا من إعدادات الموقع في المتصفح (رمز القفل بجانب الرابط) ثم أعد فتح الماسح.";
+  if(n === 'NotFoundError' || n === 'OverconstrainedError') return "لم يُعثر على كاميرا في هذا الجهاز.";
+  if(n === 'NotReadableError' || n === 'AbortError') return "الكاميرا مشغولة بتطبيق آخر — أغلقه ثم أعد فتح الماسح.";
+  return "تعذّر فتح الكاميرا — أغلق الماسح وحاول مرة أخرى.";
+}
+let camSession = 0;
+// الصفحة خرجت من الواجهة (تبديل تطبيق، قفل الشاشة): نغلق الماسح ونطفئ الكاميرا
+document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'hidden' && camOverlay && camOverlay.classList.contains('open')) closeCamera(); });
+// إغلاق الماسح يطفئ الكاميرا فعليًا: stop لكل track (يختفي مؤشر الكاميرا في الهاتف)
 function closeCamera(){
+  camSession++;                       // أي طلب كاميرا ما زال ينتظر الإذن يُلغى عند وصوله
   camOverlay.classList.remove('open');
   closeFocusTrap();
   camScanning = false;
   if(camDetectTimer){ clearTimeout(camDetectTimer); camDetectTimer = null; }
-  if(camControls){ try{ camControls.stop(); }catch(e){} camControls = null; }
   if(camVideo.srcObject){ try{ camVideo.srcObject.getTracks().forEach(t => t.stop()); }catch(e){} }
   camVideoTrack = null;
+  camDetector = null;
   camVideo.srcObject = null;
 }
-document.getElementById('employeeScanBtn')?.addEventListener('click', openCamera);
+document.getElementById('employeeScanBtn')?.addEventListener('click', () => openCamera());
 document.getElementById('camCloseBtn')?.addEventListener('click', closeCamera);
 
 // ربط كل النوافذ المنبثقة بزر الرجوع

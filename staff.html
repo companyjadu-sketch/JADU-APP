@@ -35,11 +35,11 @@
 <script src="item-images.js"></script>
 <script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
 
-<link rel="stylesheet" href="app.css?v=20261126a">
-<link rel="stylesheet" href="attendance.css?v=20261126a">
-<link rel="stylesheet" href="share-cart.css?v=20261126a">
-<link rel="stylesheet" href="photo-upload.css?v=20261126a">
-<link rel="stylesheet" href="qr-tool.css?v=20261126a">
+<link rel="stylesheet" href="app.css?v=20261126b">
+<link rel="stylesheet" href="attendance.css?v=20261126b">
+<link rel="stylesheet" href="share-cart.css?v=20261126b">
+<link rel="stylesheet" href="photo-upload.css?v=20261126b">
+<link rel="stylesheet" href="qr-tool.css?v=20261126b">
 </head>
 <body data-page="staff">
 
@@ -95,7 +95,7 @@
     <div id="employeeSearchScreen" style="display:none;">
       <div class="search-row">
         <span class="sr-wrap"><input type="text" id="employeeSearchInput" placeholder="ابحث برقم الصنف أو الاسم…"><button type="button" class="sr-clr" id="employeeSearchClear" aria-label="مسح نص البحث">×</button></span>
-        <button class="scan-btn" id="employeeScanBtn" title="مسح كيو آر كود أو باركود" aria-label="مسح كيو آر كود أو باركود">
+        <button class="scan-btn" id="employeeScanBtn" title="مسح رمز QR" aria-label="مسح رمز QR">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/>
             <rect x="7" y="7" width="10" height="10" rx="1"/>
@@ -470,7 +470,14 @@
   <video id="camVideo" playsinline autoplay muted></video>
   <canvas id="camZoomCanvas"></canvas>
   <div class="cam-frame" id="camFrame"></div>
-  <div class="cam-hint" id="camHint">وجّه الكاميرا نحو الكيو آر كود أو الباركود الخاص بالمنتج</div>
+  <div class="cam-controls">
+    <div class="cam-zoom" id="camZoom" dir="ltr" role="group" aria-label="تكبير الكاميرا" hidden>
+      <button type="button" data-camzoom="1" aria-pressed="true">1×</button>
+      <button type="button" data-camzoom="2" aria-pressed="false">2×</button>
+    </div>
+    <div class="cam-hint" id="camHint" role="status">ضع رمز QR داخل المربع الأحمر</div>
+    <button type="button" class="cam-mode" id="camModeBtn" aria-pressed="false">قراءة باركود 1D</button>
+  </div>
 </div>
 
 <!-- ============ نافذة تأكيد/تنبيه عامة ============ -->
@@ -506,13 +513,13 @@
     <button type="button" class="lb-btn" id="lbIn" aria-label="تكبير">+</button>
   </div>
 </div>
-<script src="app.js?v=20261126a"></script>
-<script src="share-cart.js?v=20261126a"></script>
-<script src="attendance-core.js?v=20261126a"></script>
-<script src="attendance.js?v=20261126a"></script>
+<script src="app.js?v=20261126b"></script>
+<script src="share-cart.js?v=20261126b"></script>
+<script src="attendance-core.js?v=20261126b"></script>
+<script src="attendance.js?v=20261126b"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="photo-upload.js?v=20261126a"></script>
-<script src="qr-tool.js?v=20261126a"></script>
+<script src="photo-upload.js?v=20261126b"></script>
+<script src="qr-tool.js?v=20261126b"></script>
 </body>
 </html>
