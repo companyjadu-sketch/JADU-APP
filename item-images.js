@@ -187,6 +187,7 @@ const ITEM_IMAGES = {
   "2266": "images/2266.jpg?v=20261124133248",
   "3227": "images/3227.jpg?v=20261127151914",
   "3228": "images/3227.jpg?v=20261127151914",
+  "3221": "images/shared/net-celik-helvane-tencere-kapakli-1103-a1-e71.jpg",
 };
 
 // صور حسب الموديل المكتوب في اسم الصنف (مثل "مريول 236")
